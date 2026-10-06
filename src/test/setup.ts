@@ -33,6 +33,7 @@ vi.mock('../lib/transport', async (importOriginal) => {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  delete document.documentElement.dataset.theme;
   // Restores each mock to the default implementation given above.
   vi.resetAllMocks();
 });
