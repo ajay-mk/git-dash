@@ -39,6 +39,29 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
+function LabelField({ value, onChange }: { value: string | null; onChange: (label: string | null) => void }) {
+  // The saved label is trimmed, so the field keeps what is typed until blur;
+  // otherwise trimming on each keystroke would swallow the spaces in a
+  // multi-word label.
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <label className="inline-field">
+      Label
+      <input
+        type="text"
+        maxLength={50}
+        placeholder="any"
+        value={draft ?? value ?? ''}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          onChange(e.target.value.trim() || null);
+        }}
+        onBlur={() => setDraft(null)}
+      />
+    </label>
+  );
+}
+
 function WidgetEditor({ repo, onChange }: { repo: PinnedRepo; onChange: (widgets: WidgetConfig[]) => void }) {
   const byType = new Map(repo.widgets.map((w) => [w.type, w]));
 
@@ -81,16 +104,7 @@ function WidgetEditor({ repo, onChange }: { repo: PinnedRepo; onChange: (widgets
             {widget?.type === 'issues' && (
               <div className="widget-settings">
                 <NumberField label="Show" value={widget.limit} onChange={(limit) => patch({ ...widget, limit })} />
-                <label className="inline-field">
-                  Label
-                  <input
-                    type="text"
-                    maxLength={50}
-                    placeholder="any"
-                    value={widget.label ?? ''}
-                    onChange={(e) => patch({ ...widget, label: e.target.value.trim() || null })}
-                  />
-                </label>
+                <LabelField value={widget.label} onChange={(label) => patch({ ...widget, label })} />
               </div>
             )}
           </div>
