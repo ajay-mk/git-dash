@@ -1,3 +1,6 @@
+mod error;
+mod token;
+
 use tauri::{webview::WebviewWindowBuilder, Url, WebviewUrl};
 
 /// The webview may only ever show the bundled app. Any attempt to navigate
