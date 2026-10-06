@@ -18,6 +18,8 @@ pub enum Error {
     RequestTooLarge,
     #[error("Unsupported provider: {0}")]
     UnknownProvider(String),
+    #[error("GitHub API rate limit reached; try again later")]
+    RateLimited,
     #[error("Provider returned HTTP {0}")]
     Http(u16),
     #[error("Network error: {0}")]
@@ -37,6 +39,7 @@ impl Error {
             Error::ForbiddenOperation => "forbidden_operation",
             Error::RequestTooLarge => "request_too_large",
             Error::UnknownProvider(_) => "unknown_provider",
+            Error::RateLimited => "rate_limited",
             Error::Http(_) => "http",
             Error::Network(_) => "network",
             Error::Keyring(_) => "keyring",

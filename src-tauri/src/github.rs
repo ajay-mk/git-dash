@@ -43,6 +43,9 @@ impl GitHubClient {
 
         match response.status() {
             StatusCode::UNAUTHORIZED => return Err(Error::Unauthorized),
+            status if is_rate_limited(status, response.headers()) => {
+                return Err(Error::RateLimited)
+            }
             status if !status.is_success() => return Err(Error::Http(status.as_u16())),
             _ => {}
         }
@@ -69,5 +72,62 @@ impl GitHubClient {
             .and_then(Value::as_str)
             .map(str::to_owned)
             .ok_or(Error::Unauthorized)
+    }
+}
+
+/// GitHub signals secondary rate limits with 429, or with 403 plus either
+/// `retry-after` or `x-ratelimit-remaining: 0`. A bare 403 is something else.
+fn is_rate_limited(status: StatusCode, headers: &header::HeaderMap) -> bool {
+    match status {
+        StatusCode::TOO_MANY_REQUESTS => true,
+        StatusCode::FORBIDDEN => {
+            headers.contains_key(header::RETRY_AFTER)
+                || headers
+                    .get("x-ratelimit-remaining")
+                    .is_some_and(|v| v.as_bytes() == b"0")
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&'static str, &'static str)]) -> header::HeaderMap {
+        let mut map = header::HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(*name, header::HeaderValue::from_static(value));
+        }
+        map
+    }
+
+    #[test]
+    fn detects_rate_limits() {
+        assert!(is_rate_limited(
+            StatusCode::TOO_MANY_REQUESTS,
+            &headers(&[])
+        ));
+        assert!(is_rate_limited(
+            StatusCode::FORBIDDEN,
+            &headers(&[("retry-after", "60")])
+        ));
+        assert!(is_rate_limited(
+            StatusCode::FORBIDDEN,
+            &headers(&[("x-ratelimit-remaining", "0")])
+        ));
+    }
+
+    #[test]
+    fn other_forbidden_responses_are_not_rate_limits() {
+        assert!(!is_rate_limited(StatusCode::FORBIDDEN, &headers(&[])));
+        assert!(!is_rate_limited(
+            StatusCode::FORBIDDEN,
+            &headers(&[("x-ratelimit-remaining", "12")])
+        ));
+        assert!(!is_rate_limited(
+            StatusCode::OK,
+            &headers(&[("retry-after", "60")])
+        ));
     }
 }
