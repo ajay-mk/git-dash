@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-token-list"
+description = "Enables the token_list command without any pre-configured scope."
+commands.allow = ["token_list"]
+
+[[permission]]
+identifier = "deny-token-list"
+description = "Denies the token_list command without any pre-configured scope."
+commands.deny = ["token_list"]
