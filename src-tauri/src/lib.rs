@@ -1,9 +1,14 @@
+mod commands;
 mod error;
 mod github;
 mod graphql_guard;
 mod token;
 
+use std::sync::Arc;
+
 use tauri::{webview::WebviewWindowBuilder, Url, WebviewUrl};
+
+use commands::AppState;
 
 /// The webview may only ever show the bundled app. Any attempt to navigate
 /// elsewhere (a stray link, injected content) is blocked; external links are
@@ -23,8 +28,20 @@ fn is_app_url(url: &Url) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let state = AppState {
+        tokens: Arc::new(token::TokenStore::default()),
+        github: github::GitHubClient::new().expect("failed to initialise HTTP client"),
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![
+            commands::token_status,
+            commands::token_set,
+            commands::token_clear,
+            commands::github_graphql,
+        ])
         .setup(|app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("git-dash")
