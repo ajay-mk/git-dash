@@ -20,7 +20,22 @@ export default defineConfig({
     sourcemap: false,
   },
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // Pure logic tests run in plain Node; component tests get a DOM. Keeping
+    // them apart keeps the pure tests fast.
+    projects: [
+      {
+        extends: true,
+        test: { name: 'unit', environment: 'node', include: ['src/**/*.test.ts'] },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'happy-dom',
+          include: ['src/**/*.test.tsx'],
+          setupFiles: ['src/test/setup.ts'],
+        },
+      },
+    ],
   },
 });
