@@ -12,6 +12,10 @@ pub enum Error {
     Unauthorized,
     #[error("Invalid access token format")]
     InvalidTokenFormat,
+    #[error("Invalid account or organization name")]
+    InvalidOwner,
+    #[error("Too many access tokens; remove one first")]
+    TooManyTokens,
     #[error("Only read-only GraphQL queries are allowed")]
     ForbiddenOperation,
     #[error("Request too large")]
@@ -34,6 +38,8 @@ impl Error {
             Error::NoToken => "no_token",
             Error::Unauthorized => "unauthorized",
             Error::InvalidTokenFormat => "invalid_token_format",
+            Error::InvalidOwner => "invalid_owner",
+            Error::TooManyTokens => "too_many_tokens",
             Error::ForbiddenOperation => "forbidden_operation",
             Error::RequestTooLarge => "request_too_large",
             Error::UnknownProvider(_) => "unknown_provider",
