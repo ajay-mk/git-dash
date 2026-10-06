@@ -118,6 +118,18 @@ describe('SettingsPanel', () => {
       expect(config().repos[0]!.widgets.map((w) => w.type)).toEqual(['ci', 'pullRequests', 'issues']);
     });
 
+    it('edits pull request options', async () => {
+      const { config } = setup({ repos: [pinned()] });
+      await expandRepo('octo/repo');
+
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Hide drafts' }));
+      const [prLimit] = screen.getAllByRole('spinbutton', { name: 'Show' });
+      await userEvent.clear(prLimit!);
+      await userEvent.type(prLimit!, '8');
+
+      expect(config().repos[0]!.widgets[1]).toEqual({ type: 'pullRequests', limit: 8, hideDrafts: true });
+    });
+
     it('clamps item limits to the allowed range', async () => {
       const { config } = setup({ repos: [pinned()] });
       await expandRepo('octo/repo');
@@ -125,6 +137,8 @@ describe('SettingsPanel', () => {
       await userEvent.clear(prLimit!);
       await userEvent.type(prLimit!, '99');
       expect(config().repos[0]!.widgets[1]).toMatchObject({ limit: 20 });
+      await userEvent.tab();
+      expect((prLimit as HTMLInputElement).value).toBe('20');
     });
 
     it('edits the issue label filter, including labels with spaces', async () => {

@@ -22,6 +22,9 @@ import {
 type Update = (fn: (c: DashboardConfig) => DashboardConfig) => void;
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+  // Keeps what is typed until blur, so the field can be cleared before typing
+  // a new number instead of snapping back to the minimum.
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <label className="inline-field">
       {label}
@@ -29,11 +32,15 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
         type="number"
         min={MIN_ITEMS}
         max={MAX_ITEMS}
-        value={value}
+        value={draft ?? value}
         onChange={(e) => {
+          setDraft(e.target.value);
           const n = Number(e.target.value);
-          if (Number.isFinite(n)) onChange(Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, Math.round(n))));
+          if (e.target.value !== '' && Number.isFinite(n)) {
+            onChange(Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, Math.round(n))));
+          }
         }}
+        onBlur={() => setDraft(null)}
       />
     </label>
   );
