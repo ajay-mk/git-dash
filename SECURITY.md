@@ -29,6 +29,7 @@ user ever holds their credentials.
 | Webview navigation | The main window can only ever show the bundled app; any other navigation is blocked. |
 | Imported config | Validated and normalised (`src/config/schema.ts`) before use; it contains no secrets. |
 | Supply chain | Exact-pinned npm dependencies with install scripts disabled, a committed `Cargo.lock`, GitHub Actions referenced by release tag with read-only workflow permissions, and Dependabot for npm, Cargo and Actions. |
+| Release builds | Installers are built by GitHub Actions from a version tag, never on a developer machine. The build jobs have a read-only token; only the final job that creates the draft release can write, and it runs no project code. Every release lists SHA-256 checksums of its files. Builds are **not yet code-signed** (macOS builds are only ad-hoc signed and not notarized), so the checksums and the release page are the only way to check that a download is genuine. |
 
 ## Out of scope
 
