@@ -129,6 +129,17 @@ describe('SettingsPanel', () => {
       expect(config().repos[0]!.widgets[1]).toMatchObject({ limit: 20 });
     });
 
+    it('edits the issue label filter, including labels with spaces', async () => {
+      const { config } = setup({ repos: [pinned()] });
+      await expandRepo('octo/repo');
+      const label = screen.getByRole('textbox', { name: 'Label' });
+
+      await userEvent.type(label, 'good first issue');
+      expect(config().repos[0]!.widgets[2]).toEqual({ type: 'issues', limit: 5, label: 'good first issue' });
+
+      await userEvent.clear(label);
+      expect(config().repos[0]!.widgets[2]).toEqual({ type: 'issues', limit: 5, label: null });
+    });
   });
 
   it('toggles the sidebar and its sections', async () => {
