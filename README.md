@@ -49,7 +49,7 @@ OS.
 ```sh
 npm ci
 npm run tauri dev      # run the desktop app with hot reload
-npm run check          # typecheck, lint and unit tests (frontend)
+npm run check          # typecheck, lint, unit and component tests (frontend)
 cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings
 npm run tauri build    # produce installers for your platform
 ```
