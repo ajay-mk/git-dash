@@ -7,6 +7,7 @@
 
 import type { PinnedRepo } from '../../config/schema';
 import { prNeedsAttention } from '../../lib/health';
+import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
 import type {
   CiState,
@@ -16,6 +17,8 @@ import type {
   Label,
   PullRequestItem,
   RateLimit,
+  RepoError,
+  RepoErrorKind,
   RepoSnapshot,
   ReviewState,
 } from '../types';
@@ -156,19 +159,92 @@ export function mapRateLimit(v: unknown): RateLimit | null {
 
 const EMPTY: Counted<never> = { total: 0, items: [] };
 
-export function mapInbox(data: unknown): InboxSnapshot {
+export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnapshot {
   const d = obj(data) ?? {};
   return {
     viewer: str(obj(d.viewer)?.login) ?? '',
     reviewRequests: d.reviewRequests ? mapConnection(d.reviewRequests, mapPullRequest, 'issueCount') : EMPTY,
     myPullRequests: d.myPullRequests ? mapConnection(d.myPullRequests, mapPullRequest, 'issueCount') : EMPTY,
     assigned: d.assigned ? mapConnection(d.assigned, mapIssue, 'issueCount') : EMPTY,
+    // Search results from SSO-protected organizations come back as null
+    // nodes, each with a SAML error.
+    ssoRestricted: errors.some(isSamlFailure),
   };
 }
 
-/** Converts a GraphQL error into a short, user-facing message. */
-export function describeRepoError(err: { type?: string; message?: string } | undefined): string {
-  if (err?.type === 'NOT_FOUND') return 'Repository not found, or your token cannot access it.';
-  if (err?.type === 'FORBIDDEN') return 'Your token is not allowed to read this repository.';
-  return 'Could not load this repository.';
+const CLASSIC_TOKENS_URL = 'https://github.com/settings/tokens';
+const FINE_GRAINED_TOKENS_URL = 'https://github.com/settings/personal-access-tokens';
+
+/**
+ * True when GitHub withheld a resource because its organization enforces SAML
+ * SSO and the token is not authorized for it. GitHub types these errors
+ * FORBIDDEN and sets `extensions.saml_failure`.
+ */
+export function isSamlFailure(err: GraphQLError | undefined): boolean {
+  return obj(err?.extensions)?.saml_failure === true || /SAML enforcement/i.test(err?.message ?? '');
+}
+
+export function isRateLimited(err: GraphQLError | undefined): boolean {
+  // GitHub has used both spellings for the GraphQL primary rate limit.
+  return err?.type === 'RATE_LIMITED' || err?.type === 'RATE_LIMIT';
+}
+
+/**
+ * Organizations can forbid classic tokens, or fine-grained tokens with a long
+ * lifetime. GitHub's message then says the organization "forbids access via"
+ * that kind of token.
+ */
+function isTokenPolicyFailure(err: GraphQLError | undefined): boolean {
+  const message = err?.message ?? '';
+  return /forbids access via/i.test(message) && /token/i.test(message);
+}
+
+export function classifyRepoError(err: GraphQLError | undefined): RepoErrorKind {
+  // Order matters: SAML and token policy failures are also typed FORBIDDEN.
+  if (isSamlFailure(err)) return 'sso_required';
+  if (isRateLimited(err)) return 'rate_limited';
+  if (isTokenPolicyFailure(err)) return 'token_policy';
+  if (err?.type === 'NOT_FOUND') return 'not_found';
+  if (err?.type === 'FORBIDDEN') return 'forbidden';
+  return 'unknown';
+}
+
+/**
+ * Converts a GraphQL error into a short, user-facing explanation. The wording
+ * is ours; GitHub's message is only used to classify the error.
+ */
+export function describeRepoError(err: GraphQLError | undefined, owner: string): RepoError {
+  const kind = classifyRepoError(err);
+  switch (kind) {
+    case 'sso_required':
+      return {
+        kind,
+        message: `${owner} uses SAML single sign-on and your token is not authorized for it. On your tokens page, choose "Configure SSO" next to the token and authorize ${owner}; no admin is needed.`,
+        help: { url: CLASSIC_TOKENS_URL, label: 'Authorize token' },
+      };
+    case 'token_policy':
+      return {
+        kind,
+        message: `${owner} does not accept this kind of token. Create a token type it allows, or ask an owner of ${owner} to change the policy.`,
+        help: { url: FINE_GRAINED_TOKENS_URL, label: 'Manage tokens' },
+      };
+    case 'not_found':
+      // GitHub also answers NOT_FOUND when a fine-grained token cannot see a
+      // private repository, so the cause cannot be told apart here.
+      return {
+        kind,
+        message: `Repository not found. Check the name for a typo, rename or deletion. A fine-grained token must include this repository, and an owner of ${owner} may need to approve it.`,
+        help: { url: FINE_GRAINED_TOKENS_URL, label: 'Check token access' },
+      };
+    case 'forbidden':
+      return {
+        kind,
+        message: 'Your token is not allowed to read this repository. Check its permissions.',
+        help: { url: FINE_GRAINED_TOKENS_URL, label: 'Check token access' },
+      };
+    case 'rate_limited':
+      return { kind, message: 'GitHub rate limit reached. This will retry on the next refresh.' };
+    case 'unknown':
+      return { kind, message: 'Could not load this repository.' };
+  }
 }

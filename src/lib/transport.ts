@@ -14,6 +14,7 @@ export type AppErrorKind =
   | 'forbidden_operation'
   | 'request_too_large'
   | 'unknown_provider'
+  | 'rate_limited'
   | 'http'
   | 'network'
   | 'keyring'
@@ -55,9 +56,16 @@ export const tokens = {
   clear: (provider: ProviderId) => call<void>('token_clear', { provider }),
 };
 
+export interface GraphQLError {
+  message?: string;
+  path?: (string | number)[];
+  type?: string;
+  extensions?: Record<string, unknown>;
+}
+
 export interface GraphQLResponse<T> {
   data?: T | null;
-  errors?: { message?: string; path?: (string | number)[]; type?: string }[];
+  errors?: GraphQLError[];
 }
 
 export function githubGraphql<T>(query: string, variables: Record<string, unknown>): Promise<GraphQLResponse<T>> {
