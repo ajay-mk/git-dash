@@ -1,4 +1,5 @@
 mod error;
+mod graphql_guard;
 mod token;
 
 use tauri::{webview::WebviewWindowBuilder, Url, WebviewUrl};
