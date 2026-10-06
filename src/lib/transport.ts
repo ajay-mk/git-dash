@@ -1,7 +1,7 @@
 /**
  * Thin wrapper over the Tauri commands implemented in `src-tauri/src/commands.rs`.
- * The access token never crosses this boundary: the frontend can store,
- * check and clear it, but never read it.
+ * Access tokens never cross this boundary: the frontend can store, list and
+ * clear them, but never read one back.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -11,6 +11,8 @@ export type AppErrorKind =
   | 'no_token'
   | 'unauthorized'
   | 'invalid_token_format'
+  | 'invalid_owner'
+  | 'too_many_tokens'
   | 'forbidden_operation'
   | 'request_too_large'
   | 'unknown_provider'
@@ -49,11 +51,29 @@ async function call<T>(command: string, args: Record<string, unknown>): Promise<
   }
 }
 
+/** A per-owner token, described by the login GitHub reports for it. */
+export interface OwnerToken {
+  /** Account or organization login (lowercase) the token is used for. */
+  owner: string;
+  /** Login of the account the token belongs to. */
+  login: string;
+}
+
+export interface TokenSummary {
+  hasDefault: boolean;
+  defaultLogin: string | null;
+  owners: OwnerToken[];
+}
+
 export const tokens = {
-  status: (provider: ProviderId) => call<boolean>('token_status', { provider }),
-  /** Verifies and stores the token; resolves to the account login. */
-  set: (provider: ProviderId, token: string) => call<string>('token_set', { provider, token }),
-  clear: (provider: ProviderId) => call<void>('token_clear', { provider }),
+  list: (provider: ProviderId) => call<TokenSummary>('token_list', { provider }),
+  /**
+   * Verifies and stores a token; resolves to the login it belongs to. Without
+   * `owner` it replaces the default token.
+   */
+  set: (provider: ProviderId, token: string, owner: string | null = null) =>
+    call<string>('token_set', { provider, token, owner }),
+  clear: (provider: ProviderId, owner: string | null = null) => call<void>('token_clear', { provider, owner }),
 };
 
 export interface GraphQLError {
@@ -68,6 +88,14 @@ export interface GraphQLResponse<T> {
   errors?: GraphQLError[];
 }
 
-export function githubGraphql<T>(query: string, variables: Record<string, unknown>): Promise<GraphQLResponse<T>> {
-  return call<GraphQLResponse<T>>('github_graphql', { query, variables });
+/**
+ * Runs a read-only GraphQL query. The backend uses the token configured for
+ * `owner` if there is one, and the default token otherwise.
+ */
+export function githubGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  owner: string | null = null,
+): Promise<GraphQLResponse<T>> {
+  return call<GraphQLResponse<T>>('github_graphql', { query, variables, owner });
 }
