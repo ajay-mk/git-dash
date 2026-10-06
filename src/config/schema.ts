@@ -62,6 +62,11 @@ const NAME_RE = /^[A-Za-z0-9._-]{1,100}$/;
 // control characters.
 const MAX_LABEL_LEN = 50;
 
+/** Whether `owner` is a valid GitHub account or organization login. */
+export function isValidOwner(owner: string): boolean {
+  return OWNER_RE.test(owner);
+}
+
 export function defaultWidget(type: WidgetType): WidgetConfig {
   switch (type) {
     case 'ci':

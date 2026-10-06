@@ -87,6 +87,10 @@ export interface Provider {
   label: string;
   /** Where users create an access token for this provider. */
   tokenHelpUrl: string;
-  fetchRepos(repos: PinnedRepo[]): Promise<RepoBatch>;
-  fetchInbox(config: InboxConfig): Promise<InboxSnapshot>;
+  /**
+   * `tokenOwners` are the owners (lowercase logins) that have their own
+   * access token; everything else is fetched with the default token.
+   */
+  fetchRepos(repos: PinnedRepo[], tokenOwners: readonly string[]): Promise<RepoBatch>;
+  fetchInbox(config: InboxConfig, tokenOwners: readonly string[]): Promise<InboxSnapshot>;
 }

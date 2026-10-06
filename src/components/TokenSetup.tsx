@@ -43,7 +43,8 @@ export function TokenSetup({ onDone, onCancel, reason }: {
             <li>
               <strong>Fine-grained token (recommended):</strong> read-only access to <em>Metadata</em>,{' '}
               <em>Contents</em>, <em>Pull requests</em>, <em>Issues</em>, <em>Commit statuses</em> and{' '}
-              <em>Actions</em>. Note that a fine-grained token covers one account or organization.
+              <em>Actions</em>. A fine-grained token covers one account or organization; you can add tokens
+              for other organizations later in Settings.
             </li>
             <li>
               <strong>Classic token:</strong> works across organizations. No scopes are needed for public

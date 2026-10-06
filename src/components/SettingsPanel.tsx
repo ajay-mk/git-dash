@@ -3,6 +3,7 @@ import {
   ConfigError,
   defaultWidget,
   defaultWidgets,
+  isValidOwner,
   MAX_ITEMS,
   MAX_REPOS,
   MIN_ITEMS,
@@ -18,6 +19,7 @@ import {
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
+import { tokens, type OwnerToken } from '../lib/transport';
 
 type Update = (fn: (c: DashboardConfig) => DashboardConfig) => void;
 
@@ -241,14 +243,144 @@ function Backup({ config, update }: { config: DashboardConfig; update: Update })
   );
 }
 
-export function SettingsPanel({ open, onClose, config, update, viewer, onChangeToken, onSignOut }: {
+const MAX_OWNER_TOKENS = 20;
+
+/**
+ * Per-owner tokens: fine-grained GitHub tokens only cover one account or
+ * organization, so each owner can get its own. Only the owner and the login
+ * GitHub reports for the token are ever shown; tokens cannot be read back.
+ */
+function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: () => void }) {
+  const [owner, setOwner] = useState('');
+  const [token, setToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const tokenInput = useRef<HTMLInputElement>(null);
+
+  const replacing = owners.some((o) => o.owner === owner.trim().toLowerCase());
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    const name = owner.trim();
+    if (!isValidOwner(name)) return setError('Enter a GitHub account or organization name, e.g. acme.');
+    if (!replacing && owners.length >= MAX_OWNER_TOKENS) {
+      return setError(`You can add up to ${MAX_OWNER_TOKENS} tokens.`);
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await tokens.set('github', token, name);
+      setOwner('');
+      setToken('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save token');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(name: string) {
+    setError(null);
+    try {
+      await tokens.clear('github', name);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove token');
+    }
+  }
+
+  return (
+    <>
+      <p className="hint">
+        Fine-grained tokens cover a single account or organization. Add one per owner and git-dash uses it for
+        that owner&apos;s repositories; everything else uses the default token.
+      </p>
+      {owners.length > 0 && (
+        <ul className="token-list">
+          {owners.map((o) => (
+            <li key={o.owner} className="token-item">
+              <span className="token-item-name">
+                <strong>{o.owner}</strong> <span className="muted">via {o.login}</span>
+              </span>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setOwner(o.owner);
+                  setToken('');
+                  tokenInput.current?.focus();
+                }}
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                className="icon-btn danger"
+                aria-label={`Remove token for ${o.owner}`}
+                onClick={() => void remove(o.owner)}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="token-form" onSubmit={save}>
+        <input
+          type="text"
+          aria-label="Account or organization"
+          placeholder="Account or organization"
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={39}
+          value={owner}
+          onChange={(e) => setOwner(e.target.value)}
+        />
+        <input
+          ref={tokenInput}
+          type="password"
+          aria-label="Access token for this owner"
+          placeholder="github_pat_…"
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={255}
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={busy || owner.trim().length === 0 || token.trim().length === 0}
+        >
+          {busy ? 'Verifying…' : replacing ? 'Replace' : 'Add'}
+        </button>
+      </form>
+      {error && <p className="error-text" role="alert">{error}</p>}
+    </>
+  );
+}
+
+export function SettingsPanel({
+  open,
+  onClose,
+  config,
+  update,
+  viewer,
+  ownerTokens,
+  onChangeToken,
+  onSignOut,
+  onOwnerTokensChanged,
+}: {
   open: boolean;
   onClose: () => void;
   config: DashboardConfig;
   update: Update;
   viewer: string | null;
+  ownerTokens: OwnerToken[];
   onChangeToken: () => void;
   onSignOut: () => void;
+  onOwnerTokensChanged: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -315,6 +447,10 @@ export function SettingsPanel({ open, onClose, config, update, viewer, onChangeT
             </label>
             <NumberField label="Items per group" value={inbox.limit} onChange={(limit) => setInbox({ limit })} />
           </fieldset>
+          <p className="hint">
+            Fetched with the default token, plus any per-owner tokens that belong to the same GitHub account.
+            Items only visible to a token for another account are not shown.
+          </p>
         </section>
 
         <section className="settings-section">
@@ -351,8 +487,11 @@ export function SettingsPanel({ open, onClose, config, update, viewer, onChangeT
         </section>
 
         <section className="settings-section">
-          <h3>Account</h3>
-          <p>{viewer ? <>Connected to GitHub as <strong>{viewer}</strong>.</> : 'Connected to GitHub.'}</p>
+          <h3>Access tokens</h3>
+          <p>
+            {viewer ? <>Default token: GitHub account <strong>{viewer}</strong>.</> : 'Default token is set.'}
+          </p>
+          <p className="hint">Used for the &ldquo;Needs you&rdquo; sidebar and any owner without its own token.</p>
           <div className="actions">
             <button type="button" className="btn" onClick={onChangeToken}>
               Replace token
@@ -361,6 +500,8 @@ export function SettingsPanel({ open, onClose, config, update, viewer, onChangeT
               Remove token
             </button>
           </div>
+          <h3>Per-owner tokens</h3>
+          <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
         </section>
 
         <section className="settings-section">

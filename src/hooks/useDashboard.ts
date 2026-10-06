@@ -39,18 +39,23 @@ function asAppError(err: unknown): AppError {
  * on the configured interval, and when the window regains focus after the
  * data went stale. Polling pauses while the window is hidden.
  */
-export function useDashboard(config: DashboardConfig, enabled: boolean) {
+export function useDashboard(config: DashboardConfig, tokenOwners: readonly string[], enabled: boolean) {
   const [state, setState] = useState<DashboardState>(INITIAL);
   const requestId = useRef(0);
   const lastFetch = useRef(0);
 
   // Only refetch when data-affecting settings change (not theme etc.).
-  const fetchKey = useMemo(() => JSON.stringify([config.repos, config.inbox]), [config.repos, config.inbox]);
+  const fetchKey = useMemo(
+    () => JSON.stringify([config.repos, config.inbox, tokenOwners]),
+    [config.repos, config.inbox, tokenOwners],
+  );
   const configRef = useRef(config);
+  const ownersRef = useRef(tokenOwners);
   // Declared before the fetch effect so it runs first in the same commit.
   useEffect(() => {
     configRef.current = config;
-  }, [config]);
+    ownersRef.current = tokenOwners;
+  }, [config, tokenOwners]);
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current;
@@ -59,11 +64,12 @@ export function useDashboard(config: DashboardConfig, enabled: boolean) {
     // screen immediately; other errors stay visible until the reload finishes.
     setState((s) => ({ ...s, loading: true, error: s.error && isAuthError(s.error) ? null : s.error }));
     const { repos, inbox } = configRef.current;
+    const owners = ownersRef.current;
     const provider = providers.github;
 
     const [repoRes, inboxRes] = await Promise.allSettled([
-      repos.length > 0 ? provider.fetchRepos(repos) : Promise.resolve({ repos: new Map(), rateLimit: null }),
-      inbox.enabled ? provider.fetchInbox(inbox) : Promise.resolve(null),
+      repos.length > 0 ? provider.fetchRepos(repos, owners) : Promise.resolve({ repos: new Map(), rateLimit: null }),
+      inbox.enabled ? provider.fetchInbox(inbox, owners) : Promise.resolve(null),
     ]);
     if (id !== requestId.current) return; // a newer refresh superseded this one
 

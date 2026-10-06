@@ -8,7 +8,7 @@ import { loadConfig, saveConfig } from './config/storage';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
-import { tokens } from './lib/transport';
+import { tokens, type TokenSummary } from './lib/transport';
 
 type AuthState = 'checking' | 'missing' | 'ready' | 'replacing';
 
@@ -17,6 +17,7 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState>('checking');
   const [authReason, setAuthReason] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tokenInfo, setTokenInfo] = useState<TokenSummary | null>(null);
 
   const update = useCallback((fn: (c: DashboardConfig) => DashboardConfig) => {
     setConfig((prev) => {
@@ -26,9 +27,18 @@ export default function App() {
     });
   }, []);
 
+  const reloadTokens = useCallback(async () => {
+    const info = await tokens.list('github');
+    setTokenInfo(info);
+    return info;
+  }, []);
+
   useEffect(() => {
-    tokens.status('github').then(
-      (has) => setAuth(has ? 'ready' : 'missing'),
+    tokens.list('github').then(
+      (info) => {
+        setTokenInfo(info);
+        setAuth(info.hasDefault ? 'ready' : 'missing');
+      },
       (err: Error) => {
         setAuthReason(err.message);
         setAuth('missing');
@@ -42,7 +52,8 @@ export default function App() {
     else root.dataset.theme = config.theme;
   }, [config.theme]);
 
-  const dash = useDashboard(config, auth === 'ready');
+  const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
+  const dash = useDashboard(config, tokenOwners, auth === 'ready');
 
   // A revoked or expired token sends the user back to the setup screen.
   const tokenRejected = isAuthError(dash.error);
@@ -67,6 +78,7 @@ export default function App() {
         onDone={() => {
           setAuthReason(null);
           setAuth('ready');
+          void reloadTokens().catch(() => undefined);
           void dash.refresh();
         }}
         {...(auth === 'replacing' ? { onCancel: () => setAuth('ready') } : {})}
@@ -134,7 +146,18 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         config={config}
         update={update}
-        viewer={dash.inbox?.viewer || null}
+        viewer={tokenInfo?.defaultLogin ?? (dash.inbox?.viewer || null)}
+        ownerTokens={tokenInfo?.owners ?? []}
+        onOwnerTokensChanged={() => {
+          const before = tokenOwners.join(',');
+          void reloadTokens().then(
+            (info) => {
+              // A changed owner set refetches on its own; a replaced token does not.
+              if (info.owners.map((o) => o.owner).join(',') === before) void dash.refresh();
+            },
+            () => undefined,
+          );
+        }}
         onChangeToken={() => {
           setSettingsOpen(false);
           setAuth('replacing');
@@ -144,6 +167,7 @@ export default function App() {
           void tokens.clear('github').finally(() => {
             setAuthReason(null);
             setAuth('missing');
+            void reloadTokens().catch(() => undefined);
           });
         }}
       />
