@@ -32,7 +32,7 @@ const repo = (over: Partial<RepoSnapshot> = {}): RepoResult => ({
 describe('repoHealth', () => {
   it('ranks states by severity', () => {
     expect(repoHealth(undefined)).toBeNull();
-    expect(repoHealth({ ok: false, error: 'x' })).toBe('error');
+    expect(repoHealth({ ok: false, error: { kind: 'unknown', message: 'x' } })).toBe('error');
     expect(repoHealth(repo({ ci: 'failure', pullRequests: { total: 1, items: [pr({ ci: 'failure' })] } }))).toBe('failing');
     expect(repoHealth(repo({ pullRequests: { total: 1, items: [pr({ review: 'changes_requested' })] } }))).toBe('attention');
     expect(repoHealth(repo({ ci: 'pending' }))).toBe('pending');

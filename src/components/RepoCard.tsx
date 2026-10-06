@@ -1,6 +1,6 @@
 import type { PinnedRepo, WidgetConfig } from '../config/schema';
 import { HEALTH_LABELS, prNeedsAttention, repoHealth } from '../lib/health';
-import type { RepoResult, RepoSnapshot } from '../providers/types';
+import type { RepoError, RepoResult, RepoSnapshot } from '../providers/types';
 import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
 import { CiIcon } from './StatusIcons';
@@ -72,6 +72,20 @@ function Widget({ widget, data }: { widget: WidgetConfig; data: RepoSnapshot }) 
   }
 }
 
+function RepoErrorText({ error }: { error: RepoError }) {
+  return (
+    <p className="error-text">
+      {error.message}
+      {error.help && (
+        <>
+          {' '}
+          <ExternalLink href={error.help.url}>{error.help.label}</ExternalLink>
+        </>
+      )}
+    </p>
+  );
+}
+
 export function RepoCard({ repo, result }: { repo: PinnedRepo; result: RepoResult | undefined }) {
   const health = repoHealth(result);
   const data = result?.ok ? result.data : null;
@@ -98,7 +112,7 @@ export function RepoCard({ repo, result }: { repo: PinnedRepo; result: RepoResul
       </header>
 
       {!result && <p className="empty">Loading…</p>}
-      {result && !result.ok && <p className="error-text">{result.error}</p>}
+      {result && !result.ok && <RepoErrorText error={result.error} />}
       {data && repo.widgets.map((w) => <Widget key={w.type} widget={w} data={data} />)}
       {data && repo.widgets.length === 0 && <p className="empty">No widgets enabled</p>}
     </article>

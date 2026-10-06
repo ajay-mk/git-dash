@@ -61,7 +61,24 @@ export interface RepoSnapshot {
   issues: Counted<IssueItem> | null;
 }
 
-export type RepoResult = { ok: true; data: RepoSnapshot } | { ok: false; error: string };
+export type RepoErrorKind =
+  | 'not_found'
+  | 'sso_required'
+  | 'token_policy'
+  | 'forbidden'
+  | 'rate_limited'
+  | 'unknown';
+
+/** Why a repository could not be loaded. */
+export interface RepoError {
+  kind: RepoErrorKind;
+  /** Short explanation written by us; never raw API text. */
+  message: string;
+  /** Provider page where the user can fix the problem. */
+  help?: { url: string; label: string };
+}
+
+export type RepoResult = { ok: true; data: RepoSnapshot } | { ok: false; error: RepoError };
 
 /** Things across all repositories that need the viewer's attention. */
 export interface InboxSnapshot {
@@ -69,6 +86,8 @@ export interface InboxSnapshot {
   reviewRequests: Counted<PullRequestItem>;
   myPullRequests: Counted<PullRequestItem>;
   assigned: Counted<IssueItem>;
+  /** Some results were withheld because an organization requires SSO the token is not authorized for. */
+  ssoRestricted: boolean;
 }
 
 export interface RateLimit {

@@ -40,6 +40,17 @@ scopes; private repositories need `repo`, which also grants write access.
 git-dash only sends read-only queries, but prefer fine-grained tokens where
 possible.
 
+**Organizations with SAML SSO.** A classic token must be authorized for each
+organization that enforces SSO: on <https://github.com/settings/tokens>, choose
+*Configure SSO* next to the token and authorize the organization. You can do
+this yourself; no admin is needed. Until then, the organization's repositories
+show an SSO error and the "Needs you" list notes that some results are hidden.
+
+**Organization token policies.** An organization can require owner approval
+for fine-grained tokens, or forbid classic or long-lived tokens. While a
+fine-grained token is pending approval, or when a repository was not selected
+for it, GitHub reports the repository as not found.
+
 ## Development
 
 Prerequisites: Node.js 22 (see `.nvmrc`), a stable Rust toolchain, and the

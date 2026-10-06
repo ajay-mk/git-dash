@@ -118,6 +118,7 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 
 .empty { color: var(--muted); margin: 6px 0; }
 .error-text { color: var(--bad); margin: 6px 0; }
+.notice { color: var(--muted); font-size: 12px; margin: 6px 0; }
 .ok-text { color: var(--ok); margin: 6px 0; }
 .hint { color: var(--muted); margin: 0 0 8px; }
 
