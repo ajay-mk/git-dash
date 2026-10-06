@@ -1,4 +1,5 @@
 mod error;
+mod github;
 mod graphql_guard;
 mod token;
 
