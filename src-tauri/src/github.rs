@@ -46,20 +46,20 @@ impl GitHubClient {
             status if is_rate_limited(status, response.headers()) => {
                 return Err(Error::RateLimited)
             }
+            StatusCode::FORBIDDEN => {
+                // The rate-limit headers are optional, so also check the body.
+                let body = read_body(response).await.unwrap_or_default();
+                return Err(if mentions_rate_limit(&body) {
+                    Error::RateLimited
+                } else {
+                    Error::Http(StatusCode::FORBIDDEN.as_u16())
+                });
+            }
             status if !status.is_success() => return Err(Error::Http(status.as_u16())),
             _ => {}
         }
 
-        if response
-            .content_length()
-            .is_some_and(|len| len as usize > MAX_RESPONSE_BYTES)
-        {
-            return Err(Error::RequestTooLarge);
-        }
-        let body = response.bytes().await?;
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(Error::RequestTooLarge);
-        }
+        let body = read_body(response).await?;
         serde_json::from_slice(&body).map_err(|_| Error::Network("invalid response".into()))
     }
 
@@ -82,8 +82,32 @@ fn login_from(body: &Value) -> Result<String> {
         .ok_or_else(|| Error::Network("GitHub could not verify the token right now".into()))
 }
 
+async fn read_body(response: reqwest::Response) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|len| len as usize > MAX_RESPONSE_BYTES)
+    {
+        return Err(Error::RequestTooLarge);
+    }
+    let body = response.bytes().await?;
+    if body.len() > MAX_RESPONSE_BYTES {
+        return Err(Error::RequestTooLarge);
+    }
+    Ok(body.to_vec())
+}
+
+/// A 403 without rate-limit headers can still be a secondary rate limit;
+/// GitHub then says so in the message ("You have exceeded a secondary rate
+/// limit").
+fn mentions_rate_limit(body: &[u8]) -> bool {
+    String::from_utf8_lossy(body)
+        .to_ascii_lowercase()
+        .contains("rate limit")
+}
+
 /// GitHub signals secondary rate limits with 429, or with 403 plus either
-/// `retry-after` or `x-ratelimit-remaining: 0`. A bare 403 is something else.
+/// `retry-after` or `x-ratelimit-remaining: 0`. Other 403s are checked with
+/// `mentions_rate_limit`.
 fn is_rate_limited(status: StatusCode, headers: &header::HeaderMap) -> bool {
     match status {
         StatusCode::TOO_MANY_REQUESTS => true,
@@ -123,6 +147,16 @@ mod tests {
             StatusCode::FORBIDDEN,
             &headers(&[("x-ratelimit-remaining", "0")])
         ));
+    }
+
+    #[test]
+    fn detects_rate_limits_from_the_body() {
+        let body = br#"{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again."}"#;
+        assert!(mentions_rate_limit(body));
+        assert!(!mentions_rate_limit(
+            br#"{"message":"Resource not accessible by personal access token"}"#
+        ));
+        assert!(!mentions_rate_limit(b""));
     }
 
     #[test]
