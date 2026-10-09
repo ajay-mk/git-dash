@@ -121,6 +121,7 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .notice { color: var(--muted); font-size: 12px; margin: 6px 0; }
 .ok-text { color: var(--ok); margin: 6px 0; }
 .hint { color: var(--muted); margin: 0 0 8px; }
+.muted { color: var(--muted); }
 
 /* ---------- Layout ---------- */
 .app {
@@ -305,6 +306,11 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .settings-section h3 { font-size: 13px; }
 .settings-section p { margin: 0; }
 
+.token-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.token-item { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+.token-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.token-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.token-form input { flex: 1 1 140px; min-width: 0; }
 .add-repo { display: flex; gap: 8px; }
 .add-repo input { flex: 1; min-width: 0; }
 .repo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }

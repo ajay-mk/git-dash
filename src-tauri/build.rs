@@ -4,7 +4,7 @@ fn main() {
     // `capabilities/` before the frontend can call it.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
-            "token_status",
+            "token_list",
             "token_set",
             "token_clear",
             "github_graphql",

@@ -211,7 +211,7 @@ describe('github provider', () => {
       data: { r0: { nameWithOwner: 'acme/api' }, r1: null },
       errors: [{ ...SAML_ERROR, path: ['r1'] }],
     });
-    const { repos } = await github.fetchRepos([repo, other]);
+    const { repos } = await github.fetchRepos([repo, other], []);
     expect(repos.get('github:acme/api')?.ok).toBe(true);
     const failed = repos.get('github:corp/secret');
     expect(failed?.ok === false && failed.error.kind).toBe('sso_required');
@@ -223,16 +223,16 @@ describe('github provider', () => {
       data: { r0: { nameWithOwner: 'acme/api', defaultBranchRef: null } },
       errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible', path: ['r0', 'defaultBranchRef'] }],
     });
-    const { repos } = await github.fetchRepos([repo]);
+    const { repos } = await github.fetchRepos([repo], []);
     const result = repos.get('github:acme/api');
     expect(result?.ok === false && result.error.kind).toBe('forbidden');
   });
 
   it('reports a rate limit when GitHub returns no data', async () => {
     graphql.mockResolvedValueOnce({ data: null, errors: [RATE_LIMIT_ERROR] });
-    await expect(github.fetchRepos([repo])).rejects.toThrow(/rate limit/);
+    await expect(github.fetchRepos([repo], [])).rejects.toThrow(/rate limit/);
     graphql.mockResolvedValueOnce({ data: null, errors: [RATE_LIMIT_ERROR] });
-    await expect(github.fetchInbox({ enabled: true, limit: 5, reviewRequests: true, myPullRequests: true, assigned: true })).rejects.toThrow(/rate limit/);
+    await expect(github.fetchInbox({ enabled: true, limit: 5, reviewRequests: true, myPullRequests: true, assigned: true }, [])).rejects.toThrow(/rate limit/);
   });
 
   it('passes SSO errors through to the inbox', async () => {
@@ -240,7 +240,7 @@ describe('github provider', () => {
       data: { viewer: { login: 'me' }, assigned: { issueCount: 1, nodes: [null] } },
       errors: [{ ...SAML_ERROR, path: ['assigned', 'nodes', 0] }],
     });
-    const inbox = await github.fetchInbox({ enabled: true, limit: 5, reviewRequests: false, myPullRequests: false, assigned: true });
+    const inbox = await github.fetchInbox({ enabled: true, limit: 5, reviewRequests: false, myPullRequests: false, assigned: true }, []);
     expect(inbox.ssoRestricted).toBe(true);
   });
 });

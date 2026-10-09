@@ -20,8 +20,10 @@ user ever holds their credentials.
 
 | Concern | How it is handled |
 | --- | --- |
-| Token storage | Stored in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux). Never written to disk by the app, never put in config files or exports. |
-| Token exposure to the UI | The webview never receives the token. The Rust backend attaches it to requests; the frontend can only *set*, *clear* or *check for* a token (`src-tauri/src/commands.rs`). |
+| Token storage | A default token plus optional per-owner tokens (one per GitHub account or organization), each stored as its own entry in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux). Never written to disk by the app, never put in config files or exports. A non-secret index entry records which owners have a token and the login GitHub reported for each. |
+| Token exposure to the UI | The webview never receives a token. The Rust backend attaches it to requests; the frontend can only *set*, *clear* or *list* tokens, and the list contains only owner names and logins (`src-tauri/src/commands.rs`). |
+| Token selection | The frontend passes an owner name (or nothing) with each query and the backend picks the token: that owner's token if configured, the default token otherwise. A per-owner token is only used for that owner's repositories and for the "Needs you" searches, and like every token it is only ever sent to `api.github.com`. |
+| Keychain entry names | Fixed allow-list: the frontend cannot name keychain entries. Owners are validated against GitHub's login rules (1-39 letters, digits or hyphens; no `:`), lowercased, and mapped to `github:owner:<owner>`, so they cannot collide with the default (`github`) or index (`github:index`) entries. At most 20 per-owner tokens are stored. |
 | Network destinations | The backend only talks to `https://api.github.com/graphql`, with HTTPS enforced and redirects disabled so the token cannot be forwarded elsewhere. The webview's CSP blocks all network access other than IPC to the backend. |
 | Write access | The backend rejects any GraphQL document containing a `mutation` or `subscription` operation (`src-tauri/src/graphql_guard.rs`), so even a token with write scopes cannot be used to change anything through git-dash. Read-only tokens are still recommended. |
 | Injection | User input (owners, repo names, labels) is only ever passed as GraphQL variables, never interpolated into query text. API data is rendered as text (raw HTML rendering is forbidden by lint rules). |

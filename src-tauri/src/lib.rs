@@ -37,7 +37,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
-            commands::token_status,
+            commands::token_list,
             commands::token_set,
             commands::token_clear,
             commands::github_graphql,
