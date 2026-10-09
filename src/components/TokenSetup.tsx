@@ -75,7 +75,7 @@ export function TokenSetup({ onDone, onCancel, reason }: {
         {error && <p className="error-text" role="alert">{error}</p>}
         <div className="actions">
           {onCancel && (
-            <button type="button" className="btn" onClick={onCancel}>
+            <button type="button" className="btn" onClick={onCancel} disabled={busy}>
               Cancel
             </button>
           )}
