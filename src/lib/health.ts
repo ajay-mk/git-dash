@@ -21,9 +21,9 @@ export function prNeedsAttention(pr: PullRequestItem): boolean {
 export function repoHealth(result: RepoResult | undefined): Health | null {
   if (!result) return null;
   if (!result.ok) return 'error';
-  const { ci, pullRequests } = result.data;
+  const { ci, prsNeedingAttention } = result.data;
   if (ci === 'failure') return 'failing';
-  if (pullRequests?.items.some(prNeedsAttention)) return 'attention';
+  if (prsNeedingAttention > 0) return 'attention';
   if (ci === 'pending') return 'pending';
   return 'ok';
 }

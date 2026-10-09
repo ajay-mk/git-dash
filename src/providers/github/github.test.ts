@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PinnedRepo } from '../../config/schema';
 import { mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
-import { buildReposQuery } from './queries';
+import { buildReposQuery, OPEN_PRS_FETCHED } from './queries';
 
 const repo: PinnedRepo = {
   provider: 'github',
@@ -31,8 +31,8 @@ describe('buildReposQuery', () => {
     expect(Object.keys(variables)).toEqual(['o0', 'n0']);
   });
 
-  it('over-fetches PRs when drafts are hidden', () => {
-    expect(buildReposQuery([repo]).variables.pr0).toBe(4);
+  it('fetches more PRs than the widget shows', () => {
+    expect(buildReposQuery([repo]).variables.pr0).toBe(OPEN_PRS_FETCHED);
   });
 });
 
@@ -63,6 +63,19 @@ describe('mappers', () => {
     expect(snap.pullRequests?.items.map((p) => p.number)).toEqual([2, 1]);
     expect(snap.pullRequests?.items[0]).toMatchObject({ review: 'approved', ci: 'success' });
     expect(snap.issues?.total).toBe(1);
+  });
+
+  it('counts PRs needing attention beyond the display limit, ignoring drafts', () => {
+    const failing = { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } };
+    const nodes = [
+      { number: 5, title: 'a', url: 'https://github.com/acme/api/pull/5' },
+      { number: 4, title: 'b', url: 'https://github.com/acme/api/pull/4' },
+      { number: 3, title: 'c', url: 'https://github.com/acme/api/pull/3', isDraft: true, ...failing },
+      { number: 2, title: 'd', url: 'https://github.com/acme/api/pull/2', ...failing },
+    ];
+    const snap = mapRepository({ pullRequests: { totalCount: 4, nodes } }, repo);
+    expect(snap.pullRequests?.items.map((p) => p.number)).toEqual([5, 4]);
+    expect(snap.prsNeedingAttention).toBe(1);
   });
 
   it('drops unsafe URLs and label colours from API data', () => {

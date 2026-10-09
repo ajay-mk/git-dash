@@ -25,6 +25,7 @@ const repo = (over: Partial<RepoSnapshot> = {}): RepoResult => ({
     defaultBranch: 'main',
     ci: 'success',
     pullRequests: { total: 0, items: [] },
+    prsNeedingAttention: 0,
     issues: null,
     ...over,
   },
@@ -34,14 +35,14 @@ describe('repoHealth', () => {
   it('ranks states by severity', () => {
     expect(repoHealth(undefined)).toBeNull();
     expect(repoHealth({ ok: false, error: 'x' })).toBe('error');
-    expect(repoHealth(repo({ ci: 'failure', pullRequests: { total: 1, items: [pr({ ci: 'failure' })] } }))).toBe('failing');
-    expect(repoHealth(repo({ pullRequests: { total: 1, items: [pr({ review: 'changes_requested' })] } }))).toBe('attention');
+    expect(repoHealth(repo({ ci: 'failure', prsNeedingAttention: 1 }))).toBe('failing');
+    expect(repoHealth(repo({ prsNeedingAttention: 1 }))).toBe('attention');
     expect(repoHealth(repo({ ci: 'pending' }))).toBe('pending');
     expect(repoHealth(repo())).toBe('ok');
   });
 
-  it('ignores draft PRs for attention', () => {
-    expect(repoHealth(repo({ pullRequests: { total: 1, items: [pr({ isDraft: true, ci: 'failure' })] } }))).toBe('ok');
+  it('counts PRs needing attention even when none are displayed', () => {
+    expect(repoHealth(repo({ pullRequests: { total: 30, items: [pr()] }, prsNeedingAttention: 2 }))).toBe('attention');
   });
 });
 

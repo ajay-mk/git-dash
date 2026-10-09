@@ -60,6 +60,8 @@ export interface RepoSnapshot {
   /** CI on the head of the default branch; `null` when the widget is off. */
   ci: CiState | null;
   pullRequests: Counted<PullRequestItem> | null;
+  /** Open PRs needing attention among all fetched, not just those displayed. */
+  prsNeedingAttention: number;
   issues: Counted<IssueItem> | null;
 }
 

@@ -6,7 +6,7 @@
  * GraphQL variable, never interpolated into the query string.
  */
 
-import type { PinnedRepo, WidgetConfig } from '../../config/schema';
+import type { PinnedRepo } from '../../config/schema';
 
 const CI_ROLLUP = 'statusCheckRollup { state }';
 
@@ -24,10 +24,12 @@ const ISSUE_FIELDS = `
   repository { nameWithOwner }
 `;
 
-/** Number of PRs to request so that `limit` remain after hiding drafts. */
-export function prFetchCount(widget: Extract<WidgetConfig, { type: 'pullRequests' }>): number {
-  return widget.hideDrafts ? Math.min(widget.limit * 2, 40) : widget.limit;
-}
+/**
+ * Open PRs fetched per repository. More than the widget shows, so that card
+ * health sees PRs beyond the display limit and hiding drafts still leaves
+ * enough to show.
+ */
+export const OPEN_PRS_FETCHED = 50;
 
 export function repoAlias(index: number): string {
   return `r${index}`;
@@ -58,7 +60,7 @@ export function buildReposQuery(repos: PinnedRepo[]): BuiltQuery {
       if (widget.type === 'pullRequests') {
         const first = `pr${i}`;
         varDefs.push(`$${first}: Int!`);
-        variables[first] = prFetchCount(widget);
+        variables[first] = OPEN_PRS_FETCHED;
         parts.push(
           `pullRequests(states: OPEN, first: $${first}, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { ${PR_FIELDS} } }`,
         );

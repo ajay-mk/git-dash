@@ -6,6 +6,7 @@
  */
 
 import type { PinnedRepo } from '../../config/schema';
+import { prNeedsAttention } from '../../lib/health';
 import { isSafeExternalUrl } from '../../lib/url';
 import type {
   CiState,
@@ -125,11 +126,13 @@ export function mapRepository(raw: unknown, config: PinnedRepo): RepoSnapshot {
   const widgets = new Map(config.widgets.map((w) => [w.type, w]));
 
   let pullRequests: Counted<PullRequestItem> | null = null;
+  let prsNeedingAttention = 0;
   const prWidget = widgets.get('pullRequests');
   if (prWidget?.type === 'pullRequests') {
     const all = mapConnection(r.pullRequests, mapPullRequest);
     const visible = prWidget.hideDrafts ? all.items.filter((pr) => !pr.isDraft) : all.items;
     pullRequests = { total: all.total, items: visible.slice(0, prWidget.limit) };
+    prsNeedingAttention = all.items.filter(prNeedsAttention).length;
   }
 
   return {
@@ -140,6 +143,7 @@ export function mapRepository(raw: unknown, config: PinnedRepo): RepoSnapshot {
     defaultBranch: str(branch?.name),
     ci: widgets.has('ci') ? mapCi(obj(branch?.target)?.statusCheckRollup) : null,
     pullRequests,
+    prsNeedingAttention,
     issues: widgets.has('issues') ? mapConnection(r.issues, mapIssue) : null,
   };
 }
