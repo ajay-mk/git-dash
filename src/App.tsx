@@ -16,6 +16,7 @@ export default function App() {
   const [config, setConfig] = useState<DashboardConfig>(loadConfig);
   const [auth, setAuth] = useState<AuthState>('checking');
   const [authReason, setAuthReason] = useState<string | null>(null);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const update = useCallback((fn: (c: DashboardConfig) => DashboardConfig) => {
@@ -111,6 +112,7 @@ export default function App() {
       {config.inbox.enabled && <InboxPanel config={config.inbox} inbox={dash.inbox} error={dash.inboxError} />}
 
       <main className="content">
+        {signOutError && <p className="banner error-text">{signOutError}</p>}
         {dash.error && <p className="banner error-text">{dash.error.message}</p>}
         {config.repos.length === 0 ? (
           <div className="empty-state">
@@ -141,10 +143,16 @@ export default function App() {
         }}
         onSignOut={() => {
           setSettingsOpen(false);
-          void tokens.clear('github').finally(() => {
-            setAuthReason(null);
-            setAuth('missing');
-          });
+          setSignOutError(null);
+          // Only leave the dashboard once the keychain entry is really gone;
+          // otherwise the token would quietly come back on the next launch.
+          tokens.clear('github').then(
+            () => {
+              setAuthReason(null);
+              setAuth('missing');
+            },
+            (err: Error) => setSignOutError(`Could not remove the token: ${err.message}`),
+          );
         }}
       />
     </div>
