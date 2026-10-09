@@ -1,5 +1,5 @@
 import type { PinnedRepo, WidgetConfig } from '../config/schema';
-import { HEALTH_LABELS, prNeedsAttention, repoHealth } from '../lib/health';
+import { HEALTH_LABELS, repoHealth } from '../lib/health';
 import type { RepoResult, RepoSnapshot } from '../providers/types';
 import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
@@ -30,7 +30,8 @@ function Widget({ widget, data }: { widget: WidgetConfig; data: RepoSnapshot }) 
     case 'pullRequests': {
       const prs = data.pullRequests;
       if (!prs) return null;
-      const attention = prs.items.filter(prNeedsAttention).length;
+      // Counted across all fetched PRs, so it matches the card's health.
+      const attention = data.prsNeedingAttention;
       return (
         <Section
           title="Pull requests"
