@@ -1,0 +1,159 @@
+name: Release
+
+# Pushing a version tag (vX.Y.Z) builds installers for every platform and
+# attaches them, with SHA-256 checksums, to a draft GitHub Release. Publishing
+# the draft stays a manual step.
+on:
+  push:
+    tags: ['v*']
+
+# Least privilege: only the final job, which creates the release, can write.
+# The build jobs run third-party code (npm packages, Cargo build scripts) and
+# never hold a token that can change the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify the tag matches the app version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: node scripts/version.mjs check "$GITHUB_REF_NAME"
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple Silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # The oldest supported Ubuntu, so the binaries link against an older
+          # glibc and run on more distributions.
+          - name: Linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev patchelf
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      # tauri-action runs `npm run tauri build`, which still runs because it is
+      # invoked explicitly; ignore-scripts only stops dependency install hooks.
+      - run: npm ci --ignore-scripts
+
+      - name: Build installers
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        env:
+          # Ad-hoc signature, so the app runs on Apple Silicon (which refuses
+          # unsigned code). It is not trusted by Gatekeeper; see README.
+          # To sign and notarize, replace this with the certificate's identity
+          # and add (all from repository secrets):
+          #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+          #   APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+          # Do not add them while the secrets are unset: an empty
+          # APPLE_CERTIFICATE still makes the bundler try to import it.
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+          # Windows signing goes in tauri.conf.json (bundle.windows.signCommand
+          # or certificateThumbprint) together with a step that installs the
+          # certificate from a secret.
+        with:
+          args: --target ${{ matrix.target }}
+
+      # Keep only the installers: the action also reports the raw .app bundle
+      # on macOS, which is a directory and is shipped inside the .dmg anyway.
+      - name: Collect installers
+        shell: bash
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          mkdir -p out
+          node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            for (const file of JSON.parse(process.env.ARTIFACT_PATHS)) {
+              if (!fs.statSync(file).isFile()) continue;
+              fs.copyFileSync(file, path.join("out", path.basename(file)));
+              console.log(path.basename(file));
+            }
+          '
+          test -n "$(ls out)"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Create draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          path: out
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: out
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        working-directory: out
+        run: |
+          gh release create "$TAG" ./* \
+            --draft \
+            --verify-tag \
+            --title "git-dash $TAG" \
+            --generate-notes \
+            --notes "These builds are not code-signed yet. See the README's \"Installing\" section for what to expect, and verify downloads against SHA256SUMS.txt."

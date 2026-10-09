@@ -37,6 +37,11 @@ export default tseslint.config(
     },
   },
   {
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.node },
+  },
+  {
     // Tests deliberately feed malicious URLs to the sanitisers.
     files: ['**/*.test.ts'],
     rules: { 'no-script-url': 'off' },

@@ -21,6 +21,38 @@ Built with [Tauri 2](https://tauri.app), React and TypeScript. GitHub is the
 first provider; the data layer is provider-agnostic (`src/providers/`) so other
 services can be added later.
 
+## Installing
+
+Download the installer for your platform from the
+[Releases](../../releases) page:
+
+| Platform | File |
+| --- | --- |
+| macOS (Apple Silicon) | `git-dash_<version>_aarch64.dmg` |
+| macOS (Intel) | `git-dash_<version>_x64.dmg` |
+| Windows | `git-dash_<version>_x64-setup.exe` or `git-dash_<version>_x64_en-US.msi` |
+| Linux | `.AppImage`, `.deb` or `.rpm` |
+
+Each release includes `SHA256SUMS.txt`. Check your download against it before
+running it, for example with `sha256sum -c SHA256SUMS.txt --ignore-missing`
+(Linux), `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` (macOS) or
+`Get-FileHash <file>` (Windows PowerShell).
+
+**The builds are not code-signed yet**, so your operating system will warn you
+the first time you open them:
+
+- **macOS** blocks the app with a message that Apple could not verify it is
+  free of malware. The app is only ad-hoc signed, not signed with an Apple
+  Developer ID or notarized. To open it once, go to *System Settings → Privacy
+  & Security*, find the message about git-dash and choose *Open Anyway*.
+- **Windows** SmartScreen shows "Windows protected your PC". Choose *More info
+  → Run anyway*. The installer is not Authenticode-signed, so it also shows an
+  unknown publisher.
+- **Linux** packages are not signed (there is no repository or GPG signature);
+  rely on the checksums.
+
+There is no auto-updater yet: install new versions from the Releases page.
+
 ## Security
 
 Your token is stored in the operating system's keychain and is never exposed
@@ -53,6 +85,35 @@ npm run check          # typecheck, lint and unit tests (frontend)
 cd src-tauri && cargo test && cargo clippy --all-targets -- -D warnings
 npm run tauri build    # produce installers for your platform
 ```
+
+### Releasing
+
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml)
+when a version tag is pushed.
+
+1. Bump the version everywhere it is recorded (`package.json`,
+   `package-lock.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock`):
+
+   ```sh
+   npm run version:set -- 1.2.3   # plain X.Y.Z; MSI installers reject suffixes like -beta
+   ```
+
+   Do not use `npm version`: `.npmrc` disables scripts, so it would only update
+   `package.json`. CI runs `npm run version:check` to catch files that drift.
+2. Commit, merge to `main`, then tag that commit and push the tag:
+
+   ```sh
+   git tag v1.2.3 && git push origin v1.2.3
+   ```
+
+3. The workflow checks that the tag matches the app version, builds installers
+   for macOS (Apple Silicon and Intel), Windows and Linux, and creates a
+   **draft** release with the installers and `SHA256SUMS.txt`.
+4. Review the draft on the Releases page, edit the notes and publish it.
+
+To redo a failed release, delete the draft release (and the tag, if the commit
+changes) before pushing the tag again. Code signing and the updater are not set
+up yet; the workflow marks where their secrets go.
 
 ### Project layout
 
