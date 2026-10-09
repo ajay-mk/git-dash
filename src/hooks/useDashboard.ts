@@ -43,6 +43,9 @@ export function useDashboard(config: DashboardConfig, enabled: boolean) {
   const [state, setState] = useState<DashboardState>(INITIAL);
   const requestId = useRef(0);
   const lastFetch = useRef(0);
+  // Settings that produced the data on screen, so a failed refresh after a
+  // settings change does not leave data fetched for the old settings.
+  const shownKeys = useRef({ repos: '', inbox: '' });
 
   // Only refetch when data-affecting settings change (not theme etc.).
   const fetchKey = useMemo(() => JSON.stringify([config.repos, config.inbox]), [config.repos, config.inbox]);
@@ -59,6 +62,7 @@ export function useDashboard(config: DashboardConfig, enabled: boolean) {
     // screen immediately; other errors stay visible until the reload finishes.
     setState((s) => ({ ...s, loading: true, error: s.error && isAuthError(s.error) ? null : s.error }));
     const { repos, inbox } = configRef.current;
+    const keys = { repos: JSON.stringify(repos), inbox: JSON.stringify(inbox) };
     const provider = providers.github;
 
     const [repoRes, inboxRes] = await Promise.allSettled([
@@ -75,16 +79,20 @@ export function useDashboard(config: DashboardConfig, enabled: boolean) {
         next.lastUpdated = new Date();
         next.repos = repoRes.value.repos;
         next.rateLimit = repoRes.value.rateLimit ?? s.rateLimit;
+        shownKeys.current.repos = keys.repos;
       } else {
         next.error = asAppError(repoRes.reason);
+        if (shownKeys.current.repos !== keys.repos) next.repos = new Map();
       }
       if (inboxRes.status === 'fulfilled') {
         next.inbox = inboxRes.value;
         next.inboxError = null;
+        shownKeys.current.inbox = keys.inbox;
       } else {
         const err = asAppError(inboxRes.reason);
         next.inboxError = err.message;
         next.error ??= isAuthError(err) ? err : null;
+        if (shownKeys.current.inbox !== keys.inbox) next.inbox = null;
       }
       return next;
     });
