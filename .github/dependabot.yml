@@ -7,6 +7,11 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint does not support TypeScript 7 yet (its peer range
+      # is <6.1.0). Remove this once a release supports it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
