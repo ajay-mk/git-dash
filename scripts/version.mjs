@@ -19,17 +19,18 @@ const SEMVER = /^\d+\.\d+\.\d+$/;
 
 // Each entry locates the app's own version in one file. The patterns are
 // anchored to the surrounding structure so dependency versions never match.
+// Line breaks may be CRLF, as in a Windows checkout with core.autocrlf.
 const FILES = [
   { path: 'package.json', pattern: /^( {2}"version": ")([^"]+)(")/m },
   { path: 'package-lock.json', pattern: /^( {2}"version": ")([^"]+)(")/m },
   {
     path: 'package-lock.json',
-    pattern: /^( {4}"": \{\n {6}"name": "git-dash",\n {6}"version": ")([^"]+)(")/m,
+    pattern: /^( {4}"": \{\r?\n {6}"name": "git-dash",\r?\n {6}"version": ")([^"]+)(")/m,
   },
   { path: 'src-tauri/tauri.conf.json', pattern: /^( {2}"version": ")([^"]+)(")/m },
   // The first `version` key in Cargo.toml, which belongs to [package].
-  { path: 'src-tauri/Cargo.toml', pattern: /^(\[package\]\n(?:[^[\n].*\n|\n)*?version = ")([^"]+)(")/m },
-  { path: 'src-tauri/Cargo.lock', pattern: /^(name = "git-dash"\nversion = ")([^"]+)(")/m },
+  { path: 'src-tauri/Cargo.toml', pattern: /^(\[package\]\r?\n(?:[^[\r\n].*\r?\n|\r?\n)*?version = ")([^"]+)(")/m },
+  { path: 'src-tauri/Cargo.lock', pattern: /^(name = "git-dash"\r?\nversion = ")([^"]+)(")/m },
 ];
 
 function read(file) {
