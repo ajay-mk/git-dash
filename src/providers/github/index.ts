@@ -31,10 +31,12 @@ export const github: Provider = {
       batch.forEach((repo, i) => {
         const alias = repoAlias(i);
         const raw = data[alias];
-        if (raw) {
+        // An error anywhere under the alias (e.g. on CI or PRs) means part of
+        // the card would be silently empty, so report it instead.
+        const err = res.errors?.find((e) => e.path?.[0] === alias);
+        if (raw && !err) {
           results.set(repoId(repo), { ok: true, data: mapRepository(raw, repo) });
         } else {
-          const err = res.errors?.find((e) => e.path?.[0] === alias);
           results.set(repoId(repo), { ok: false, error: describeRepoError(err) });
         }
       });
