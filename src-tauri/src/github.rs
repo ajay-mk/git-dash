@@ -65,9 +65,34 @@ impl GitHubClient {
         let body = self
             .graphql(token, "query { viewer { login } }", &json!({}))
             .await?;
-        body.pointer("/data/viewer/login")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .ok_or(Error::Unauthorized)
+        login_from(&body)
+    }
+}
+
+/// A bad token gets HTTP 401 before this point. A 200 without a login means
+/// GitHub answered with errors instead (e.g. a rate limit), which says
+/// nothing about the token itself.
+fn login_from(body: &Value) -> Result<String> {
+    body.pointer("/data/viewer/login")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| Error::Network("GitHub could not verify the token right now".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_viewer_login() {
+        let body = json!({ "data": { "viewer": { "login": "octocat" } } });
+        assert_eq!(login_from(&body).unwrap(), "octocat");
+    }
+
+    #[test]
+    fn graphql_errors_do_not_count_as_a_rejected_token() {
+        let body =
+            json!({ "errors": [{ "type": "RATE_LIMITED", "message": "API rate limit exceeded" }] });
+        assert!(matches!(login_from(&body), Err(Error::Network(_))));
     }
 }
