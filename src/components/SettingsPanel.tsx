@@ -24,6 +24,9 @@ import { tokens, type OwnerToken } from '../lib/transport';
 type Update = (fn: (c: DashboardConfig) => DashboardConfig) => void;
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+  // Keeps what is typed until blur, so the field can be cleared before typing
+  // a new number instead of snapping back to the minimum.
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <label className="inline-field">
       {label}
@@ -31,11 +34,38 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
         type="number"
         min={MIN_ITEMS}
         max={MAX_ITEMS}
-        value={value}
+        value={draft ?? value}
         onChange={(e) => {
+          setDraft(e.target.value);
           const n = Number(e.target.value);
-          if (Number.isFinite(n)) onChange(Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, Math.round(n))));
+          if (e.target.value !== '' && Number.isFinite(n)) {
+            onChange(Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, Math.round(n))));
+          }
         }}
+        onBlur={() => setDraft(null)}
+      />
+    </label>
+  );
+}
+
+function LabelField({ value, onChange }: { value: string | null; onChange: (label: string | null) => void }) {
+  // The saved label is trimmed, so the field keeps what is typed until blur;
+  // otherwise trimming on each keystroke would swallow the spaces in a
+  // multi-word label.
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <label className="inline-field">
+      Label
+      <input
+        type="text"
+        maxLength={50}
+        placeholder="any"
+        value={draft ?? value ?? ''}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          onChange(e.target.value.trim() || null);
+        }}
+        onBlur={() => setDraft(null)}
       />
     </label>
   );
@@ -83,16 +113,7 @@ function WidgetEditor({ repo, onChange }: { repo: PinnedRepo; onChange: (widgets
             {widget?.type === 'issues' && (
               <div className="widget-settings">
                 <NumberField label="Show" value={widget.limit} onChange={(limit) => patch({ ...widget, limit })} />
-                <label className="inline-field">
-                  Label
-                  <input
-                    type="text"
-                    maxLength={50}
-                    placeholder="any"
-                    value={widget.label ?? ''}
-                    onChange={(e) => patch({ ...widget, label: e.target.value.trim() || null })}
-                  />
-                </label>
+                <LabelField value={widget.label} onChange={(label) => patch({ ...widget, label })} />
               </div>
             )}
           </div>

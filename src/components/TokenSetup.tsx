@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { providers } from '../providers';
 import { tokens } from '../lib/transport';
 import { ExternalLink } from './ExternalLink';
@@ -8,7 +8,10 @@ export function TokenSetup({ onDone, onCancel, reason }: {
   onCancel?: () => void;
   reason?: string | null;
 }) {
-  const [value, setValue] = useState('');
+  // The input is uncontrolled: React mirrors a controlled input's value into
+  // its `value` attribute, which would put the token in the page markup.
+  const input = useRef<HTMLInputElement>(null);
+  const [hasValue, setHasValue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const provider = providers.github;
@@ -18,8 +21,9 @@ export function TokenSetup({ onDone, onCancel, reason }: {
     setBusy(true);
     setError(null);
     try {
-      const login = await tokens.set(provider.id, value);
-      setValue('');
+      const login = await tokens.set(provider.id, input.current?.value ?? '');
+      if (input.current) input.current.value = '';
+      setHasValue(false);
       onDone(login);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save token');
@@ -66,8 +70,8 @@ export function TokenSetup({ onDone, onCancel, reason }: {
             type="password"
             autoComplete="off"
             spellCheck={false}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
+            ref={input}
+            onChange={(e) => setHasValue(e.target.value.trim().length > 0)}
             placeholder="github_pat_…"
             required
             maxLength={255}
@@ -80,7 +84,7 @@ export function TokenSetup({ onDone, onCancel, reason }: {
               Cancel
             </button>
           )}
-          <button type="submit" className="btn btn-primary" disabled={busy || value.trim().length === 0}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !hasValue}>
             {busy ? 'Verifying…' : 'Save token'}
           </button>
         </div>
