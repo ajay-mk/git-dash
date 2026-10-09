@@ -18,6 +18,12 @@ export default function App() {
   const [authReason, setAuthReason] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Re-renders relative times such as "Updated 5m" as they age.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const update = useCallback((fn: (c: DashboardConfig) => DashboardConfig) => {
     setConfig((prev) => {
@@ -97,7 +103,7 @@ export default function App() {
           )}
           {dash.lastUpdated && (
             <span className="meta" title={dash.lastUpdated.toLocaleString()}>
-              Updated {shortAgo(dash.lastUpdated.toISOString())}
+              Updated {shortAgo(dash.lastUpdated.toISOString(), now)}
             </span>
           )}
           <button type="button" className="btn" onClick={() => void dash.refresh()} disabled={dash.loading}>
