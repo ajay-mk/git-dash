@@ -68,8 +68,11 @@ export function useDashboard(config: DashboardConfig, enabled: boolean) {
     if (id !== requestId.current) return; // a newer refresh superseded this one
 
     setState((s) => {
-      const next: DashboardState = { ...s, loading: false, lastUpdated: new Date(), error: null };
+      const next: DashboardState = { ...s, loading: false, error: null };
       if (repoRes.status === 'fulfilled') {
+        // Only fresh repository data counts as an update; after a failure the
+        // cards still show the previous data and must not look current.
+        next.lastUpdated = new Date();
         next.repos = repoRes.value.repos;
         next.rateLimit = repoRes.value.rateLimit ?? s.rateLimit;
       } else {

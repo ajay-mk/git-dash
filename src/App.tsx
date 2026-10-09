@@ -85,7 +85,7 @@ export default function App() {
           {config.inbox.enabled && config.inbox.reviewRequests && summary.reviews > 0 && (
             <span className="pill pill-info">{summary.reviews} reviews requested</span>
           )}
-          {summary.failing + summary.attention + summary.reviews === 0 && dash.lastUpdated && (
+          {summary.failing + summary.attention + summary.reviews === 0 && dash.lastUpdated && !dash.error && (
             <span className="pill pill-ok">All clear</span>
           )}
         </div>
