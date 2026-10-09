@@ -1,7 +1,7 @@
 import { repoId, type PinnedRepo } from '../../config/schema';
 import { AppError, githubGraphql } from '../../lib/transport';
 import type { Provider, RepoResult } from '../types';
-import { describeRepoError, mapInbox, mapRateLimit, mapRepository } from './map';
+import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepository } from './map';
 import { buildReposQuery, INBOX_QUERY, INBOX_SEARCHES, repoAlias } from './queries';
 
 /** GitHub limits query complexity; batch repositories to stay well under it. */
@@ -37,11 +37,14 @@ export const github: Provider = {
         if (raw && !err) {
           results.set(repoId(repo), { ok: true, data: mapRepository(raw, repo) });
         } else {
-          results.set(repoId(repo), { ok: false, error: describeRepoError(err) });
+          results.set(repoId(repo), { ok: false, error: describeRepoError(err, repo.owner) });
         }
       });
 
       if (!res.data && res.errors?.length) {
+        if (res.errors.some(isRateLimited)) {
+          throw new AppError('rate_limited', 'GitHub API rate limit reached. The dashboard will update once it resets.');
+        }
         throw new AppError('http', 'GitHub rejected the request.');
       }
     }
@@ -56,7 +59,12 @@ export const github: Provider = {
       withMine: config.myPullRequests,
       withAssigned: config.assigned,
     });
-    if (!res.data) throw new AppError('http', 'Could not load your inbox from GitHub.');
-    return mapInbox(res.data);
+    if (!res.data) {
+      if (res.errors?.some(isRateLimited)) {
+        throw new AppError('rate_limited', 'GitHub API rate limit reached. Your inbox will update once it resets.');
+      }
+      throw new AppError('http', 'Could not load your inbox from GitHub.');
+    }
+    return mapInbox(res.data, res.errors);
   },
 };

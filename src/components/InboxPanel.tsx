@@ -1,6 +1,7 @@
 import type { InboxConfig } from '../config/schema';
 import { myPrAction } from '../lib/health';
 import type { Counted, InboxSnapshot, IssueItem, PullRequestItem } from '../providers/types';
+import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
 
 function Group<T>({ title, data, render, emptyText }: {
@@ -41,6 +42,13 @@ export function InboxPanel({ config, inbox, error }: {
       {!inbox && !error && <p className="empty">Loading…</p>}
       {inbox && (
         <>
+          {inbox.ssoRestricted && (
+            <p className="notice">
+              Some results are hidden because an organization requires SSO. Authorize a personal access
+              token under <ExternalLink href="https://github.com/settings/tokens">Configure SSO</ExternalLink>, or
+              sign in through the organization&apos;s SSO for an OAuth token.
+            </p>
+          )}
           {config.reviewRequests && (
             <Group
               title="Review requests"
