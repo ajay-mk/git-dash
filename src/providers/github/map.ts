@@ -219,7 +219,7 @@ export function describeRepoError(err: GraphQLError | undefined, owner: string):
     case 'sso_required':
       return {
         kind,
-        message: `${owner} uses SAML single sign-on and your token is not authorized for it. On your tokens page, choose "Configure SSO" next to the token and authorize ${owner}; no admin is needed.`,
+        message: `${owner} uses SAML single sign-on and your token is not authorized for it. For a personal access token, choose "Configure SSO" next to it on your tokens page and authorize ${owner}; no admin is needed. For an OAuth token, such as one from the GitHub CLI, sign in through ${owner}'s SSO and authorize the app again.`,
         help: { url: CLASSIC_TOKENS_URL, label: 'Authorize token' },
       };
     case 'token_policy':

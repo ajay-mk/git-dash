@@ -44,8 +44,9 @@ export function InboxPanel({ config, inbox, error }: {
         <>
           {inbox.ssoRestricted && (
             <p className="notice">
-              Some results are hidden because an organization requires SSO.{' '}
-              <ExternalLink href="https://github.com/settings/tokens">Authorize token</ExternalLink>
+              Some results are hidden because an organization requires SSO. Authorize a personal access
+              token under <ExternalLink href="https://github.com/settings/tokens">Configure SSO</ExternalLink>, or
+              sign in through the organization&apos;s SSO for an OAuth token.
             </p>
           )}
           {config.reviewRequests && (

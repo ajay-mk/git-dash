@@ -75,8 +75,11 @@ possible.
 **Organizations with SAML SSO.** A classic token must be authorized for each
 organization that enforces SSO: on <https://github.com/settings/tokens>, choose
 *Configure SSO* next to the token and authorize the organization. You can do
-this yourself; no admin is needed. Until then, the organization's repositories
-show an SSO error and the "Needs you" list notes that some results are hidden.
+this yourself; no admin is needed. An OAuth token (`gho_`, for example from
+`gh auth token`) does not appear on that page: sign in through the
+organization's SSO and authorize the app again instead. Until then, the
+organization's repositories show an SSO error and the "Needs you" list notes
+that some results are hidden.
 
 **Organization token policies.** An organization can require owner approval
 for fine-grained tokens, or forbid classic or long-lived tokens. While a
