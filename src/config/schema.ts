@@ -96,7 +96,7 @@ export function parseRepoInput(input: string): { owner: string; name: string } |
   let value = input.trim();
   const urlMatch = /^(?:https?:\/\/)?(?:www\.)?github\.com\/(.+)$/i.exec(value);
   if (urlMatch?.[1]) value = urlMatch[1];
-  value = value.replace(/\.git$/i, '').replace(/\/+$/, '');
+  value = value.replace(/\/+$/, '').replace(/\.git$/i, '');
   const parts = value.split('/');
   if (parts.length !== 2) return null;
   const [owner, name] = parts as [string, string];

@@ -6,6 +6,7 @@ describe('parseRepoInput', () => {
     expect(parseRepoInput('facebook/react')).toEqual({ owner: 'facebook', name: 'react' });
     expect(parseRepoInput(' https://github.com/vitejs/vite/ ')).toEqual({ owner: 'vitejs', name: 'vite' });
     expect(parseRepoInput('github.com/a-b/c.d_e.git')).toEqual({ owner: 'a-b', name: 'c.d_e' });
+    expect(parseRepoInput('https://github.com/acme/api.git/')).toEqual({ owner: 'acme', name: 'api' });
   });
 
   it('rejects anything else', () => {
