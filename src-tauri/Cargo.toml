@@ -5,7 +5,7 @@ description = "A glanceable, customizable dashboard for your GitHub repositories
 authors = ["Ajay Melekamburath"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.90"
 
 [lib]
 name = "git_dash_lib"
