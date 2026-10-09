@@ -90,6 +90,7 @@ export function mapPullRequest(v: unknown): PullRequestItem | null {
     isDraft: n.isDraft === true,
     review: mapReview(n.reviewDecision),
     ci: mapCi(obj(lastCommit)?.statusCheckRollup),
+    mergeable: n.mergeable === 'MERGEABLE' ? true : n.mergeable === 'CONFLICTING' ? false : null,
     ...(repo ? { repo } : {}),
   };
 }

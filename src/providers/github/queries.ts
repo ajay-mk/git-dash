@@ -11,7 +11,7 @@ import type { PinnedRepo, WidgetConfig } from '../../config/schema';
 const CI_ROLLUP = 'statusCheckRollup { state }';
 
 const PR_FIELDS = `
-  number title url isDraft updatedAt reviewDecision
+  number title url isDraft updatedAt reviewDecision mergeable
   author { login }
   commits(last: 1) { nodes { commit { ${CI_ROLLUP} } } }
   repository { nameWithOwner }

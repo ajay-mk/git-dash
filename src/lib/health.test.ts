@@ -11,6 +11,7 @@ const pr = (over: Partial<PullRequestItem> = {}): PullRequestItem => ({
   isDraft: false,
   review: 'none',
   ci: 'success',
+  mergeable: true,
   ...over,
 });
 
@@ -50,6 +51,8 @@ describe('myPrAction', () => {
     expect(myPrAction(pr({ review: 'changes_requested' }))).toBe('fix');
     expect(myPrAction(pr({ review: 'approved' }))).toBe('merge');
     expect(myPrAction(pr({ review: 'approved', ci: 'pending' }))).toBeNull();
+    expect(myPrAction(pr({ review: 'approved', mergeable: null }))).toBeNull();
+    expect(myPrAction(pr({ review: 'approved', mergeable: false }))).toBe('fix');
     expect(myPrAction(pr({ isDraft: true, ci: 'failure' }))).toBeNull();
   });
 });

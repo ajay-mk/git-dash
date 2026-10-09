@@ -28,10 +28,14 @@ export function repoHealth(result: RepoResult | undefined): Health | null {
   return 'ok';
 }
 
-/** Your own PRs that you should act on: failing, changes requested, or ready to merge. */
+/**
+ * Your own PRs that you should act on: failing, conflicting, changes
+ * requested, or ready to merge. Branch protection rules beyond reviews and CI
+ * are not visible here, so "merge" can still be blocked by them.
+ */
 export function myPrAction(pr: PullRequestItem): 'fix' | 'merge' | null {
   if (pr.isDraft) return null;
-  if (pr.ci === 'failure' || pr.review === 'changes_requested') return 'fix';
-  if (pr.review === 'approved' && pr.ci !== 'pending') return 'merge';
+  if (pr.ci === 'failure' || pr.review === 'changes_requested' || pr.mergeable === false) return 'fix';
+  if (pr.review === 'approved' && pr.ci !== 'pending' && pr.mergeable === true) return 'merge';
   return null;
 }

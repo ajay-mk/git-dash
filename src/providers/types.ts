@@ -29,6 +29,8 @@ export interface PullRequestItem {
   isDraft: boolean;
   review: ReviewState;
   ci: CiState;
+  /** Whether it merges cleanly; `null` while GitHub is still computing it. */
+  mergeable: boolean | null;
   /** Repository name; set for cross-repo lists such as the inbox. */
   repo?: string;
 }
