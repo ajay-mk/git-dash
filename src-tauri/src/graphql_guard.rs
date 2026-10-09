@@ -28,7 +28,8 @@ pub fn ensure_read_only(document: &str) -> Result<()> {
         let c = bytes[i];
         match c {
             b'#' => {
-                while i < bytes.len() && bytes[i] != b'\n' {
+                // GraphQL ends a comment at either line terminator, CR or LF.
+                while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b'\r' {
                     i += 1;
                 }
             }
@@ -90,7 +91,7 @@ fn skip_string(bytes: &[u8], start: usize) -> Result<usize> {
                     continue;
                 }
                 b'"' => return Ok(i + 1),
-                b'\n' => return Err(Error::ForbiddenOperation),
+                b'\n' | b'\r' => return Err(Error::ForbiddenOperation),
                 _ => {}
             }
         }
@@ -130,6 +131,9 @@ mod tests {
         assert!(ensure_read_only("query { a(x: \"\"\" } \"\"\") } mutation { b }").is_err());
         // Keywords inside strings/comments are harmless.
         assert!(ensure_read_only("query { a(x: \"mutation\") } # mutation").is_ok());
+        // A comment ends at a bare CR, so what follows it is still checked.
+        assert!(ensure_read_only("query { a } # c\rmutation { b }").is_err());
+        assert!(ensure_read_only("query { a(x: \"a\rb\") }").is_err());
     }
 
     #[test]
