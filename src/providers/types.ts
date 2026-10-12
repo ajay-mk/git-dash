@@ -46,6 +46,36 @@ export interface IssueItem {
   repo?: string;
 }
 
+/** One CI check on a pull request's head commit. */
+export interface CheckItem {
+  name: string;
+  state: CiState;
+  url: string | null;
+}
+
+export type ReviewerState = 'approved' | 'changes_requested' | 'commented' | 'requested';
+
+/** Extra facts about a pull request or issue, loaded when its details open. */
+export interface ItemDetails {
+  createdAt: string;
+  /** Plain-text description, trimmed by the provider. */
+  body: string;
+  comments: number;
+  labels: Label[];
+  /** Pull requests only. */
+  pr: {
+    baseRef: string;
+    headRef: string;
+    additions: number;
+    deletions: number;
+    changedFiles: number;
+    checks: CheckItem[];
+    reviewers: { login: string; state: ReviewerState }[];
+  } | null;
+  /** Issues only. */
+  assignees: string[];
+}
+
 export interface Counted<T> {
   total: number;
   items: T[];
@@ -135,4 +165,6 @@ export interface Provider {
    * `complete` is false; it rejects only when every token fails.
    */
   listRepos(tokenOwners: readonly string[]): Promise<RepoSuggestions>;
+  /** Details of one pull request or issue, by its web URL. */
+  fetchDetails(url: string, tokenOwners: readonly string[]): Promise<ItemDetails>;
 }

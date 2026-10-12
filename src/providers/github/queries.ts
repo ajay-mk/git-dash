@@ -147,3 +147,44 @@ query GitDashOwnerRepos($owner: String!, $n: Int!) {
   }
 }
 `;
+
+/** Most checks and reviewers fetched for the details view. */
+export const DETAILS_LIST_FETCHED = 50;
+
+const DETAILS_COMMON = `
+  createdAt bodyText
+  comments { totalCount }
+  labels(first: 10) { nodes { name color } }
+`;
+
+/** One pull request or issue by its web URL, for the details view. */
+export const DETAILS_QUERY = `
+query GitDashDetails($url: URI!, $n: Int!) {
+  resource(url: $url) {
+    __typename
+    ... on PullRequest {
+      ${DETAILS_COMMON}
+      baseRefName headRefName additions deletions changedFiles
+      commits(last: 1) {
+        nodes { commit { statusCheckRollup { contexts(first: $n) { nodes {
+          __typename
+          ... on CheckRun { name status conclusion detailsUrl }
+          ... on StatusContext { context state targetUrl }
+        } } } } }
+      }
+      latestReviews(first: $n) { nodes { state author { login } } }
+      reviewRequests(first: $n) { nodes { requestedReviewer {
+        __typename
+        ... on User { login }
+        ... on Bot { login }
+        ... on Mannequin { login }
+        ... on Team { slug }
+      } } }
+    }
+    ... on Issue {
+      ${DETAILS_COMMON}
+      assignees(first: 10) { nodes { login } }
+    }
+  }
+}
+`;

@@ -11,8 +11,10 @@ import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
 import { PERMISSION_LABELS } from './tokenTemplate';
 import type {
+  CheckItem,
   CiState,
   Counted,
+  ItemDetails,
   InboxSnapshot,
   IssueItem,
   Label,
@@ -21,6 +23,7 @@ import type {
   RepoError,
   RepoErrorKind,
   RepoSnapshot,
+  ReviewerState,
   ReviewState,
 } from '../types';
 
@@ -273,4 +276,99 @@ export function mapRepoSuggestions(connection: unknown): RepoSuggestion[] {
     const parsed = parseRepoInput(name);
     return parsed ? [{ name: `${parsed.owner}/${parsed.name}`, pushedAt: str(node.pushedAt) }] : [];
   });
+}
+
+/** Longest description kept for the details view. */
+export const DETAILS_BODY_CHARS = 400;
+
+function mapCheckRun(n: Raw): CheckItem | null {
+  const name = str(n.name);
+  if (!name) return null;
+  let state: CiState;
+  if (n.status !== 'COMPLETED') state = 'pending';
+  else {
+    switch (n.conclusion) {
+      case 'SUCCESS':
+      case 'NEUTRAL':
+      case 'SKIPPED':
+        state = 'success';
+        break;
+      case 'FAILURE':
+      case 'TIMED_OUT':
+      case 'CANCELLED':
+      case 'STARTUP_FAILURE':
+      case 'ACTION_REQUIRED':
+        state = 'failure';
+        break;
+      default:
+        state = 'none';
+    }
+  }
+  return { name, state, url: safeUrl(n.detailsUrl) || null };
+}
+
+function mapCheck(v: unknown): CheckItem | null {
+  const n = obj(v);
+  if (!n) return null;
+  if (n.__typename === 'CheckRun') return mapCheckRun(n);
+  const name = str(n.context);
+  if (!name) return null;
+  return { name, state: mapCi({ state: n.state }), url: safeUrl(n.targetUrl) || null };
+}
+
+const REVIEWER_STATES: Record<string, ReviewerState> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'changes_requested',
+  COMMENTED: 'commented',
+};
+
+function mapReviewers(reviews: unknown, requests: unknown): { login: string; state: ReviewerState }[] {
+  const out = new Map<string, ReviewerState>();
+  // A pending request is newer than that person's earlier review.
+  for (const node of arr(obj(requests)?.nodes)) {
+    const r = obj(obj(node)?.requestedReviewer);
+    const login = str(r?.login) ?? str(r?.slug);
+    if (login && !out.has(login)) out.set(login, 'requested');
+  }
+  for (const node of arr(obj(reviews)?.nodes)) {
+    const n = obj(node);
+    const login = str(obj(n?.author)?.login);
+    const state = REVIEWER_STATES[str(n?.state) ?? ''];
+    if (login && state && !out.has(login)) out.set(login, state);
+  }
+  return [...out].map(([login, state]) => ({ login, state }));
+}
+
+function trimBody(v: unknown): string {
+  const text = (str(v) ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > DETAILS_BODY_CHARS ? `${text.slice(0, DETAILS_BODY_CHARS - 1).trimEnd()}…` : text;
+}
+
+/** Maps `resource(url:)`; `null` when it is not a pull request or issue. */
+export function mapDetails(v: unknown): ItemDetails | null {
+  const n = obj(v);
+  if (!n || (n.__typename !== 'PullRequest' && n.__typename !== 'Issue')) return null;
+  const isPr = n.__typename === 'PullRequest';
+  const rollup = obj(obj(obj(arr(obj(n.commits)?.nodes)[0])?.commit)?.statusCheckRollup);
+  return {
+    createdAt: str(n.createdAt) ?? '',
+    body: trimBody(n.bodyText),
+    comments: num(obj(n.comments)?.totalCount),
+    labels: mapLabels(n.labels),
+    assignees: arr(obj(n.assignees)?.nodes).flatMap((a) => {
+      const login = str(obj(a)?.login);
+      return login ? [login] : [];
+    }),
+    pr: isPr
+      ? {
+          baseRef: str(n.baseRefName) ?? '',
+          headRef: str(n.headRefName) ?? '',
+          additions: num(n.additions),
+          deletions: num(n.deletions),
+          changedFiles: num(n.changedFiles),
+          checks: arr(obj(rollup?.contexts)?.nodes).flatMap((c) => mapCheck(c) ?? []),
+          reviewers: mapReviewers(n.latestReviews, n.reviewRequests),
+        }
+      : null,
+  };
 }
