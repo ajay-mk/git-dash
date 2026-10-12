@@ -42,6 +42,7 @@ describe('parseConfig', () => {
         groupMyPullRequests: 'repo',
         collapsedWidgets: ['github:a/b#issues', 'github:gone/repo#issues', 'github:a/b#nope', 1],
         cardSpans: { 'github:a/b': 2, 'github:gone/repo': 2 },
+        cardRows: { 'github:a/b': 30, 'github:gone/repo': 30 },
       },
     });
     expect(parsed.layout).toEqual({
@@ -49,7 +50,12 @@ describe('parseConfig', () => {
       groupMyPullRequests: 'repo',
       collapsedWidgets: ['github:a/b#issues'],
       cardSpans: { 'github:a/b': 2 },
+      cardRows: { 'github:a/b': 30 },
     });
+    for (const rows of [11, 201, 30.5, '30']) {
+      const layout = { ...defaultConfig().layout, cardRows: { 'github:a/b': rows } };
+      expect(parseConfig({ ...valid, layout }).layout.cardRows).toEqual({});
+    }
     for (const span of [1, 4, 2.5, '2', null]) {
       const layout = { ...defaultConfig().layout, cardSpans: { 'github:a/b': span } };
       expect(parseConfig({ ...valid, layout }).layout.cardSpans).toEqual({});
@@ -109,11 +115,13 @@ describe('pruneLayout', () => {
     expect(pruneLayout({ ...config, repos: [] }).layout.collapsedWidgets).toEqual([]);
   });
 
-  it('forgets the width of unpinned cards', () => {
+  it('forgets the size of unpinned cards', () => {
     const repo = { provider: 'github' as const, owner: 'a', name: 'b', widgets: defaultWidgets() };
-    const config = { ...defaultConfig(), repos: [repo], layout: { ...defaultConfig().layout, cardSpans: { 'github:a/b': 3 } } };
+    const layout = { ...defaultConfig().layout, cardSpans: { 'github:a/b': 3 }, cardRows: { 'github:a/b': 40 } };
+    const config = { ...defaultConfig(), repos: [repo], layout };
     expect(pruneLayout(config)).toBe(config);
     expect(pruneLayout({ ...config, repos: [] }).layout.cardSpans).toEqual({});
+    expect(pruneLayout({ ...config, repos: [] }).layout.cardRows).toEqual({});
   });
 });
 

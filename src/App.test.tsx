@@ -210,7 +210,7 @@ describe('App', () => {
     function saved() {
       return JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}') as {
         repos: { name: string; widgets: { type: string; limit?: number }[] }[];
-        layout: { cardSpans: Record<string, number> };
+        layout: { cardSpans: Record<string, number>; cardRows: Record<string, number> };
       };
     }
     const limits = (name: string) =>
@@ -265,6 +265,7 @@ describe('App', () => {
     it('resizes by dragging the grip and only saves on release', async () => {
       await renderRepos();
       const card = screen.getByRole('article', { name: /^octo\/one:/ });
+      vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 0, height: 200 } as DOMRect);
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
       // Two open lists with 28px rows: 112px down adds two entries to each.
       fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 2, clientY: 112 });
@@ -272,10 +273,13 @@ describe('App', () => {
       expect(card.classList.contains('resizing')).toBe(true);
       expect(card.style.gridColumn).toBe('span 2');
       expect(screen.getByText('2 columns · 7 entries')).toBeTruthy();
+      // 8px grid rows less the 16px kept under the card: 200px + 112px snaps to 41 rows.
+      expect(card.style.height).toBe('calc(41 * var(--row-unit) - var(--row-gap))');
       expect(limits('one')).toEqual([5, 5]);
 
       fireEvent.pointerUp(window, { pointerId: 2 });
       expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 2 });
+      expect(saved().layout.cardRows).toEqual({ 'github:octo/one': 41 });
       expect(limits('one')).toEqual([7, 7]);
       expect(card.classList.contains('resizing')).toBe(false);
     });
@@ -336,6 +340,31 @@ describe('App', () => {
       } finally {
         restore();
       }
+    });
+
+    it('sets the height of a card with nothing in it, and lets it fit its content again', async () => {
+      await renderRepos();
+      const card = screen.getByRole('article', { name: /^octo\/one:/ });
+      vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 0, height: 120 } as DOMRect);
+      const grip = screen.getByRole('button', { name: 'Resize octo/one' });
+
+      // Nothing loads in this test, so the lists are empty: the height still changes.
+      fireEvent.pointerDown(grip, { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 0, clientY: 200 });
+      fireEvent.pointerUp(window, { pointerId: 2 });
+      expect(saved().layout.cardRows).toEqual({ 'github:octo/one': 42 });
+      expect(card.classList.contains('sized')).toBe(true);
+
+      fireEvent.doubleClick(grip);
+      expect(saved().layout.cardRows).toEqual({});
+      expect(card.style.height).toBe('');
+
+      grip.focus();
+      await userEvent.keyboard('{ArrowDown}');
+      expect(Object.keys(saved().layout.cardRows)).toEqual(['github:octo/one']);
+      await userEvent.keyboard('{Delete}');
+      expect(saved().layout.cardRows).toEqual({});
+      expect(screen.getByText('octo/one fits its content.')).toBeTruthy();
     });
 
     it('cancels a resize with Escape', async () => {
