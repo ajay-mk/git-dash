@@ -120,6 +120,7 @@ describe('item details', () => {
         { name: 'lint', state: 'failure', url: 'https://github.com/o/zeta/actions/runs/1' },
         { name: 'test', state: 'success', url: null },
       ],
+      checksTotal: 2,
       reviewers: [{ login: 'alice', state: 'approved' }, { login: 'bob', state: 'requested' }],
     },
   };
@@ -183,12 +184,30 @@ describe('item details', () => {
   });
 
   it('counts only successful checks as passing and notes missing details', async () => {
-    const stale = { ...details, incomplete: true, pr: { ...details.pr!, checks: [{ name: 'old', state: 'none' as const, url: null }] } };
+    const stale = { ...details, incomplete: true, pr: { ...details.pr!, checks: [{ name: 'old', state: 'none' as const, url: null }], checksTotal: 1 } };
     render(<Harness loadDetails={() => Promise.resolve(stale)} />);
     await userEvent.click(screen.getByRole('button', { name: /Zeta ready/ }));
     const card = await screen.findByRole('dialog');
     expect(await within(card).findByText('0 of 1 passing', { exact: false })).toBeTruthy();
     expect(within(card).getByText('Some details could not be loaded.')).toBeTruthy();
+  });
+
+  it('never calls a partial list of checks all passing', async () => {
+    const many = { ...details, pr: { ...details.pr!, checks: [{ name: 'test', state: 'success' as const, url: null }], checksTotal: 60 } };
+    render(<Harness loadDetails={() => Promise.resolve(many)} />);
+    await userEvent.click(screen.getByRole('button', { name: /Zeta ready/ }));
+    const card = await screen.findByRole('dialog');
+    expect(await within(card).findByText('1 of 60 passing, 59 more not shown', { exact: false })).toBeTruthy();
+  });
+
+  it('closes when keyboard focus moves to another row', async () => {
+    render(<Harness loadDetails={() => Promise.resolve(details)} />);
+    await userEvent.click(screen.getByRole('button', { name: /Zeta ready/ }));
+    await screen.findByRole('dialog');
+    screen.getByRole('button', { name: /Alpha ready/ }).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Alpha ready');
   });
 
   it('treats an assigned pull request as a pull request', async () => {

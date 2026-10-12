@@ -350,6 +350,7 @@ export function mapDetails(v: unknown): ItemDetails | null {
   if (!n || (n.__typename !== 'PullRequest' && n.__typename !== 'Issue')) return null;
   const isPr = n.__typename === 'PullRequest';
   const rollup = obj(obj(obj(arr(obj(n.commits)?.nodes)[0])?.commit)?.statusCheckRollup);
+  const checks = arr(obj(rollup?.contexts)?.nodes).flatMap((c) => mapCheck(c) ?? []);
   return {
     createdAt: str(n.createdAt) ?? '',
     incomplete: false,
@@ -367,7 +368,8 @@ export function mapDetails(v: unknown): ItemDetails | null {
           additions: num(n.additions),
           deletions: num(n.deletions),
           changedFiles: num(n.changedFiles),
-          checks: arr(obj(rollup?.contexts)?.nodes).flatMap((c) => mapCheck(c) ?? []),
+          checks,
+          checksTotal: Math.max(checks.length, num(obj(rollup?.contexts)?.totalCount)),
           reviewers: mapReviewers(n.latestReviews, n.reviewRequests),
         }
       : null,

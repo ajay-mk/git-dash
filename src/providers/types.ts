@@ -69,7 +69,9 @@ export interface ItemDetails {
     additions: number;
     deletions: number;
     changedFiles: number;
+    /** The first checks only; `checksTotal` counts them all. */
     checks: CheckItem[];
+    checksTotal: number;
     reviewers: { login: string; state: ReviewerState }[];
   } | null;
   /** Issues only. */

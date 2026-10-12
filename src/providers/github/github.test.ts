@@ -334,7 +334,7 @@ describe('mapDetails', () => {
     additions: 12,
     deletions: 3,
     changedFiles: 2,
-    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [
+    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 70, nodes: [
       { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/a/b/runs/1' },
       { __typename: 'CheckRun', name: 'test', status: 'IN_PROGRESS', conclusion: null, detailsUrl: 'https://ci.example.com/1' },
       { __typename: 'CheckRun', name: 'docs', status: 'COMPLETED', conclusion: 'SKIPPED' },
@@ -362,6 +362,7 @@ describe('mapDetails', () => {
       { name: 'docs', state: 'success', url: null },
       { name: 'ci/legacy', state: 'failure', url: null },
     ]);
+    expect(d.pr!.checksTotal).toBe(70);
     // A pending re-request wins over that reviewer's older review.
     expect(d.pr!.reviewers).toEqual([
       { login: 'bob', state: 'requested' },

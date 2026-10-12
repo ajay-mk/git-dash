@@ -18,23 +18,26 @@ const REVIEWER_TEXT: Record<ReviewerState, { icon: string; text: string; cls: st
   requested: { icon: '○', text: 'review requested', cls: 'ci-pending' },
 };
 
-function ChecksSummary({ checks }: { checks: CheckItem[] }) {
+function ChecksSummary({ checks, total }: { checks: CheckItem[]; total: number }) {
   const failing = checks.filter((c) => c.state === 'failure');
   const pending = checks.filter((c) => c.state === 'pending');
   // Only successful checks count as passing; others (e.g. stale) are neither.
   const passing = checks.filter((c) => c.state === 'success').length;
+  // Only the first checks are fetched, so never call a partial list all passing.
+  const unseen = total - checks.length;
+  const more = unseen > 0 ? `, ${unseen} more not shown` : '';
   return (
     <div className="details-section">
       <div className="details-label">Checks</div>
       <div className="details-line">
         {failing.length > 0 ? (
-          <><CiIcon state="failure" /> {failing.length} failing, {passing} passing</>
+          <><CiIcon state="failure" /> {failing.length} failing, {passing} passing{more}</>
         ) : pending.length > 0 ? (
-          <><CiIcon state="pending" /> {pending.length} running, {passing} passing</>
-        ) : passing === checks.length ? (
-          <><CiIcon state="success" /> All {checks.length} passing</>
+          <><CiIcon state="pending" /> {pending.length} running, {passing} passing{more}</>
+        ) : passing === total ? (
+          <><CiIcon state="success" /> All {total} passing</>
         ) : (
-          <><CiIcon state="none" /> {passing} of {checks.length} passing</>
+          <><CiIcon state="none" /> {passing} of {total} passing{more}</>
         )}
       </div>
       {failing.length > 0 && (
@@ -83,7 +86,7 @@ function DetailsContent({ item, details, error }: {
               </span>
             </div>
           )}
-          {pr && pr.checks.length > 0 && <ChecksSummary checks={pr.checks} />}
+          {pr && pr.checks.length > 0 && <ChecksSummary checks={pr.checks} total={pr.checksTotal} />}
           {pr && pr.reviewers.length > 0 && (
             <div className="details-section">
               <div className="details-label">Reviews</div>
@@ -204,15 +207,18 @@ export function DetailsCard({ item, anchor, load, onClose }: {
       onClose();
       anchor.current?.querySelector<HTMLElement>('.row-button')?.focus();
     };
-    const onDown = (e: MouseEvent) => {
+    const onOutside = (e: Event) => {
       const target = e.target as Node;
       if (!ref.current?.contains(target) && !anchor.current?.contains(target)) onClose();
     };
+    // Clicking or tabbing anywhere else closes it, so only one card is ever open.
     document.addEventListener('keydown', onKey);
-    document.addEventListener('mousedown', onDown);
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('focusin', onOutside);
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('mousedown', onOutside);
+      document.removeEventListener('focusin', onOutside);
     };
   }, [anchor, onClose]);
 

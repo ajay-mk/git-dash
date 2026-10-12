@@ -166,7 +166,7 @@ query GitDashDetails($url: URI!, $n: Int!) {
       ${DETAILS_COMMON}
       baseRefName headRefName additions deletions changedFiles
       commits(last: 1) {
-        nodes { commit { statusCheckRollup { contexts(first: $n) { nodes {
+        nodes { commit { statusCheckRollup { contexts(first: $n) { totalCount nodes {
           __typename
           ... on CheckRun { name status conclusion detailsUrl }
           ... on StatusContext { context state targetUrl }
