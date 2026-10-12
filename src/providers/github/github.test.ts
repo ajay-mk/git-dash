@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PinnedRepo } from '../../config/schema';
 import { githubGraphql } from '../../lib/transport';
 import { github } from './index';
-import { describeRepoError, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
-import { buildReposQuery, OPEN_PRS_FETCHED } from './queries';
+import { DETAILS_BODY_CHARS, describeRepoError, mapDetails, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
+import { buildReposQuery, DETAILS_QUERY, OPEN_PRS_FETCHED } from './queries';
 
 vi.mock('../../lib/transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/transport')>()),
@@ -319,5 +319,107 @@ describe('github.listRepos', () => {
       owner ? Promise.reject(new Error('revoked')) : Promise.resolve({ data: { viewer: { repositories: nodes('octo/one') } } }),
     );
     await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['octo/one'], complete: false });
+  });
+});
+
+describe('mapDetails', () => {
+  const rawPr = {
+    __typename: 'PullRequest',
+    createdAt: '2026-10-01T00:00:00Z',
+    bodyText: 'Line one\n\n  line two',
+    comments: { totalCount: 3 },
+    labels: { nodes: [{ name: 'ui', color: 'zzz' }] },
+    baseRefName: 'main',
+    headRefName: 'feat/x',
+    additions: 12,
+    deletions: 3,
+    changedFiles: 2,
+    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { totalCount: 70, nodes: [
+      { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/a/b/runs/1' },
+      { __typename: 'CheckRun', name: 'test', status: 'IN_PROGRESS', conclusion: null, detailsUrl: 'https://ci.example.com/1' },
+      { __typename: 'CheckRun', name: 'docs', status: 'COMPLETED', conclusion: 'SKIPPED' },
+      { __typename: 'StatusContext', context: 'ci/legacy', state: 'ERROR', targetUrl: 'javascript:alert(1)' },
+      { __typename: 'CheckRun' },
+    ] } } } }] },
+    latestReviews: { nodes: [
+      { state: 'APPROVED', author: { login: 'alice' } },
+      { state: 'CHANGES_REQUESTED', author: { login: 'bob' } },
+      { state: 'DISMISSED', author: { login: 'carol' } },
+    ] },
+    reviewRequests: { nodes: [{ requestedReviewer: { login: 'bob' } }, { requestedReviewer: { slug: 'core' } }] },
+  };
+
+  it('maps checks, reviewers and the diff of a pull request', () => {
+    const d = mapDetails(rawPr)!;
+    expect(d.body).toBe('Line one line two');
+    expect(d.comments).toBe(3);
+    expect(d.labels).toEqual([{ name: 'ui', color: null }]);
+    expect(d.pr).toMatchObject({ baseRef: 'main', headRef: 'feat/x', additions: 12, deletions: 3, changedFiles: 2 });
+    expect(d.pr!.checks).toEqual([
+      { name: 'lint', state: 'failure', url: 'https://github.com/a/b/runs/1' },
+      // Only GitHub links are kept.
+      { name: 'test', state: 'pending', url: null },
+      { name: 'docs', state: 'success', url: null },
+      { name: 'ci/legacy', state: 'failure', url: null },
+    ]);
+    expect(d.pr!.checksTotal).toBe(70);
+    // A pending re-request wins over that reviewer's older review.
+    expect(d.pr!.reviewers).toEqual([
+      { login: 'bob', state: 'requested' },
+      { login: 'core', state: 'requested' },
+      { login: 'alice', state: 'approved' },
+    ]);
+  });
+
+  it('maps an issue and trims long descriptions', () => {
+    const d = mapDetails({ __typename: 'Issue', bodyText: 'x'.repeat(1000), assignees: { nodes: [{ login: 'me' }, {}] } })!;
+    expect(d.pr).toBeNull();
+    expect(d.assignees).toEqual(['me']);
+    expect(d.body.length).toBe(DETAILS_BODY_CHARS);
+    expect(d.body.endsWith('…')).toBe(true);
+  });
+
+  it('rejects anything that is not a pull request or issue', () => {
+    expect(mapDetails(null)).toBeNull();
+    expect(mapDetails({ __typename: 'Repository' })).toBeNull();
+  });
+});
+
+describe('github.fetchDetails', () => {
+  it('passes the URL as a variable and uses the owner token when there is one', async () => {
+    graphql.mockResolvedValue({ data: { resource: { __typename: 'Issue' } } });
+    await github.fetchDetails('https://github.com/Corp/api/issues/1', ['corp']);
+    expect(graphql).toHaveBeenLastCalledWith(DETAILS_QUERY, expect.objectContaining({ url: 'https://github.com/Corp/api/issues/1' }), 'corp');
+    await github.fetchDetails('https://github.com/acme/api/issues/1', ['corp']);
+    expect(graphql).toHaveBeenLastCalledWith(DETAILS_QUERY, expect.anything(), null);
+  });
+
+  it('falls back to the default token when the owner token cannot read the item', async () => {
+    graphql.mockReset();
+    graphql
+      .mockResolvedValueOnce({ data: { resource: null }, errors: [{ type: 'NOT_FOUND', path: ['resource'] }] })
+      .mockResolvedValueOnce({ data: { resource: { __typename: 'Issue', bodyText: 'ok' } } });
+    const d = await github.fetchDetails('https://github.com/corp/api/issues/1', ['corp']);
+    expect(d.body).toBe('ok');
+    expect(graphql.mock.calls.map((c) => c[2])).toEqual(['corp', null]);
+  });
+
+  it('flags details with errors on nested fields', async () => {
+    graphql.mockReset();
+    graphql.mockResolvedValueOnce({
+      data: { resource: { __typename: 'PullRequest', commits: null } },
+      errors: [{ type: 'FORBIDDEN', path: ['resource', 'commits'] }],
+    });
+    expect((await github.fetchDetails('https://github.com/a/b/pull/1', [])).incomplete).toBe(true);
+  });
+
+  it('refuses non-GitHub links and reports missing data', async () => {
+    graphql.mockClear();
+    await expect(github.fetchDetails('https://evil.example.com/a/b/pull/1', [])).rejects.toThrow(/GitHub/);
+    expect(graphql).not.toHaveBeenCalled();
+    graphql.mockResolvedValueOnce({ data: { resource: null } });
+    await expect(github.fetchDetails('https://github.com/a/b/pull/1', [])).rejects.toThrow(/Could not load/);
+    graphql.mockResolvedValueOnce({ data: null, errors: [RATE_LIMIT_ERROR] });
+    await expect(github.fetchDetails('https://github.com/a/b/pull/1', [])).rejects.toThrow(/rate limit/);
   });
 });

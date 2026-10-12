@@ -2,9 +2,11 @@ import { repoId, type PinnedRepo } from '../../config/schema';
 import { AppError, githubGraphql } from '../../lib/transport';
 import { groupByToken, mergeInbox } from '../tokens';
 import type { InboxSnapshot, Provider, RateLimit, RepoResult } from '../types';
-import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepoSuggestions, mapRepository, type RepoSuggestion } from './map';
+import { describeRepoError, isRateLimited, mapDetails, mapInbox, mapRateLimit, mapRepoSuggestions, mapRepository, type RepoSuggestion } from './map';
 import {
   buildReposQuery,
+  DETAILS_LIST_FETCHED,
+  DETAILS_QUERY,
   INBOX_QUERY,
   INBOX_SEARCHES,
   OWNER_REPOS_QUERY,
@@ -13,6 +15,7 @@ import {
   VIEWER_REPOS_QUERY,
 } from './queries';
 import { fineGrainedTokenUrl, PERMISSION_LABELS } from './tokenTemplate';
+import { isSafeExternalUrl } from '../../lib/url';
 
 /** GitHub limits query complexity; batch repositories to stay well under it. */
 const REPOS_PER_REQUEST = 10;
@@ -147,5 +150,31 @@ export const github: Provider = {
       .sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
       .map((r) => r.name);
     return { repos, complete: !failed };
+  },
+
+  async fetchDetails(url, tokenOwners) {
+    if (!isSafeExternalUrl(url)) throw new AppError('http', 'Not a GitHub link.');
+    const fetchWith = async (token: string | null) => {
+      const res = await githubGraphql<{ resource?: unknown }>(DETAILS_QUERY, { url, n: DETAILS_LIST_FETCHED }, token);
+      const details = mapDetails(res.data?.resource);
+      if (!details) {
+        if (res.errors?.some(isRateLimited)) {
+          throw new AppError('rate_limited', 'GitHub API rate limit reached. Try again once it resets.');
+        }
+        throw new AppError('http', 'Could not load details from GitHub.');
+      }
+      // Errors on nested fields (e.g. checks) leave them empty; say so on the card.
+      return { ...details, incomplete: res.errors?.some((e) => e.path?.[0] === 'resource') ?? false };
+    };
+    // The inbox may have found this item with either token, so prefer the
+    // owner's token and fall back to the default one.
+    const owner = new URL(url).pathname.split('/')[1]?.toLowerCase() ?? '';
+    if (!tokenOwners.includes(owner)) return fetchWith(null);
+    try {
+      const details = await fetchWith(owner);
+      return details.incomplete ? await fetchWith(null).catch(() => details) : details;
+    } catch {
+      return fetchWith(null);
+    }
   },
 };
