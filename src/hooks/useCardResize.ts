@@ -34,8 +34,14 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 /** Number of columns a grid lays out, or null when the browser does not resolve them. */
 function gridColumns(grid: HTMLElement): number | null {
-  const tracks = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean);
-  return tracks.length > 0 && tracks.every((t) => t.endsWith('px')) ? tracks.length : null;
+  // Worked out from the grid's width and its `--card-min` track size, as
+  // auto-fill does. The resolved track list cannot be used: a wide card adds
+  // implicit tracks to it, so it never shrinks below that card's span.
+  const style = getComputedStyle(grid);
+  const min = parseFloat(style.getPropertyValue('--card-min'));
+  const gap = parseFloat(style.columnGap) || 0;
+  if (!(min > 0) || !(grid.clientWidth > 0)) return null;
+  return Math.max(1, Math.floor((grid.clientWidth + gap) / (min + gap)));
 }
 
 /**

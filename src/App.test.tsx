@@ -280,29 +280,62 @@ describe('App', () => {
       expect(card.classList.contains('resizing')).toBe(false);
     });
 
-    it('measures columns from every grid track when the grid has more than three', async () => {
+    function gridOf(width: number) {
+      // happy-dom does not lay out, so give the grid a width and a track size.
       const style = window.getComputedStyle;
-      vi.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
-        const real = style(el);
-        if (!(el as HTMLElement).classList.contains('grid')) return real;
-        return { ...real, gridTemplateColumns: '100px 100px 100px 100px', columnGap: '0px' } as CSSStyleDeclaration;
+      const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+        if (!(el as HTMLElement).classList.contains('grid')) return style(el);
+        return { columnGap: '0px', getPropertyValue: (name: string) => (name === '--card-min' ? '100px' : '') } as CSSStyleDeclaration;
       });
+      const clientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.classList.contains('grid') ? width : 0;
+        },
+      });
+      return () => {
+        spy.mockRestore();
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', { ...clientWidth, configurable: true });
+      };
+    }
+
+    async function renderSpan(span: number) {
       vi.mocked(tokens.list).mockResolvedValue(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
-      const layout = { ...defaultConfig().layout, cardSpans: { 'github:octo/one': 3 } };
+      const layout = { ...defaultConfig().layout, cardSpans: { 'github:octo/one': span } };
       saveConfig({ ...defaultConfig(), repos, layout, inbox: { ...defaultConfig().inbox, enabled: false } });
       render(<App />);
       const grip = await screen.findByRole('button', { name: 'Resize octo/one' });
-      const card = screen.getByRole('article', { name: /^octo\/one:/ });
-      Object.defineProperty(card.parentElement!, 'clientWidth', { value: 400 });
-      vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 200 } as DOMRect);
+      return { grip, card: screen.getByRole('article', { name: /^octo\/one:/ }) };
+    }
 
-      // A purely vertical drag keeps the card three columns wide.
-      fireEvent.pointerDown(grip, { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
-      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 0, clientY: 60 });
-      expect(card.style.gridColumn).toBe('span 3');
-      fireEvent.pointerUp(window, { pointerId: 2 });
-      expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 3 });
+    it('measures columns from every grid track when the grid has more than three', async () => {
+      const restore = gridOf(400);
+      try {
+        const { grip, card } = await renderSpan(3);
+        vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 200 } as DOMRect);
+
+        // A purely vertical drag keeps the card three columns wide.
+        fireEvent.pointerDown(grip, { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+        fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 0, clientY: 60 });
+        expect(card.style.gridColumn).toBe('span 3');
+        fireEvent.pointerUp(window, { pointerId: 2 });
+        expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 3 });
+      } finally {
+        restore();
+      }
+    });
+
+    it('narrows a wide card to the columns that fit, keeping its saved width', async () => {
+      const restore = gridOf(200);
+      try {
+        const { card } = await renderSpan(3);
+        await waitFor(() => expect(card.style.gridColumn).toBe('span 2'));
+        expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 3 });
+      } finally {
+        restore();
+      }
     });
 
     it('cancels a resize with Escape', async () => {
