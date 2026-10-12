@@ -1,15 +1,13 @@
 import { useId } from 'react';
 
 /** A titled section whose body can be collapsed from its header. */
-export function Collapsible({ title, count, collapsed, onToggle, badge, controls, className, children }: {
+export function Collapsible({ title, count, collapsed, onToggle, badge, className, children }: {
   title: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
   /** Shown next to the title, even while collapsed. */
   badge?: React.ReactNode;
-  /** Shown at the end of the header while expanded. */
-  controls?: React.ReactNode;
   className: string;
   children: React.ReactNode;
 }) {
@@ -30,7 +28,6 @@ export function Collapsible({ title, count, collapsed, onToggle, badge, controls
           </button>
           {badge}
         </h3>
-        {!collapsed && controls}
       </div>
       <div id={bodyId} hidden={collapsed}>
         {!collapsed && children}

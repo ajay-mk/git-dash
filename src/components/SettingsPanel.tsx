@@ -9,6 +9,8 @@ import {
   MIN_ITEMS,
   parseConfig,
   parseRepoInput,
+  PR_GROUPING_LABELS,
+  PR_GROUPINGS,
   REFRESH_CHOICES,
   repoId,
   THEMES,
@@ -16,6 +18,7 @@ import {
   WIDGET_TYPES,
   type DashboardConfig,
   type PinnedRepo,
+  type PrGrouping,
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
@@ -450,7 +453,7 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
   return (
     <>
       <p className="hint">
-        Fine-grained tokens cover a single account or organization. Add one per owner and git-dash uses it for
+        Fine-grained tokens cover a single account or organization. Add one per owner and GitDash uses it for
         that owner&apos;s repositories; everything else uses the default token. Each token needs read-only{' '}
         <PermissionList permissions={providers.github.tokenPermissions} />.{' '}
         <ExternalLink href={providers.github.newTokenUrl(target)}>
@@ -602,6 +605,23 @@ export function SettingsPanel({
                 onChange={(e) => setInbox({ myPullRequests: e.target.checked })}
               />
               Your pull requests
+            </label>
+            <label className="inline-field nested-field">
+              Group by
+              <select
+                value={config.layout.groupMyPullRequests}
+                disabled={!inbox.myPullRequests}
+                onChange={(e) => {
+                  const groupMyPullRequests = e.target.value as PrGrouping;
+                  update((c) => ({ ...c, layout: { ...c.layout, groupMyPullRequests } }));
+                }}
+              >
+                {PR_GROUPINGS.map((g) => (
+                  <option key={g} value={g}>
+                    {PR_GROUPING_LABELS[g]}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="check">
               <input type="checkbox" checked={inbox.assigned} onChange={(e) => setInbox({ assigned: e.target.checked })} />

@@ -76,26 +76,19 @@ describe('InboxPanel', () => {
     expect(view().collapsedInbox).toEqual([]);
   });
 
-  it('keeps the count visible and hides the grouping control while collapsed', () => {
+  it('keeps the count visible while collapsed', () => {
     render(<Harness initial={{ collapsedInbox: ['myPullRequests'] }} />);
     const toggle = screen.getByRole('button', { name: /Your pull requests/ });
     expect(within(toggle).getByText('3')).toBeTruthy();
     expect(screen.queryByText('Zeta ready')).toBeNull();
-    expect(screen.queryByLabelText('Group your pull requests')).toBeNull();
   });
 
-  it('groups your pull requests by repository and by status', async () => {
-    render(<Harness />);
-    const select = screen.getByLabelText('Group your pull requests');
-
-    await userEvent.selectOptions(select, 'repo');
-    expect(view().groupMyPullRequests).toBe('repo');
-    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['o/alpha 2', 'o/zeta 1']);
-
-    await userEvent.selectOptions(select, 'status');
-    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Ready 2', 'Draft 1']);
-
-    await userEvent.selectOptions(select, 'none');
-    expect(screen.queryAllByRole('heading', { level: 4 })).toHaveLength(0);
+  it.each([
+    ['repo', ['o/alpha 2', 'o/zeta 1']],
+    ['status', ['Ready 2', 'Draft 1']],
+    ['none', []],
+  ] as const)('groups your pull requests: %s', (groupMyPullRequests, headings) => {
+    render(<Harness initial={{ groupMyPullRequests }} />);
+    expect(screen.queryAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(headings);
   });
 });

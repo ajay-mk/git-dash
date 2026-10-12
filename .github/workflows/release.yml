@@ -154,6 +154,6 @@ jobs:
           gh release create "$TAG" ./* \
             --draft \
             --verify-tag \
-            --title "git-dash $TAG" \
+            --title "GitDash $TAG" \
             --generate-notes \
             --notes "These builds are not code-signed yet. See the README's \"Installing\" section for what to expect, and verify downloads against SHA256SUMS.txt."

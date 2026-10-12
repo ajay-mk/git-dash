@@ -44,7 +44,7 @@ pub fn run() {
         ])
         .setup(|app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("git-dash")
+                .title("GitDash")
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(480.0, 400.0)
                 .on_navigation(is_app_url)
@@ -52,7 +52,7 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running git-dash");
+        .expect("error while running GitDash");
 }
 
 #[cfg(test)]
