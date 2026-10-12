@@ -3,9 +3,18 @@ import { InboxPanel } from './components/InboxPanel';
 import { RepoCard } from './components/RepoCard';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TokenSetup } from './components/TokenSetup';
-import { pruneLayout, repoId, widgetKey, WIDGET_TYPES, type DashboardConfig } from './config/schema';
+import {
+  pruneLayout,
+  repoId,
+  shiftListLimits,
+  widgetKey,
+  WIDGET_TYPES,
+  type DashboardConfig,
+  type PinnedRepo,
+} from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
+import { useCardResize } from './hooks/useCardResize';
 import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
@@ -69,6 +78,13 @@ export default function App() {
 
   const repoIds = useMemo(() => config.repos.map(repoId), [config.repos]);
   const reposById = useMemo(() => new Map(config.repos.map((r) => [repoId(r), r])), [config.repos]);
+  const repoLabel = useCallback(
+    (id: string) => {
+      const r = reposById.get(id);
+      return r ? `${r.owner}/${r.name}` : id;
+    },
+    [reposById],
+  );
   const reorder = useReorder(
     repoIds,
     (ids) =>
@@ -78,11 +94,26 @@ export default function App() {
         const at = (id: string) => rank.get(id) ?? ids.length;
         return { ...c, repos: [...c.repos].sort((a, b) => at(repoId(a)) - at(repoId(b))) };
       }),
-    (id) => {
-      const r = reposById.get(id);
-      return r ? `${r.owner}/${r.name}` : id;
-    },
+    repoLabel,
   );
+  const { bindGrid, ...resize } = useCardResize({
+    onSpan: (id, span) =>
+      update((c) => {
+        const cardSpans = { ...c.layout.cardSpans };
+        if (span > 1) cardSpans[id] = span;
+        else delete cardSpans[id];
+        return { ...c, layout: { ...c.layout, cardSpans } };
+      }),
+    onRows: (id, delta) =>
+      update((c) => ({
+        ...c,
+        repos: c.repos.map((r) => (repoId(r) === id ? { ...r, widgets: shiftListLimits(r.widgets, delta) } : r)),
+      })),
+    describe: (id, span, delta) => {
+      const repo = reposById.get(id);
+      return `${repoLabel(id)} is ${span} ${span === 1 ? 'column' : 'columns'} wide${repo ? `, ${entriesText(repo, delta)}` : ''}.`;
+    },
+  });
 
   const summary = useMemo(() => {
     let failing = 0;
@@ -170,39 +201,62 @@ export default function App() {
         ) : (
           <>
             <p id="reorder-help" className="sr-only">Drag to reorder, or use the arrow keys.</p>
+            <p id="resize-help" className="sr-only">
+              Drag to resize. Left and right arrows change the width, up and down change how many entries show.
+            </p>
             <p className="sr-only" aria-live="polite">{reorder.announcement}</p>
-            <div className={`grid${reorder.dragging ? ' reordering' : ''}`}>
-              {reorder.order.map((id) => reposById.get(id)).filter((r) => r !== undefined).map((repo) => (
-                <RepoCard
-                  key={repoId(repo)}
-                  repo={repo}
-                  dragging={reorder.dragging === repoId(repo)}
-                  handle={
-                    config.repos.length > 1 && (
-                      <button type="button" className="icon-btn drag-handle" title="Drag to reorder" {...reorder.handleProps(repoId(repo))}>
-                        ⠿
-                      </button>
-                    )
-                  }
-                  result={dash.repos.get(repoId(repo))}
-                  collapsedWidgets={WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)))}
-                  onToggleWidget={(type) => {
-                    const key = widgetKey(repo, type);
-                    update((c) => {
-                      const collapsed = c.layout.collapsedWidgets;
-                      return {
-                        ...c,
-                        layout: {
-                          ...c.layout,
-                          collapsedWidgets: collapsed.includes(key)
-                            ? collapsed.filter((k) => k !== key)
-                            : [...collapsed, key],
-                        },
-                      };
-                    });
-                  }}
-                />
-              ))}
+            <p className="sr-only" aria-live="polite">{resize.announcement}</p>
+            <div ref={bindGrid} className={`grid${reorder.dragging ? ' reordering' : ''}${resize.resizing ? ' resizing' : ''}`}>
+              {reorder.order.map((id) => reposById.get(id)).filter((r) => r !== undefined).map((repo) => {
+                const id = repoId(repo);
+                const collapsedWidgets = WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)));
+                const span = Math.min(config.layout.cardSpans[id] ?? 1, resize.columns);
+                const resizing = resize.resizing?.id === id ? resize.resizing : null;
+                const lists = repo.widgets.filter((w) => w.type !== 'ci' && !collapsedWidgets.includes(w.type)).length;
+                return (
+                  <RepoCard
+                    key={id}
+                    repo={repo}
+                    dragging={reorder.dragging === id}
+                    span={span}
+                    resize={resizing}
+                    grip={
+                      <>
+                        {resizing && (
+                          <span className="resize-hint" aria-hidden="true">
+                            {resizing.span} {resizing.span === 1 ? 'column' : 'columns'} · {entriesText(repo, resizing.delta)}
+                          </span>
+                        )}
+                        <button type="button" className="resize-grip" title="Drag to resize" {...resize.gripProps(id, repoLabel(id), span, lists)} />
+                      </>
+                    }
+                    handle={
+                      config.repos.length > 1 && (
+                        <button type="button" className="icon-btn drag-handle" title="Drag to reorder" {...reorder.handleProps(repoId(repo))}>
+                          ⠿
+                        </button>
+                      )
+                    }
+                    result={dash.repos.get(repoId(repo))}
+                    collapsedWidgets={collapsedWidgets}
+                    onToggleWidget={(type) => {
+                      const key = widgetKey(repo, type);
+                      update((c) => {
+                        const collapsed = c.layout.collapsedWidgets;
+                        return {
+                          ...c,
+                          layout: {
+                            ...c.layout,
+                            collapsedWidgets: collapsed.includes(key)
+                              ? collapsed.filter((k) => k !== key)
+                              : [...collapsed, key],
+                          },
+                        };
+                      });
+                    }}
+                  />
+                );
+              })}
             </div>
           </>
         )}
@@ -246,4 +300,15 @@ export default function App() {
       />
     </div>
   );
+}
+
+/** "5 entries" or "5 pull requests, 3 issues" for a card's lists after `delta`. */
+function entriesText(repo: PinnedRepo, delta: number): string {
+  const limits = shiftListLimits(repo.widgets, delta).flatMap((w) =>
+    w.type === 'ci' ? [] : [{ type: w.type, limit: w.limit }],
+  );
+  if (limits.length === 0) return 'no lists';
+  const first = limits[0]!.limit;
+  if (limits.every((l) => l.limit === first)) return `${first} ${first === 1 ? 'entry' : 'entries'}`;
+  return limits.map((l) => `${l.limit} ${l.type === 'pullRequests' ? 'pull requests' : 'issues'}`).join(', ');
 }
