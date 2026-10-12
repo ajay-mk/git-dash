@@ -17,7 +17,7 @@ pub struct GitHubClient {
 impl GitHubClient {
     pub fn new() -> Result<Self> {
         let http = reqwest::Client::builder()
-            .user_agent(concat!("git-dash/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("GitDash/", env!("CARGO_PKG_VERSION")))
             .https_only(true)
             // Never follow redirects: the token must only ever go to the
             // fixed GitHub API endpoint.

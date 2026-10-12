@@ -13,7 +13,7 @@ function stored(hasDefault: boolean) {
 }
 
 function saveConfig(config = defaultConfig()) {
-  localStorage.setItem('git-dash.config.v1', JSON.stringify(config));
+  localStorage.setItem('gitdash.config.v1', JSON.stringify(config));
 }
 
 describe('App', () => {
@@ -104,7 +104,7 @@ describe('App', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Theme' }), 'Dark');
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
-    expect(JSON.parse(localStorage.getItem('git-dash.config.v1')!)).toMatchObject({ theme: 'dark' });
+    expect(JSON.parse(localStorage.getItem('gitdash.config.v1')!)).toMatchObject({ theme: 'dark' });
   });
 
   describe('reordering repo cards', () => {
@@ -115,7 +115,7 @@ describe('App', () => {
     }
 
     function savedOrder() {
-      const saved = JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}') as { repos: { name: string }[] };
+      const saved = JSON.parse(localStorage.getItem('gitdash.config.v1') ?? '{}') as { repos: { name: string }[] };
       return saved.repos.map((r) => r.name);
     }
 
@@ -208,7 +208,7 @@ describe('App', () => {
     const repos = [pinned('octo', 'one'), pinned('octo', 'two')];
 
     function saved() {
-      return JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}') as {
+      return JSON.parse(localStorage.getItem('gitdash.config.v1') ?? '{}') as {
         repos: { name: string; widgets: { type: string; limit?: number }[] }[];
         layout: { cardSpans: Record<string, number>; cardRows: Record<string, number> };
       };
