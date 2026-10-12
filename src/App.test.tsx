@@ -210,7 +210,7 @@ describe('App', () => {
     function saved() {
       return JSON.parse(localStorage.getItem('gitdash.config.v1') ?? '{}') as {
         repos: { name: string; widgets: { type: string; limit?: number }[] }[];
-        layout: { cardSpans: Record<string, number>; cardRows: Record<string, number> };
+        layout: { cardSpans: Record<string, number>; cardRows: Record<string, number>; collapsedWidgets: string[] };
       };
     }
     const limits = (name: string) =>
@@ -252,7 +252,7 @@ describe('App', () => {
       saveConfig({ ...defaultConfig(), repos: [one, repos[1]!], layout, inbox: { ...defaultConfig().inbox, enabled: false } });
       render(<App />);
       (await screen.findByRole('button', { name: 'Resize octo/one' })).focus();
-      const folded = () => (JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}').layout.collapsedWidgets as string[]).sort();
+      const folded = () => [...saved().layout.collapsedWidgets].sort();
 
       await userEvent.keyboard('{ArrowUp}');
       expect(limits('one')).toEqual([1, 5]);
