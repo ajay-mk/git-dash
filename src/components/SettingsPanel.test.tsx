@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig, MAX_REPOS, type DashboardConfig } from '../config/schema';
+import { githubGraphql } from '../lib/transport';
 import { pinned } from '../test/fixtures';
 import { SettingsPanel } from './SettingsPanel';
 
@@ -38,7 +39,7 @@ function setup(initial: Partial<DashboardConfig> = {}) {
 const names = (c: DashboardConfig) => c.repos.map((r) => `${r.owner}/${r.name}`);
 
 async function pin(text: string) {
-  const input = screen.getByRole('textbox', { name: 'Repository to pin' });
+  const input = screen.getByRole('combobox', { name: 'Repository to pin' });
   await userEvent.clear(input);
   await userEvent.type(input, text);
   await userEvent.click(screen.getByRole('button', { name: 'Pin' }));
@@ -63,7 +64,7 @@ describe('SettingsPanel', () => {
       expect(names(config())).toEqual(['octo/repo', 'rust-lang/rust']);
       expect(config().repos[0]!.widgets.map((w) => w.type)).toEqual(['ci', 'pullRequests', 'issues']);
       expect(screen.queryByRole('alert')).toBeNull();
-      expect((screen.getByRole('textbox', { name: 'Repository to pin' }) as HTMLInputElement).value).toBe('');
+      expect((screen.getByRole('combobox', { name: 'Repository to pin' }) as HTMLInputElement).value).toBe('');
     });
 
     it.each(['octo', 'octo/repo/extra', '-bad/repo', 'octo/..', 'https://evil.example/octo/repo', '<b>x</b>/y'])(
@@ -89,6 +90,63 @@ describe('SettingsPanel', () => {
       await pin('octo/one-more');
       expect(screen.getByRole('alert').textContent).toBe(`You can pin up to ${MAX_REPOS} repositories.`);
       expect(config().repos).toHaveLength(MAX_REPOS);
+    });
+  });
+
+  describe('suggestions', () => {
+    function viewerRepos(...names: string[]) {
+      vi.mocked(githubGraphql).mockResolvedValue({
+        data: { viewer: { repositories: { nodes: names.map((nameWithOwner) => ({ nameWithOwner })) } } },
+      });
+    }
+    const field = () => screen.getByRole('combobox', { name: 'Repository to pin' });
+    const options = () => {
+      const list = screen.queryByRole('listbox', { name: 'Suggested repositories' });
+      return list ? within(list).getAllByRole('option').map((o) => o.textContent) : [];
+    };
+
+    it('suggests repositories the token can see, minus pinned ones', async () => {
+      viewerRepos('octo/repo', 'octo/api', 'acme/web');
+      setup({ repos: [pinned('octo', 'repo')] });
+      await userEvent.click(field());
+
+      expect(await screen.findByRole('listbox', { name: 'Suggested repositories' })).toBeTruthy();
+      expect(options()).toEqual(['octo/api', 'acme/web']);
+      await userEvent.type(field(), 'we');
+      expect(options()).toEqual(['acme/web']);
+    });
+
+    it('pins a suggestion on click', async () => {
+      viewerRepos('octo/api', 'acme/web');
+      const { config } = setup();
+      await userEvent.click(field());
+      await userEvent.click(await screen.findByRole('option', { name: 'acme/web' }));
+
+      expect(names(config())).toEqual(['acme/web']);
+      expect((field() as HTMLInputElement).value).toBe('');
+    });
+
+    it('picks with the keyboard and closes on Escape without closing settings', async () => {
+      viewerRepos('octo/api', 'acme/web');
+      const { config, onClose } = setup();
+      await userEvent.click(field());
+      await screen.findByRole('listbox', { name: 'Suggested repositories' });
+
+      await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+      expect(field().getAttribute('aria-activedescendant')).toBe(screen.getByRole('option', { name: 'acme/web' }).id);
+      await userEvent.keyboard('{Enter}');
+      expect(names(config())).toEqual(['acme/web']);
+
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('listbox', { name: 'Suggested repositories' })).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('still pins typed input when suggestions fail to load', async () => {
+      const { config } = setup();
+      await pin('octo/repo');
+      expect(screen.queryByRole('listbox', { name: 'Suggested repositories' })).toBeNull();
+      expect(names(config())).toEqual(['octo/repo']);
     });
   });
 
