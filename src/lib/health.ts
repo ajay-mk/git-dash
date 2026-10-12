@@ -1,7 +1,7 @@
 import type { PullRequestItem, RepoResult } from '../providers/types';
 
 /**
- * One-word summary of a repository, used for the coloured status stripe.
+ * One-word summary of a repository, used for the coloured status dot.
  * Ordered from most to least severe.
  */
 export type Health = 'error' | 'failing' | 'attention' | 'pending' | 'ok';
