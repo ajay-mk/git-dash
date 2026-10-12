@@ -304,6 +304,16 @@ describe('SettingsPanel', () => {
     expect(screen.getByRole('checkbox', { name: 'Your pull requests' }).closest('fieldset')?.disabled).toBe(true);
   });
 
+  it('sets how your pull requests are grouped', async () => {
+    const { config } = setup();
+    const select = screen.getByRole('combobox', { name: 'Group by' });
+    await userEvent.selectOptions(select, 'By status');
+    expect(config().layout.groupMyPullRequests).toBe('status');
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Your pull requests' }));
+    expect((select as HTMLSelectElement).disabled).toBe(true);
+  });
+
   it('changes refresh interval and theme', async () => {
     const { config } = setup();
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Refresh' }), 'Every 15 min');

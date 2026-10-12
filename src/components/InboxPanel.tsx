@@ -5,12 +5,6 @@ import { Collapsible } from './Collapsible';
 import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
 
-const GROUPING_LABELS: Record<PrGrouping, string> = {
-  none: 'No grouping',
-  repo: 'By repository',
-  status: 'By status',
-};
-
 interface Subgroup<T> {
   key: string;
   title: string;
@@ -40,7 +34,7 @@ export function groupPullRequests(items: PullRequestItem[], by: PrGrouping): Sub
   return null;
 }
 
-function Group<T>({ title, data, render, emptyText, collapsed, onToggle, subgroups, controls }: {
+function Group<T>({ title, data, render, emptyText, collapsed, onToggle, subgroups }: {
   title: string;
   data: Counted<T>;
   render: (item: T) => React.ReactNode;
@@ -49,8 +43,6 @@ function Group<T>({ title, data, render, emptyText, collapsed, onToggle, subgrou
   onToggle: () => void;
   /** Shown instead of a flat list when set. */
   subgroups?: Subgroup<T>[] | null;
-  /** Extra controls in the header, shown while expanded. */
-  controls?: React.ReactNode;
 }) {
   return (
     <Collapsible
@@ -59,7 +51,6 @@ function Group<T>({ title, data, render, emptyText, collapsed, onToggle, subgrou
       count={data.total}
       collapsed={collapsed}
       onToggle={onToggle}
-      controls={controls}
     >
       {data.items.length === 0 ? (
         <p className="empty">{emptyText}</p>
@@ -138,23 +129,6 @@ export function InboxPanel({ config, layout, onLayoutChange, inbox, error }: {
               collapsed={isCollapsed('myPullRequests')}
               onToggle={() => toggle('myPullRequests')}
               subgroups={groupPullRequests(sortedMine.items, grouping)}
-              controls={
-                <select
-                  className="group-select"
-                  aria-label="Group your pull requests"
-                  value={grouping}
-                  onChange={(e) => {
-                    const groupMyPullRequests = e.target.value as PrGrouping;
-                    onLayoutChange((v) => ({ ...v, groupMyPullRequests }));
-                  }}
-                >
-                  {(Object.keys(GROUPING_LABELS) as PrGrouping[]).map((g) => (
-                    <option key={g} value={g}>
-                      {GROUPING_LABELS[g]}
-                    </option>
-                  ))}
-                </select>
-              }
               render={(pr: PullRequestItem) => (
                 // The repository is already the heading when grouped by it.
                 <PullRequestRow key={pr.url} pr={pr} showRepo={grouping !== 'repo'} action={myPrAction(pr)} />

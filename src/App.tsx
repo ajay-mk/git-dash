@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import logo from './assets/logo.svg';
 import { InboxPanel } from './components/InboxPanel';
 import { RepoCard } from './components/RepoCard';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -156,7 +157,10 @@ export default function App() {
   return (
     <div className={`app${config.inbox.enabled ? ' with-sidebar' : ''}`}>
       <header className="topbar">
-        <h1 className="brand">git-dash</h1>
+        <h1 className="brand">
+          <img className="brand-logo" src={logo} alt="" />
+          GitDash
+        </h1>
         <div className="summary" aria-live="polite">
           {summary.failing > 0 && <span className="pill pill-bad">{summary.failing} failing</span>}
           {summary.attention > 0 && <span className="pill pill-warn">{summary.attention} need attention</span>}

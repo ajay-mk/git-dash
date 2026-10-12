@@ -53,6 +53,12 @@ export type InboxSection = (typeof INBOX_SECTIONS)[number];
 export const PR_GROUPINGS = ['none', 'repo', 'status'] as const;
 export type PrGrouping = (typeof PR_GROUPINGS)[number];
 
+export const PR_GROUPING_LABELS: Record<PrGrouping, string> = {
+  none: 'No grouping',
+  repo: 'By repository',
+  status: 'By status',
+};
+
 /**
  * How the sidebar and repo cards are laid out. Kept apart from the repo and
  * inbox settings because changing it should not refetch anything.

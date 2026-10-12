@@ -55,7 +55,7 @@ describe('App', () => {
     vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
     await userEvent.type(screen.getByLabelText('Access token'), 'github_pat_NEW');
     await userEvent.click(screen.getByRole('button', { name: 'Save token' }));
-    expect(await screen.findByRole('heading', { name: 'git-dash' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'GitDash' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Connect GitHub' })).toBeNull();
   });
 
