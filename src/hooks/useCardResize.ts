@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useWindowDrag } from './useWindowDrag';
-import { MAX_CARD_SPAN, MAX_ITEMS } from '../config/schema';
+import { MAX_CARD_ROWS, MAX_CARD_SPAN, MAX_ITEMS, MIN_CARD_ROWS } from '../config/schema';
+import { gridRowMetrics } from './useMasonry';
 
 /** A resize in progress, as previewed on the card. */
 export interface CardResize {
@@ -9,8 +10,8 @@ export interface CardResize {
   span: number;
   /** Entries added to (or removed from) each list on the card. */
   delta: number;
-  /** Keeps the card as tall as the pointer while it grows, before the new entries load. */
-  minHeight: number | undefined;
+  /** Height in grid rows. */
+  rows: number;
 }
 
 interface Drag extends CardResize {
@@ -18,10 +19,14 @@ interface Drag extends CardResize {
   startX: number;
   startY: number;
   startSpan: number;
+  startRows: number;
   width: number;
   height: number;
   column: number;
   gap: number;
+  /** Grid row height and the space under each card. */
+  unit: number;
+  rowGap: number;
   row: number;
   lists: number;
   columns: number;
@@ -31,6 +36,11 @@ interface Drag extends CardResize {
 const ROW_HEIGHT = 28;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/** Grid rows a card of `height` pixels spans, within the saved range. */
+function rowsFor(height: number, unit: number, gap: number): number {
+  return clamp(Math.round((height + gap) / unit), MIN_CARD_ROWS, MAX_CARD_ROWS);
+}
 
 /** Number of columns a grid lays out, or null when the browser does not resolve them. */
 function gridColumns(grid: HTMLElement): number | null {
@@ -45,14 +55,20 @@ function gridColumns(grid: HTMLElement): number | null {
 }
 
 /**
- * Lets the user resize repo cards from a grip in the corner: dragging
- * sideways snaps the width to whole grid columns, dragging down or up adds or
- * removes list entries. The keyboard does the same with the arrow keys on the
- * grip. Like reordering, a drag only commits when it ends (Escape cancels),
- * because changing the entry count refetches the card.
+ * Lets the user resize repo cards from a grip in the corner. Dragging
+ * sideways snaps the width to whole grid columns; dragging down or up sets
+ * the card's height in whole grid rows, whatever it holds, and adds or
+ * removes list entries to match. The keyboard does the same with the arrow
+ * keys on the grip, and Delete (or a double click) lets the card fit its
+ * content again. Like reordering, a drag only commits when it ends (Escape
+ * cancels), because changing the entry count refetches the card.
  */
-export function useCardResize({ onSpan, onRows, describe }: {
+export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
+  /** The grid that holds the cards. */
+  grid: HTMLElement | null;
   onSpan: (id: string, span: number) => void;
+  /** Sets a card's height in grid rows, or lets it fit its content with null. */
+  onHeight: (id: string, rows: number | null) => void;
   /** Returns whether any list actually changed (they may be at their limit). */
   onRows: (id: string, delta: number) => boolean;
   /** Describes a card's size after a change, for the live announcement. */
@@ -63,11 +79,10 @@ export function useCardResize({ onSpan, onRows, describe }: {
   // Tracks the grid lays out; cards span at most MAX_CARD_SPAN of them.
   const [tracks, setTracks] = useState(MAX_CARD_SPAN);
   const columns = Math.min(tracks, MAX_CARD_SPAN);
-  const [grid, setGrid] = useState<HTMLElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
-  const callbacks = useRef({ onSpan, onRows, describe });
+  const callbacks = useRef({ onSpan, onHeight, onRows, describe });
   useEffect(() => {
-    callbacks.current = { onSpan, onRows, describe };
+    callbacks.current = { onSpan, onHeight, onRows, describe };
   });
 
   // Cards cannot be wider than the grid, so track how many columns it has.
@@ -92,11 +107,12 @@ export function useCardResize({ onSpan, onRows, describe }: {
       if (!current) return;
       setDragState(null);
       if (!commit) return setAnnouncement('Resizing cancelled.');
-      const { id, span, delta, startSpan } = current;
-      if (span === startSpan && delta === 0) return;
+      const { id, span, delta, rows, startSpan, startRows } = current;
+      if (span === startSpan && rows === startRows) return;
       if (span !== startSpan) callbacks.current.onSpan(id, span);
-      const rows = delta !== 0 && callbacks.current.onRows(id, delta);
-      if (span !== startSpan || rows) setAnnouncement(callbacks.current.describe(id, span, rows ? delta : 0));
+      if (rows !== startRows) callbacks.current.onHeight(id, rows);
+      const changed = delta !== 0 && callbacks.current.onRows(id, delta);
+      setAnnouncement(callbacks.current.describe(id, span, changed ? delta : 0));
     },
     [setDragState],
   );
@@ -111,19 +127,39 @@ export function useCardResize({ onSpan, onRows, describe }: {
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
       const span = clamp(Math.round((d.width + dx + d.gap) / (d.column + d.gap)), 1, d.columns);
-      const delta = clamp(Math.round(dy / (d.row * d.lists)), -MAX_ITEMS, MAX_ITEMS);
-      const minHeight = dy > 0 ? d.height + dy : undefined;
-      if (span !== d.span || delta !== d.delta || minHeight !== d.minHeight) {
-        setDragState({ ...d, span, delta, minHeight });
+      // The card snaps to whole grid rows as it follows the pointer.
+      const rows = rowsFor(d.height + dy, d.unit, d.rowGap);
+      const grown = (rows - d.startRows) * d.unit;
+      const delta = clamp(Math.round(grown / (d.row * d.lists)), -MAX_ITEMS, MAX_ITEMS);
+      if (span !== d.span || delta !== d.delta || rows !== d.rows) {
+        setDragState({ ...d, span, delta, rows });
       }
     },
     finish,
   );
 
+  /** Where a resize of `card` starts from. */
+  const measure = (card: HTMLElement, gridEl: HTMLElement, span: number) => {
+    const rect = card.getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(gridEl).columnGap) || 0;
+    const { unit, gap: rowGap } = gridRowMetrics(gridEl);
+    return {
+      width: rect.width,
+      height: rect.height,
+      gap,
+      unit,
+      rowGap,
+      // One track's width, from every track the grid has (not just the ones a card may span).
+      column: (gridEl.clientWidth - gap * (tracks - 1)) / tracks || rect.width / span || 1,
+      row: card.querySelector('.rows > li')?.getBoundingClientRect().height || ROW_HEIGHT,
+      startRows: rowsFor(rect.height, unit, rowGap),
+    };
+  };
+
   /**
    * Props for a card's resize grip. `span` is the card's current width and
-   * `lists` the number of open list widgets on it, which the height spreads
-   * new entries across.
+   * `lists` the number of open list widgets on it, which new entries are
+   * spread across.
    */
   const gripProps = (id: string, label: string, span: number, lists: number) => ({
     'aria-label': `Resize ${label}`,
@@ -134,31 +170,28 @@ export function useCardResize({ onSpan, onRows, describe }: {
       if (!card || !grid) return;
       e.preventDefault();
       e.currentTarget.focus();
-      const rect = card.getBoundingClientRect();
-      const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
-      // One track's width, from every track the grid has (not just the ones a card may span).
-      const column = (grid.clientWidth - gap * (tracks - 1)) / tracks || rect.width / span || 1;
-      const row = card.querySelector('.rows > li')?.getBoundingClientRect().height || ROW_HEIGHT;
+      const m = measure(card, grid, span);
       setDragState({
+        ...m,
         id,
         span,
         delta: 0,
-        minHeight: undefined,
+        rows: m.startRows,
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
         startSpan: span,
-        width: rect.width,
-        height: rect.height,
-        column,
-        gap,
-        row,
         lists: Math.max(1, lists),
         columns,
       });
     },
+    onDoubleClick: () => {
+      onHeight(id, null);
+      setAnnouncement(`${label} fits its content.`);
+    },
     onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
       if (dragRef.current) return;
+      const card = e.currentTarget.closest('article');
       let nextSpan = span;
       let delta = 0;
       switch (e.key) {
@@ -174,24 +207,36 @@ export function useCardResize({ onSpan, onRows, describe }: {
         case 'ArrowDown':
           delta = 1;
           break;
+        case 'Delete':
+        case 'Backspace':
+          e.preventDefault();
+          onHeight(id, null);
+          setAnnouncement(`${label} fits its content.`);
+          return;
         default:
           return;
       }
       e.preventDefault();
       nextSpan = clamp(nextSpan, 1, columns);
       if (nextSpan !== span) onSpan(id, nextSpan);
-      const rows = delta !== 0 && onRows(id, delta);
-      if (nextSpan !== span || rows) setAnnouncement(describe(id, nextSpan, rows ? delta : 0));
+      let resized = false;
+      if (delta !== 0 && card && grid) {
+        // One step is one entry in each open list.
+        const m = measure(card, grid, span);
+        const rows = rowsFor(m.height + delta * m.row * Math.max(1, lists), m.unit, m.rowGap);
+        resized = rows !== m.startRows;
+        if (resized) onHeight(id, rows);
+      }
+      const changed = delta !== 0 && onRows(id, delta);
+      if (nextSpan !== span || resized || changed) setAnnouncement(describe(id, nextSpan, changed ? delta : 0));
     },
   });
 
   return {
-    /** Pass as the `ref` of the grid that holds the cards. */
-    bindGrid: setGrid,
     /** Columns in the grid; spans are clamped to it. */
     columns,
     /** The resize in progress, if any. */
-    resizing: drag && { id: drag.id, span: drag.span, delta: drag.delta, minHeight: drag.minHeight },
+    resizing: drag && { id: drag.id, span: drag.span, delta: drag.delta, rows: drag.rows },
     announcement,
     gripProps,
   };
