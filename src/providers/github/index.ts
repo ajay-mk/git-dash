@@ -3,6 +3,7 @@ import { AppError, githubGraphql } from '../../lib/transport';
 import { groupByToken, mergeInbox } from '../tokens';
 import type { InboxSnapshot, Provider, RateLimit, RepoResult } from '../types';
 import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepository } from './map';
+import { fineGrainedTokenUrl, PERMISSION_LABELS } from './tokenTemplate';
 import { buildReposQuery, INBOX_QUERY, INBOX_SEARCHES, repoAlias } from './queries';
 
 /** GitHub limits query complexity; batch repositories to stay well under it. */
@@ -17,7 +18,8 @@ function chunk<T>(items: T[], size: number): T[][] {
 export const github: Provider = {
   id: 'github',
   label: 'GitHub',
-  tokenHelpUrl: 'https://github.com/settings/personal-access-tokens/new',
+  newTokenUrl: fineGrainedTokenUrl,
+  tokenPermissions: PERMISSION_LABELS,
 
   async fetchRepos(repos: PinnedRepo[], tokenOwners: readonly string[]) {
     const results = new Map<string, RepoResult>();
