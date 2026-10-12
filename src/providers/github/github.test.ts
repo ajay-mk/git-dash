@@ -268,6 +268,24 @@ describe('github.listRepos', () => {
     expect(graphql).toHaveBeenCalledWith(expect.stringContaining('repositoryOwner(login: $owner)'), expect.objectContaining({ owner: 'acme' }), 'acme');
   });
 
+  it('orders the merged list by last push across tokens', async () => {
+    const at = (name: string, pushedAt: string | null) => ({ nameWithOwner: name, isArchived: false, pushedAt });
+    graphql.mockImplementation((_query, _variables, owner) =>
+      Promise.resolve(
+        owner
+          ? { data: { repositoryOwner: { repositories: { nodes: [at('acme/new', '2026-10-12T00:00:00Z')] } } } }
+          : {
+              data: {
+                viewer: {
+                  repositories: { nodes: [at('octo/a', '2026-10-10T00:00:00Z'), at('octo/b', '2026-10-01T00:00:00Z'), at('octo/empty', null)] },
+                },
+              },
+            },
+      ),
+    );
+    await expect(github.listRepos(['acme'])).resolves.toEqual(['acme/new', 'octo/a', 'octo/b', 'octo/empty']);
+  });
+
   it('ignores tokens that fail', async () => {
     graphql.mockImplementation((_query, _variables, owner) =>
       owner ? Promise.reject(new Error('revoked')) : Promise.resolve({ data: { viewer: { repositories: nodes('octo/one') } } }),

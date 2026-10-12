@@ -2,7 +2,7 @@ import { repoId, type PinnedRepo } from '../../config/schema';
 import { AppError, githubGraphql } from '../../lib/transport';
 import { groupByToken, mergeInbox } from '../tokens';
 import type { InboxSnapshot, Provider, RateLimit, RepoResult } from '../types';
-import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepoNames, mapRepository } from './map';
+import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepoSuggestions, mapRepository, type RepoSuggestion } from './map';
 import {
   buildReposQuery,
   INBOX_QUERY,
@@ -112,22 +112,27 @@ export const github: Provider = {
     // Partial data (e.g. an organization behind SSO) still yields the rest.
     const lists = await Promise.allSettled([
       githubGraphql<{ viewer?: { repositories?: unknown } }>(VIEWER_REPOS_QUERY, { n }).then((res) =>
-        mapRepoNames(res.data?.viewer?.repositories),
+        mapRepoSuggestions(res.data?.viewer?.repositories),
       ),
       ...tokenOwners.map((owner) =>
         githubGraphql<{ repositoryOwner?: { repositories?: unknown } }>(OWNER_REPOS_QUERY, { owner, n }, owner).then(
-          (res) => mapRepoNames(res.data?.repositoryOwner?.repositories),
+          (res) => mapRepoSuggestions(res.data?.repositoryOwner?.repositories),
         ),
       ),
     ]);
-    const seen = new Map<string, string>();
+    const seen = new Map<string, RepoSuggestion>();
     for (const list of lists) {
       if (list.status !== 'fulfilled') continue;
-      for (const name of list.value) {
-        const key = name.toLowerCase();
-        if (!seen.has(key)) seen.set(key, name);
+      for (const repo of list.value) {
+        const key = repo.name.toLowerCase();
+        if (!seen.has(key)) seen.set(key, repo);
       }
     }
-    return [...seen.values()];
+    // Each token's list is already newest first; interleave them so a recent
+    // push seen only by a per-owner token is not buried. Stable for ties, and
+    // never-pushed repositories go last.
+    return [...seen.values()]
+      .sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
+      .map((r) => r.name);
   },
 };

@@ -133,7 +133,7 @@ query GitDashViewerRepos($n: Int!) {
       affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       ${SUGGESTION_ORDER}
-    ) { nodes { nameWithOwner isArchived } }
+    ) { nodes { nameWithOwner isArchived pushedAt } }
   }
 }
 `;
@@ -142,7 +142,7 @@ query GitDashViewerRepos($n: Int!) {
 export const OWNER_REPOS_QUERY = `
 query GitDashOwnerRepos($owner: String!, $n: Int!) {
   repositoryOwner(login: $owner) {
-    repositories(first: $n, ${SUGGESTION_ORDER}) { nodes { nameWithOwner isArchived } }
+    repositories(first: $n, ${SUGGESTION_ORDER}) { nodes { nameWithOwner isArchived pushedAt } }
   }
 }
 `;
