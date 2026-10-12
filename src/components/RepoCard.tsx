@@ -1,4 +1,6 @@
-import type { PinnedRepo, WidgetConfig, WidgetType } from '../config/schema';
+import type { ReactNode } from 'react';
+import { repoId, type PinnedRepo, type WidgetConfig, type WidgetType } from '../config/schema';
+import { REORDER_ATTR } from '../hooks/useReorder';
 import { HEALTH_LABELS, repoHealth } from '../lib/health';
 import type { RepoError, RepoResult, RepoSnapshot } from '../providers/types';
 import { Collapsible } from './Collapsible';
@@ -82,12 +84,16 @@ function RepoErrorText({ error }: { error: RepoError }) {
   );
 }
 
-export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget }: {
+export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handle, dragging = false }: {
   repo: PinnedRepo;
   result: RepoResult | undefined;
   /** Widget types collapsed on this card. */
   collapsedWidgets: readonly WidgetType[];
   onToggleWidget: (type: WidgetType) => void;
+  /** Drag handle for reordering the cards, shown at the start of the header. */
+  handle?: ReactNode;
+  /** Whether this card is being dragged. */
+  dragging?: boolean;
 }) {
   const health = repoHealth(result);
   const data = result?.ok ? result.data : null;
@@ -95,10 +101,12 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget }: {
 
   return (
     <article
-      className={`card health-${health ?? 'loading'}`}
+      className={`card health-${health ?? 'loading'}${dragging ? ' dragging' : ''}`}
+      {...{ [REORDER_ATTR]: repoId(repo) }}
       aria-label={`${fullName}: ${health ? HEALTH_LABELS[health] : 'Loading'}`}
     >
       <header className="card-header">
+        {handle}
         <ExternalLink href={data?.url ?? `https://github.com/${repo.owner}/${repo.name}`} className="card-title">
           <span className="owner">{repo.owner}/</span>
           {repo.name}

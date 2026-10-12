@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DashboardConfig } from '../config/schema';
+import { repoId, type DashboardConfig, type PinnedRepo } from '../config/schema';
 import { AppError } from '../lib/transport';
 import { providers } from '../providers';
 import type { InboxSnapshot, RateLimit, RepoResult } from '../providers/types';
@@ -30,6 +30,11 @@ export function isAuthError(err: AppError | null): boolean {
   return err?.kind === 'unauthorized' || err?.kind === 'no_token';
 }
 
+/** The pinned repos in a fixed order, so reordering the cards is not a data change. */
+function byId(repos: readonly PinnedRepo[]): PinnedRepo[] {
+  return [...repos].sort((a, b) => (repoId(a) < repoId(b) ? -1 : repoId(a) > repoId(b) ? 1 : 0));
+}
+
 function asAppError(err: unknown): AppError {
   return err instanceof AppError ? err : new AppError('internal', 'Unexpected error');
 }
@@ -47,9 +52,10 @@ export function useDashboard(config: DashboardConfig, tokenOwners: readonly stri
   // settings change does not leave data fetched for the old settings.
   const shownKeys = useRef({ repos: '', inbox: '' });
 
-  // Only refetch when data-affecting settings change (not theme etc.).
+  // Only refetch when data-affecting settings change (not theme, card order
+  // etc.).
   const fetchKey = useMemo(
-    () => JSON.stringify([config.repos, config.inbox, tokenOwners]),
+    () => JSON.stringify([byId(config.repos), config.inbox, tokenOwners]),
     [config.repos, config.inbox, tokenOwners],
   );
   const configRef = useRef(config);
@@ -68,7 +74,7 @@ export function useDashboard(config: DashboardConfig, tokenOwners: readonly stri
     setState((s) => ({ ...s, loading: true, error: s.error && isAuthError(s.error) ? null : s.error }));
     const { repos, inbox } = configRef.current;
     const owners = ownersRef.current;
-    const keys = { repos: JSON.stringify([repos, owners]), inbox: JSON.stringify([inbox, owners]) };
+    const keys = { repos: JSON.stringify([byId(repos), owners]), inbox: JSON.stringify([inbox, owners]) };
     const provider = providers.github;
 
     const [repoRes, inboxRes] = await Promise.allSettled([

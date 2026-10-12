@@ -6,6 +6,7 @@ import { TokenSetup } from './components/TokenSetup';
 import { pruneLayout, repoId, widgetKey, WIDGET_TYPES, type DashboardConfig } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
+import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
 import { tokens, type TokenSummary } from './lib/transport';
@@ -65,6 +66,23 @@ export default function App() {
 
   // A revoked or expired token sends the user back to the setup screen.
   const tokenRejected = isAuthError(dash.error);
+
+  const repoIds = useMemo(() => config.repos.map(repoId), [config.repos]);
+  const reposById = useMemo(() => new Map(config.repos.map((r) => [repoId(r), r])), [config.repos]);
+  const reorder = useReorder(
+    repoIds,
+    (ids) =>
+      update((c) => {
+        const rank = new Map(ids.map((id, i) => [id, i]));
+        // Repos missing from `ids` (added mid-drag) keep their place at the end.
+        const at = (id: string) => rank.get(id) ?? ids.length;
+        return { ...c, repos: [...c.repos].sort((a, b) => at(repoId(a)) - at(repoId(b))) };
+      }),
+    (id) => {
+      const r = reposById.get(id);
+      return r ? `${r.owner}/${r.name}` : id;
+    },
+  );
 
   const summary = useMemo(() => {
     let failing = 0;
@@ -150,31 +168,43 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <div className="grid">
-            {config.repos.map((repo) => (
-              <RepoCard
-                key={repoId(repo)}
-                repo={repo}
-                result={dash.repos.get(repoId(repo))}
-                collapsedWidgets={WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)))}
-                onToggleWidget={(type) => {
-                  const key = widgetKey(repo, type);
-                  update((c) => {
-                    const collapsed = c.layout.collapsedWidgets;
-                    return {
-                      ...c,
-                      layout: {
-                        ...c.layout,
-                        collapsedWidgets: collapsed.includes(key)
-                          ? collapsed.filter((k) => k !== key)
-                          : [...collapsed, key],
-                      },
-                    };
-                  });
-                }}
-              />
-            ))}
-          </div>
+          <>
+            <p id="reorder-help" className="sr-only">Drag to reorder, or use the arrow keys.</p>
+            <p className="sr-only" aria-live="polite">{reorder.announcement}</p>
+            <div className={`grid${reorder.dragging ? ' reordering' : ''}`}>
+              {reorder.order.map((id) => reposById.get(id)).filter((r) => r !== undefined).map((repo) => (
+                <RepoCard
+                  key={repoId(repo)}
+                  repo={repo}
+                  dragging={reorder.dragging === repoId(repo)}
+                  handle={
+                    config.repos.length > 1 && (
+                      <button type="button" className="icon-btn drag-handle" title="Drag to reorder" {...reorder.handleProps(repoId(repo))}>
+                        ⠿
+                      </button>
+                    )
+                  }
+                  result={dash.repos.get(repoId(repo))}
+                  collapsedWidgets={WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)))}
+                  onToggleWidget={(type) => {
+                    const key = widgetKey(repo, type);
+                    update((c) => {
+                      const collapsed = c.layout.collapsedWidgets;
+                      return {
+                        ...c,
+                        layout: {
+                          ...c.layout,
+                          collapsedWidgets: collapsed.includes(key)
+                            ? collapsed.filter((k) => k !== key)
+                            : [...collapsed, key],
+                        },
+                      };
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          </>
         )}
       </main>
 
