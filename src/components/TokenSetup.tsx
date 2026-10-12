@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { providers } from '../providers';
 import { tokens } from '../lib/transport';
 import { ExternalLink } from './ExternalLink';
+import { PermissionList } from './PermissionList';
 
 export function TokenSetup({ onDone, onCancel, reason }: {
   onDone: (login: string) => void;
@@ -41,28 +42,35 @@ export function TokenSetup({ onDone, onCancel, reason }: {
           git-dash needs a personal access token. It is stored in your operating system&apos;s keychain
           and only ever sent to <code>api.github.com</code>. The app itself never displays or exports it.
         </p>
+        <ol className="help-list">
+          <li>
+            <ExternalLink href={provider.newTokenUrl()}>Create a fine-grained token</ExternalLink>. The link
+            fills in the read-only permissions git-dash needs:{' '}
+            <PermissionList permissions={provider.tokenPermissions} />.
+          </li>
+          <li>
+            Under <em>Repository access</em>, choose <em>All repositories</em> or the ones you want to pin.
+            GitHub does not let a link fill this in. Repository access alone is not enough: the token also
+            needs the permissions above.
+          </li>
+          <li>Generate the token and paste it below.</li>
+        </ol>
         <details>
-          <summary>Which token should I create?</summary>
+          <summary>Other kinds of token</summary>
           <ul className="help-list">
             <li>
-              <strong>Fine-grained token (recommended):</strong> read-only access to <em>Metadata</em>,{' '}
-              <em>Contents</em>, <em>Pull requests</em>, <em>Issues</em>, <em>Commit statuses</em> and{' '}
-              <em>Actions</em>. A fine-grained token covers one account or organization; you can add tokens
-              for other organizations later in Settings.
+              A fine-grained token covers one account or organization. You can add tokens for other
+              organizations later in Settings.
             </li>
             <li>
               <strong>Classic token:</strong> works across organizations. No scopes are needed for public
               repositories; private ones need <code>repo</code>, which also grants write access. git-dash
-              only ever sends read-only queries, but prefer fine-grained tokens where you can.
+              only ever sends read-only queries, but prefer fine-grained tokens where you can.{' '}
+              <ExternalLink href="https://github.com/settings/tokens/new?description=git-dash">
+                Create a classic token
+              </ExternalLink>
             </li>
           </ul>
-          <p>
-            <ExternalLink href={provider.tokenHelpUrl}>Create a fine-grained token</ExternalLink>
-            {' · '}
-            <ExternalLink href="https://github.com/settings/tokens/new?description=git-dash">
-              Create a classic token
-            </ExternalLink>
-          </p>
         </details>
         <label className="field">
           <span>Access token</span>

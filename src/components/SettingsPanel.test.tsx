@@ -184,6 +184,14 @@ describe('SettingsPanel', () => {
     expect(onSignOut).toHaveBeenCalledOnce();
   });
 
+  it('links to a token form for the owner being added', async () => {
+    setup();
+    expect(screen.getByRole('link', { name: 'Create a token' }).getAttribute('href')).not.toContain('target_name');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Account or organization' }), 'acme');
+    const link = screen.getByRole('link', { name: 'Create a token for acme' });
+    expect(new URL(link.getAttribute('href')!).searchParams.get('target_name')).toBe('acme');
+  });
+
   describe('backup', () => {
     const textarea = () => screen.getByRole('textbox', { name: 'Configuration JSON' }) as HTMLTextAreaElement;
 

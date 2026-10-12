@@ -79,4 +79,13 @@ describe('TokenSetup', () => {
     expect(onCancel).toHaveBeenCalledOnce();
     expect(tokens.set).not.toHaveBeenCalled();
   });
+
+  it('links to a prefilled token form and lists the permissions', () => {
+    setup();
+    const link = screen.getByRole('link', { name: 'Create a fine-grained token' });
+    const url = new URL(link.getAttribute('href')!);
+    expect(url.pathname).toBe('/settings/personal-access-tokens/new');
+    expect(url.searchParams.get('pull_requests')).toBe('read');
+    expect(link.closest('li')?.textContent).toContain('Metadata, Contents, Pull requests, Issues, Commit statuses and Actions');
+  });
 });

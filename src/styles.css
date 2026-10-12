@@ -281,8 +281,9 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 }
 .setup-card h1 { font-size: 18px; }
 .setup-card p { margin: 0; }
-.help-list { padding-left: 18px; margin: 8px 0; display: grid; gap: 6px; }
-.help-list + p a, .setup-card details a { color: var(--accent); }
+.help-list { padding-left: 18px; margin: 0; display: grid; gap: 6px; }
+details .help-list { margin-top: 8px; }
+.setup-card a, .hint a { color: var(--accent); }
 .field { display: grid; gap: 4px; font-weight: 500; }
 .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 
