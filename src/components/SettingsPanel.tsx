@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   ConfigError,
   defaultWidget,
@@ -19,6 +19,7 @@ import {
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
+import { matchRepos } from '../lib/suggest';
 import { tokens, type OwnerToken } from '../lib/transport';
 import { providers } from '../providers';
 import { ExternalLink } from './ExternalLink';
@@ -126,14 +127,147 @@ function WidgetEditor({ repo, onChange }: { repo: PinnedRepo; onChange: (widgets
   );
 }
 
-function RepoList({ config, update }: { config: DashboardConfig; update: Update }) {
+const MAX_SUGGESTIONS = 8;
+
+/**
+ * Text field for the repository to pin, suggesting repositories the stored
+ * tokens can see. Suggestions load when the field is first focused, and again
+ * after the stored tokens change.
+ */
+function RepoInput({
+  value,
+  onChange,
+  onPick,
+  pinned,
+  tokenOwners,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onPick: (name: string) => void;
+  pinned: ReadonlySet<string>;
+  tokenOwners: readonly string[];
+}) {
+  const listId = useId();
+  const [repos, setRepos] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const loadedFor = useRef<readonly string[] | null>(null);
+
+  function load() {
+    // The token list is reloaded whenever a token is added, replaced or
+    // removed, so a new array means the suggestions may be stale.
+    const key = tokenOwners;
+    if (loadedFor.current === key) return;
+    loadedFor.current = key;
+    setRepos([]);
+    providers.github.listRepos(tokenOwners).then(
+      ({ repos: names, complete }) => {
+        if (loadedFor.current !== key) return;
+        setRepos(names);
+        // Keep what loaded, but let the next focus retry the failed tokens.
+        if (!complete) loadedFor.current = null;
+      },
+      () => {
+        // Let the next focus try again.
+        if (loadedFor.current === key) loadedFor.current = null;
+      },
+    );
+  }
+
+  const matches = useMemo(() => matchRepos(repos, value, pinned, MAX_SUGGESTIONS), [repos, value, pinned]);
+  const expanded = open && matches.length > 0;
+  const current = expanded && active >= 0 && active < matches.length ? active : -1;
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!expanded) {
+        setOpen(true);
+        setActive(e.key === 'ArrowDown' ? 0 : -1);
+        return;
+      }
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive(Math.min(matches.length - 1, Math.max(-1, current + step)));
+    } else if (e.key === 'Enter' && current >= 0) {
+      e.preventDefault();
+      onPick(matches[current]!);
+      setActive(-1);
+    } else if (e.key === 'Escape' && expanded) {
+      // Close the list, not the settings dialog.
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className="combobox">
+      <input
+        type="text"
+        role="combobox"
+        aria-label="Repository to pin"
+        aria-autocomplete="list"
+        aria-expanded={expanded}
+        aria-controls={listId}
+        aria-activedescendant={current >= 0 ? `${listId}-${current}` : undefined}
+        placeholder="owner/name or GitHub URL"
+        spellCheck={false}
+        autoComplete="off"
+        value={value}
+        onFocus={() => {
+          load();
+          setOpen(true);
+        }}
+        onBlur={() => setOpen(false)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+          setActive(-1);
+        }}
+        onKeyDown={onKeyDown}
+      />
+      {expanded && (
+        <ul id={listId} role="listbox" aria-label="Suggested repositories" className="combobox-list">
+          {matches.map((name, i) => (
+            <li
+              key={name}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === current}
+              className="combobox-option"
+              // Keep focus in the field so the list does not close before the click.
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => {
+                onPick(name);
+                setActive(-1);
+              }}
+            >
+              {name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function RepoList({
+  config,
+  update,
+  tokenOwners,
+}: {
+  config: DashboardConfig;
+  update: Update;
+  tokenOwners: readonly string[];
+}) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const pinned = useMemo(() => new Set(config.repos.map((r) => `${r.owner}/${r.name}`.toLowerCase())), [config.repos]);
 
-  function add(e: FormEvent) {
-    e.preventDefault();
-    const parsed = parseRepoInput(input);
+  function pin(text: string) {
+    const parsed = parseRepoInput(text);
     if (!parsed) return setError('Enter a repository as owner/name or a github.com URL.');
     const repo: PinnedRepo = { provider: 'github', ...parsed, widgets: defaultWidgets() };
     if (config.repos.some((r) => repoId(r) === repoId(repo))) return setError('Already pinned.');
@@ -141,6 +275,11 @@ function RepoList({ config, update }: { config: DashboardConfig; update: Update 
     update((c) => ({ ...c, repos: [...c.repos, repo] }));
     setInput('');
     setError(null);
+  }
+
+  function add(e: FormEvent) {
+    e.preventDefault();
+    pin(input);
   }
 
   const move = (index: number, delta: number) =>
@@ -160,14 +299,7 @@ function RepoList({ config, update }: { config: DashboardConfig; update: Update 
   return (
     <>
       <form className="add-repo" onSubmit={add}>
-        <input
-          type="text"
-          aria-label="Repository to pin"
-          placeholder="owner/name or GitHub URL"
-          spellCheck={false}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-        />
+        <RepoInput value={input} onChange={setInput} onPick={pin} pinned={pinned} tokenOwners={tokenOwners} />
         <button type="submit" className="btn btn-primary">
           Pin
         </button>
@@ -412,6 +544,7 @@ export function SettingsPanel({
   onOwnerTokensChanged: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const tokenOwners = useMemo(() => ownerTokens.map((o) => o.owner), [ownerTokens]);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -444,7 +577,7 @@ export function SettingsPanel({
 
         <section className="settings-section">
           <h3>Pinned repositories</h3>
-          <RepoList config={config} update={update} />
+          <RepoList config={config} update={update} tokenOwners={tokenOwners} />
         </section>
 
         <section className="settings-section">

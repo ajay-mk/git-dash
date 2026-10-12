@@ -5,7 +5,7 @@
  * GitHub web URLs, and label colours must be plain hex.
  */
 
-import type { PinnedRepo } from '../../config/schema';
+import { parseRepoInput, type PinnedRepo } from '../../config/schema';
 import { prNeedsAttention } from '../../lib/health';
 import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
@@ -251,4 +251,26 @@ export function describeRepoError(err: GraphQLError | undefined, owner: string):
     case 'unknown':
       return { kind, message: 'Could not load this repository.' };
   }
+}
+
+/** A repository offered as a suggestion when pinning. */
+export interface RepoSuggestion {
+  /** `owner/name`. */
+  name: string;
+  /** ISO timestamp of the last push, or `null` if never pushed. */
+  pushedAt: string | null;
+}
+
+/**
+ * Maps a `repositories` connection to suggestions, skipping archived
+ * repositories and anything that would not pass as a pinned repository.
+ */
+export function mapRepoSuggestions(connection: unknown): RepoSuggestion[] {
+  return arr(obj(connection)?.nodes).flatMap((n) => {
+    const node = obj(n);
+    const name = str(node?.nameWithOwner);
+    if (!node || !name || node.isArchived === true) return [];
+    const parsed = parseRepoInput(name);
+    return parsed ? [{ name: `${parsed.owner}/${parsed.name}`, pushedAt: str(node.pushedAt) }] : [];
+  });
 }

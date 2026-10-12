@@ -105,6 +105,13 @@ export interface RepoBatch {
   rateLimit: RateLimit | null;
 }
 
+export interface RepoSuggestions {
+  /** `owner/name`, most recently pushed first. */
+  repos: string[];
+  /** False when some token's request failed, so a retry may find more. */
+  complete: boolean;
+}
+
 export interface Provider {
   id: ProviderId;
   label: string;
@@ -122,4 +129,10 @@ export interface Provider {
    */
   fetchRepos(repos: PinnedRepo[], tokenOwners: readonly string[]): Promise<RepoBatch>;
   fetchInbox(config: InboxConfig, tokenOwners: readonly string[]): Promise<InboxSnapshot>;
+  /**
+   * Repositories (`owner/name`) the stored tokens can see, offered as
+   * suggestions when pinning. Best-effort: tokens that fail are skipped and
+   * `complete` is false; it rejects only when every token fails.
+   */
+  listRepos(tokenOwners: readonly string[]): Promise<RepoSuggestions>;
 }

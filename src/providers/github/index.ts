@@ -2,9 +2,17 @@ import { repoId, type PinnedRepo } from '../../config/schema';
 import { AppError, githubGraphql } from '../../lib/transport';
 import { groupByToken, mergeInbox } from '../tokens';
 import type { InboxSnapshot, Provider, RateLimit, RepoResult } from '../types';
-import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepository } from './map';
+import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepoSuggestions, mapRepository, type RepoSuggestion } from './map';
+import {
+  buildReposQuery,
+  INBOX_QUERY,
+  INBOX_SEARCHES,
+  OWNER_REPOS_QUERY,
+  REPO_SUGGESTIONS_FETCHED,
+  repoAlias,
+  VIEWER_REPOS_QUERY,
+} from './queries';
 import { fineGrainedTokenUrl, PERMISSION_LABELS } from './tokenTemplate';
-import { buildReposQuery, INBOX_QUERY, INBOX_SEARCHES, repoAlias } from './queries';
 
 /** GitHub limits query complexity; batch repositories to stay well under it. */
 const REPOS_PER_REQUEST = 10;
@@ -99,5 +107,45 @@ export const github: Provider = {
     if (primary!.status === 'rejected') throw primary!.reason;
     const extra = others.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
     return mergeInbox(primary!.value, extra, config.limit);
+  },
+
+  async listRepos(tokenOwners) {
+    const n = REPO_SUGGESTIONS_FETCHED;
+    // Partial data (e.g. an organization behind SSO) still yields the rest,
+    // but errors with no repositories at all (e.g. a rate limit) count as a
+    // failure.
+    const suggestions = (connection: unknown, errors: unknown[] | undefined) => {
+      if (connection == null && errors?.length) throw new AppError('http', 'Could not list repositories.');
+      return mapRepoSuggestions(connection);
+    };
+    const lists = await Promise.allSettled([
+      githubGraphql<{ viewer?: { repositories?: unknown } }>(VIEWER_REPOS_QUERY, { n }).then((res) =>
+        suggestions(res.data?.viewer?.repositories, res.errors),
+      ),
+      ...tokenOwners.map((owner) =>
+        githubGraphql<{ repositoryOwner?: { repositories?: unknown } }>(OWNER_REPOS_QUERY, { owner, n }, owner).then(
+          (res) => suggestions(res.data?.repositoryOwner?.repositories, res.errors),
+        ),
+      ),
+    ]);
+    // Every token failing is likely transient (network, rate limit); let the
+    // caller retry rather than cache an empty list.
+    const failed = lists.find((l) => l.status === 'rejected');
+    if (failed && lists.every((l) => l.status === 'rejected')) throw failed.reason;
+    const seen = new Map<string, RepoSuggestion>();
+    for (const list of lists) {
+      if (list.status !== 'fulfilled') continue;
+      for (const repo of list.value) {
+        const key = repo.name.toLowerCase();
+        if (!seen.has(key)) seen.set(key, repo);
+      }
+    }
+    // Each token's list is already newest first; interleave them so a recent
+    // push seen only by a per-owner token is not buried. Stable for ties, and
+    // never-pushed repositories go last.
+    const repos = [...seen.values()]
+      .sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
+      .map((r) => r.name);
+    return { repos, complete: !failed };
   },
 };
