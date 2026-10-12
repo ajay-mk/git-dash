@@ -15,7 +15,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-const SERVICE: &str = "io.github.ajay-mk.git-dash";
+const SERVICE: &str = "io.github.ajay-mk.gitdash";
+/// Service name used before the rename to GitDash. Entries found there are
+/// moved to [`SERVICE`] the first time they are read.
+const LEGACY_SERVICE: &str = "io.github.ajay-mk.git-dash";
 const MAX_TOKEN_LEN: usize = 255;
 const MIN_TOKEN_LEN: usize = 20;
 const MAX_OWNER_LEN: usize = 39;
@@ -188,15 +191,44 @@ fn entry(account: &str) -> Result<keyring::Entry> {
     Ok(keyring::Entry::new(SERVICE, account)?)
 }
 
+fn legacy_entry(account: &str) -> Result<keyring::Entry> {
+    Ok(keyring::Entry::new(LEGACY_SERVICE, account)?)
+}
+
+/// Reads `account`, moving it over from the legacy service if it only exists
+/// there. Removing the legacy copy is best effort: [`TokenStore::clear`]
+/// deletes both, so a leftover copy cannot bring a cleared token back.
+fn read(account: &str) -> Result<String> {
+    Ok(read_or_migrate(&entry(account)?, &legacy_entry(account)?)?)
+}
+
+fn read_or_migrate(current: &keyring::Entry, legacy: &keyring::Entry) -> keyring::Result<String> {
+    match current.get_password() {
+        Err(keyring::Error::NoEntry) => {}
+        other => return other,
+    }
+    let secret = legacy.get_password()?;
+    current.set_password(&secret)?;
+    let _ = legacy.delete_credential();
+    Ok(secret)
+}
+
+fn delete(entry: &keyring::Entry) -> Result<()> {
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(err.into()),
+    }
+}
+
 impl Inner {
     fn index(&mut self, provider: Provider) -> Result<&mut Index> {
         match self.indexes.entry(provider) {
             hash_map::Entry::Occupied(e) => Ok(e.into_mut()),
             hash_map::Entry::Vacant(e) => {
-                let index = match entry(&index_account(provider))?.get_password() {
+                let index = match read(&index_account(provider)) {
                     Ok(raw) => Index::decode(&raw),
-                    Err(keyring::Error::NoEntry) => Index::default(),
-                    Err(err) => return Err(err.into()),
+                    Err(Error::NoToken) => Index::default(),
+                    Err(err) => return Err(err),
                 };
                 Ok(e.insert(index))
             }
@@ -214,7 +246,7 @@ impl Inner {
         if let Some(token) = self.cache.get(&key) {
             return Ok(token.clone());
         }
-        let token = entry(&slot.account(provider))?.get_password()?;
+        let token = read(&slot.account(provider))?;
         self.cache.insert(key, token.clone());
         Ok(token)
     }
@@ -297,10 +329,9 @@ impl TokenStore {
     pub fn clear(&self, provider: Provider, slot: &Slot) -> Result<()> {
         let mut inner = self.lock()?;
         inner.cache.remove(&(provider, slot.clone()));
-        match entry(&slot.account(provider))?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(err) => return Err(err.into()),
-        }
+        let account = slot.account(provider);
+        delete(&entry(&account)?)?;
+        delete(&legacy_entry(&account)?)?;
         let index = inner.index(provider)?;
         match slot {
             Slot::Default => index.default_login = None,
@@ -395,6 +426,41 @@ mod tests {
             assert_ne!(account, Slot::Default.account(gh));
             assert_ne!(account, index_account(gh));
         }
+    }
+
+    fn mock_entry(account: &str) -> keyring::Entry {
+        keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+        keyring::Entry::new(SERVICE, account).unwrap()
+    }
+
+    #[test]
+    fn legacy_entries_move_to_the_new_service() {
+        let (current, legacy) = (mock_entry("github"), mock_entry("github"));
+        legacy.set_password("old-token").unwrap();
+        assert_eq!(read_or_migrate(&current, &legacy).unwrap(), "old-token");
+        assert_eq!(current.get_password().unwrap(), "old-token");
+        assert!(matches!(
+            legacy.get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
+    }
+
+    #[test]
+    fn current_entries_win_over_legacy_ones() {
+        let (current, legacy) = (mock_entry("github"), mock_entry("github"));
+        current.set_password("new-token").unwrap();
+        legacy.set_password("old-token").unwrap();
+        assert_eq!(read_or_migrate(&current, &legacy).unwrap(), "new-token");
+        assert_eq!(legacy.get_password().unwrap(), "old-token");
+    }
+
+    #[test]
+    fn missing_everywhere_is_no_entry() {
+        let (current, legacy) = (mock_entry("github"), mock_entry("github"));
+        assert!(matches!(
+            read_or_migrate(&current, &legacy),
+            Err(keyring::Error::NoEntry)
+        ));
     }
 
     #[test]
