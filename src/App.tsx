@@ -127,7 +127,15 @@ export default function App() {
         </div>
       </header>
 
-      {config.inbox.enabled && <InboxPanel config={config.inbox} inbox={dash.inbox} error={dash.inboxError} />}
+      {config.inbox.enabled && (
+        <InboxPanel
+          config={config.inbox}
+          view={config.inboxView}
+          onViewChange={(fn) => update((c) => ({ ...c, inboxView: fn(c.inboxView) }))}
+          inbox={dash.inbox}
+          error={dash.inboxError}
+        />
+      )}
 
       <main className="content">
         {signOutError && <p className="banner error-text">{signOutError}</p>}
