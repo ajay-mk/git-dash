@@ -52,8 +52,11 @@ interface Drag extends CardResize {
   columns: number;
 }
 
-/** Fallback height of one list entry, for when it cannot be measured. */
-const ROW_HEIGHT = 28;
+/**
+ * Height of one list entry. A card with every list folded shows none, so
+ * the last one measured on any card stands in, or a default before then.
+ */
+let rowHeight = 28;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
@@ -159,6 +162,8 @@ function measureFolded(card: HTMLElement, grid: HTMLElement) {
     bodies.set(section.dataset.section ?? '', section.lastElementChild?.getBoundingClientRect().height ?? 0);
   }
   const folded = content - [...bodies.values()].reduce((a, b) => a + b, 0);
+  const row = card.querySelector('.rows > li')?.getBoundingClientRect().height;
+  if (row) rowHeight = row;
   return {
     // Until its lists load there is nothing to fold, and the card stops at its content.
     base: bodies.size > 0 ? folded : -Infinity,
@@ -166,7 +171,7 @@ function measureFolded(card: HTMLElement, grid: HTMLElement) {
     minRows: Math.ceil((folded + gap) / unit),
     /** The height of what the card shows, which may be less than the card's own. */
     content,
-    row: card.querySelector('.rows > li')?.getBoundingClientRect().height || ROW_HEIGHT,
+    row: rowHeight,
   };
 }
 
