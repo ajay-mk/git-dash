@@ -62,10 +62,15 @@ only allows read-only GraphQL queries to `api.github.com`. See
 
 ## Creating a token
 
-**Fine-grained token (recommended).** Create one at
-<https://github.com/settings/personal-access-tokens/new> with *read-only*
+**Fine-grained token (recommended).** A fine-grained token needs *read-only*
 access to: Metadata, Contents, Pull requests, Issues, Commit statuses and
-Actions. A fine-grained token is limited to one account or organization.
+Actions. [This link](https://github.com/settings/personal-access-tokens/new?name=git-dash&description=Read-only+access+for+the+git-dash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read)
+opens GitHub's token form with those permissions filled in; the setup screen
+links to it too. You still choose *Repository access* yourself (*All
+repositories* or a selection), because GitHub cannot fill that in from a link.
+Repository access alone grants no permissions, so a token with *All
+repositories* but no permissions cannot read anything. A fine-grained token is
+limited to one account or organization.
 
 **Classic token.** Works across organizations. Public repositories need no
 scopes; private repositories need `repo`, which also grants write access.
