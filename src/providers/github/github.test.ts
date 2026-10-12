@@ -393,6 +393,25 @@ describe('github.fetchDetails', () => {
     expect(graphql).toHaveBeenLastCalledWith(DETAILS_QUERY, expect.anything(), null);
   });
 
+  it('falls back to the default token when the owner token cannot read the item', async () => {
+    graphql.mockReset();
+    graphql
+      .mockResolvedValueOnce({ data: { resource: null }, errors: [{ type: 'NOT_FOUND', path: ['resource'] }] })
+      .mockResolvedValueOnce({ data: { resource: { __typename: 'Issue', bodyText: 'ok' } } });
+    const d = await github.fetchDetails('https://github.com/corp/api/issues/1', ['corp']);
+    expect(d.body).toBe('ok');
+    expect(graphql.mock.calls.map((c) => c[2])).toEqual(['corp', null]);
+  });
+
+  it('flags details with errors on nested fields', async () => {
+    graphql.mockReset();
+    graphql.mockResolvedValueOnce({
+      data: { resource: { __typename: 'PullRequest', commits: null } },
+      errors: [{ type: 'FORBIDDEN', path: ['resource', 'commits'] }],
+    });
+    expect((await github.fetchDetails('https://github.com/a/b/pull/1', [])).incomplete).toBe(true);
+  });
+
   it('refuses non-GitHub links and reports missing data', async () => {
     graphql.mockClear();
     await expect(github.fetchDetails('https://evil.example.com/a/b/pull/1', [])).rejects.toThrow(/GitHub/);

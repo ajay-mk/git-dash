@@ -109,6 +109,7 @@ describe('item details', () => {
     comments: 2,
     labels: [{ name: 'feature', color: '00ff00' }],
     assignees: [],
+    incomplete: false,
     pr: {
       baseRef: 'main',
       headRef: 'feat/zeta',
@@ -145,7 +146,9 @@ describe('item details', () => {
     const row = screen.getByRole('button', { name: /Zeta ready/ });
 
     await userEvent.click(row);
-    await screen.findByRole('dialog');
+    const card = await screen.findByRole('dialog');
+    // Focus moves into the card so its links are reachable by keyboard.
+    expect(card.contains(document.activeElement)).toBe(true);
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(row);
@@ -177,5 +180,33 @@ describe('item details', () => {
     await userEvent.click(row);
     expect(await screen.findByText('Could not load details from GitHub.')).toBeTruthy();
     expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Open on GitHub' })).toBeTruthy();
+  });
+
+  it('counts only successful checks as passing and notes missing details', async () => {
+    const stale = { ...details, incomplete: true, pr: { ...details.pr!, checks: [{ name: 'old', state: 'none' as const, url: null }] } };
+    render(<Harness loadDetails={() => Promise.resolve(stale)} />);
+    await userEvent.click(screen.getByRole('button', { name: /Zeta ready/ }));
+    const card = await screen.findByRole('dialog');
+    expect(await within(card).findByText('0 of 1 passing', { exact: false })).toBeTruthy();
+    expect(within(card).getByText('Some details could not be loaded.')).toBeTruthy();
+  });
+
+  it('treats an assigned pull request as a pull request', async () => {
+    const inbox = snapshotInbox({
+      assigned: { total: 1, items: [issue({ title: 'Assigned PR', url: 'https://github.com/o/alpha/pull/9', isPullRequest: true })] },
+    });
+    render(
+      <InboxPanel
+        config={defaultConfig().inbox}
+        layout={defaultConfig().layout}
+        onLayoutChange={() => undefined}
+        inbox={inbox}
+        error={null}
+        loadDetails={() => Promise.resolve(details)}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Assigned PR/ }));
+    const card = await screen.findByRole('dialog');
+    expect(within(card).getByRole('link', { name: 'Files' }).getAttribute('href')).toBe('https://github.com/o/alpha/pull/9/files');
   });
 });

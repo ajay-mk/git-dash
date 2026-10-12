@@ -154,20 +154,27 @@ export const github: Provider = {
 
   async fetchDetails(url, tokenOwners) {
     if (!isSafeExternalUrl(url)) throw new AppError('http', 'Not a GitHub link.');
-    // Use the token for this repository's owner when there is one, as the inbox did.
-    const owner = new URL(url).pathname.split('/')[1]?.toLowerCase() ?? '';
-    const res = await githubGraphql<{ resource?: unknown }>(
-      DETAILS_QUERY,
-      { url, n: DETAILS_LIST_FETCHED },
-      tokenOwners.includes(owner) ? owner : null,
-    );
-    const details = mapDetails(res.data?.resource);
-    if (!details) {
-      if (res.errors?.some(isRateLimited)) {
-        throw new AppError('rate_limited', 'GitHub API rate limit reached. Try again once it resets.');
+    const fetchWith = async (token: string | null) => {
+      const res = await githubGraphql<{ resource?: unknown }>(DETAILS_QUERY, { url, n: DETAILS_LIST_FETCHED }, token);
+      const details = mapDetails(res.data?.resource);
+      if (!details) {
+        if (res.errors?.some(isRateLimited)) {
+          throw new AppError('rate_limited', 'GitHub API rate limit reached. Try again once it resets.');
+        }
+        throw new AppError('http', 'Could not load details from GitHub.');
       }
-      throw new AppError('http', 'Could not load details from GitHub.');
+      // Errors on nested fields (e.g. checks) leave them empty; say so on the card.
+      return { ...details, incomplete: res.errors?.some((e) => e.path?.[0] === 'resource') ?? false };
+    };
+    // The inbox may have found this item with either token, so prefer the
+    // owner's token and fall back to the default one.
+    const owner = new URL(url).pathname.split('/')[1]?.toLowerCase() ?? '';
+    if (!tokenOwners.includes(owner)) return fetchWith(null);
+    try {
+      const details = await fetchWith(owner);
+      return details.incomplete ? await fetchWith(null).catch(() => details) : details;
+    } catch {
+      return fetchWith(null);
     }
-    return details;
   },
 };

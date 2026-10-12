@@ -21,7 +21,8 @@ const REVIEWER_TEXT: Record<ReviewerState, { icon: string; text: string; cls: st
 function ChecksSummary({ checks }: { checks: CheckItem[] }) {
   const failing = checks.filter((c) => c.state === 'failure');
   const pending = checks.filter((c) => c.state === 'pending');
-  const passing = checks.length - failing.length - pending.length;
+  // Only successful checks count as passing; others (e.g. stale) are neither.
+  const passing = checks.filter((c) => c.state === 'success').length;
   return (
     <div className="details-section">
       <div className="details-label">Checks</div>
@@ -30,8 +31,10 @@ function ChecksSummary({ checks }: { checks: CheckItem[] }) {
           <><CiIcon state="failure" /> {failing.length} failing, {passing} passing</>
         ) : pending.length > 0 ? (
           <><CiIcon state="pending" /> {pending.length} running, {passing} passing</>
-        ) : (
+        ) : passing === checks.length ? (
           <><CiIcon state="success" /> All {checks.length} passing</>
+        ) : (
+          <><CiIcon state="none" /> {passing} of {checks.length} passing</>
         )}
       </div>
       {failing.length > 0 && (
@@ -54,6 +57,8 @@ function DetailsContent({ item, details, error }: {
 }) {
   const base = itemOf(item);
   const pr = details?.pr ?? null;
+  // Assigned items can be pull requests too.
+  const isPr = item.kind === 'pr' || item.issue.isPullRequest;
   return (
     <>
       <div className="details-head">
@@ -101,6 +106,7 @@ function DetailsContent({ item, details, error }: {
           {details.assignees.length > 0 && (
             <div className="details-line muted">Assigned to {details.assignees.join(', ')}</div>
           )}
+          {details.incomplete && <p className="muted">Some details could not be loaded.</p>}
           {details.body && <p className="details-body">{details.body}</p>}
           {details.labels.length > 0 && (
             <div className="details-labels">
@@ -115,7 +121,7 @@ function DetailsContent({ item, details, error }: {
       )}
       <div className="details-actions">
         <ExternalLink href={base.url} className="btn btn-primary">Open on GitHub</ExternalLink>
-        {item.kind === 'pr' && (
+        {isPr && (
           <>
             <ExternalLink href={`${base.url}/files`} className="btn">Files</ExternalLink>
             <ExternalLink href={`${base.url}/checks`} className="btn">Checks</ExternalLink>
@@ -186,6 +192,11 @@ export function DetailsCard({ item, anchor, load, onClose }: {
       window.removeEventListener('scroll', update, true);
     };
   }, [anchor, details, error]);
+
+  // Keyboard users land in the card; Escape returns them to the row.
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('a, button')?.focus();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

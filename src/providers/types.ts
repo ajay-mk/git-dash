@@ -74,6 +74,8 @@ export interface ItemDetails {
   } | null;
   /** Issues only. */
   assignees: string[];
+  /** GitHub left out some fields (e.g. checks the token cannot read). */
+  incomplete: boolean;
 }
 
 export interface Counted<T> {

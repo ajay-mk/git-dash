@@ -352,6 +352,7 @@ export function mapDetails(v: unknown): ItemDetails | null {
   const rollup = obj(obj(obj(arr(obj(n.commits)?.nodes)[0])?.commit)?.statusCheckRollup);
   return {
     createdAt: str(n.createdAt) ?? '',
+    incomplete: false,
     body: trimBody(n.bodyText),
     comments: num(obj(n.comments)?.totalCount),
     labels: mapLabels(n.labels),
