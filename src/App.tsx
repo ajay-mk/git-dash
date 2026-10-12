@@ -246,9 +246,15 @@ export default function App() {
                 const collapsedWidgets = collapsedTypes(config, repo);
                 const span = Math.min(config.layout.cardSpans[id] ?? 1, resize.columns);
                 const resizing = resize.resizing?.id === id ? resize.resizing : null;
-                const sections = repo.widgets.flatMap((w) =>
-                  w.type === 'ci' ? [] : [{ type: w.type, limit: w.limit, collapsed: collapsedWidgets.includes(w.type) }],
-                );
+                const result = dash.repos.get(id);
+                const data = result?.ok ? result.data : null;
+                const sections = repo.widgets.flatMap((w) => {
+                  if (w.type === 'ci') return [];
+                  // A loaded list may hold fewer entries than its limit; an empty one shows a message.
+                  const items = data?.[w.type]?.items.length;
+                  const rows = items === undefined ? w.limit : Math.max(1, Math.min(items, w.limit));
+                  return [{ type: w.type, limit: w.limit, rows, collapsed: collapsedWidgets.includes(w.type) }];
+                });
                 return (
                   <RepoCard
                     key={id}
@@ -274,7 +280,7 @@ export default function App() {
                         </button>
                       )
                     }
-                    result={dash.repos.get(repoId(repo))}
+                    result={result}
                     collapsedWidgets={collapsedWidgets}
                     onToggleWidget={(type) => {
                       const key = widgetKey(repo, type);

@@ -5,7 +5,7 @@ import type { WidgetType } from '../config/schema';
 import { planResize, useCardResize, type CardSection } from './useCardResize';
 
 const sections = (collapsed: WidgetType[] = [], limit = 2): CardSection[] =>
-  (['pullRequests', 'issues'] as const).map((type) => ({ type, limit, collapsed: collapsed.includes(type) }));
+  (['pullRequests', 'issues'] as const).map((type) => ({ type, limit, rows: limit, collapsed: collapsed.includes(type) }));
 
 describe('planResize', () => {
   // A card 120px tall with both lists folded, and 28px entries.
@@ -26,12 +26,25 @@ describe('planResize', () => {
     expect(plan(folded, 168, 288)).toEqual({ collapsed: [], delta: 1 });
   });
 
+  it('spreads entries over lists with different limits, each stopping at one', () => {
+    const uneven: CardSection[] = [
+      { type: 'pullRequests', limit: 5, rows: 5, collapsed: false },
+      { type: 'issues', limit: 1, rows: 1, collapsed: false },
+    ];
+    expect(plan(uneven, -112, 400)).toEqual({ collapsed: [], delta: -4 });
+  });
+
+  it('opens a folded list by the entries it shows, not its limit', () => {
+    const few: CardSection[] = [{ type: 'pullRequests', limit: 10, rows: 1, collapsed: true }];
+    expect(plan(few, 56, 176)).toEqual({ collapsed: [], delta: 1 });
+  });
+
   it('leaves lists the user folded alone while shrinking', () => {
     expect(plan(sections(['pullRequests']), -28, 200)).toEqual({ collapsed: ['pullRequests'], delta: -1 });
   });
 
   it('does not fold anything when the lists were not measured', () => {
-    expect(planResize(sections(), -400, 50, -Infinity, 28)).toEqual({ collapsed: [], delta: -7 });
+    expect(planResize(sections(), -400, 50, -Infinity, 28)).toEqual({ collapsed: [], delta: -1 });
   });
 });
 
