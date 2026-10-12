@@ -187,4 +187,71 @@ describe('App', () => {
       over.mockRestore();
     });
   });
+
+  describe('resizing repo cards', () => {
+    const repos = [pinned('octo', 'one'), pinned('octo', 'two')];
+
+    function saved() {
+      return JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}') as {
+        repos: { name: string; widgets: { type: string; limit?: number }[] }[];
+        layout: { cardSpans: Record<string, number> };
+      };
+    }
+    const limits = (name: string) =>
+      saved().repos.find((r) => r.name === name)!.widgets.flatMap((w) => (w.limit === undefined ? [] : [w.limit]));
+
+    async function renderRepos() {
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      saveConfig({ ...defaultConfig(), repos, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      await screen.findByRole('button', { name: 'Resize octo/one' });
+    }
+
+    it('changes the width and entry count with the arrow keys', async () => {
+      await renderRepos();
+      screen.getByRole('button', { name: 'Resize octo/one' }).focus();
+
+      await userEvent.keyboard('{ArrowRight}');
+      expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 2 });
+      expect(screen.getByRole('article', { name: /^octo\/one:/ }).style.gridColumn).toBe('span 2');
+      expect(screen.getByText('octo/one is 2 columns wide, 5 entries.')).toBeTruthy();
+
+      await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+      expect(limits('one')).toEqual([7, 7]);
+      expect(limits('two')).toEqual([5, 5]);
+
+      await userEvent.keyboard('{ArrowLeft}{ArrowUp}');
+      expect(saved().layout.cardSpans).toEqual({});
+      expect(limits('one')).toEqual([6, 6]);
+    });
+
+    it('resizes by dragging the grip and only saves on release', async () => {
+      await renderRepos();
+      const card = screen.getByRole('article', { name: /^octo\/one:/ });
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+      // Two open lists with 28px rows: 112px down adds two entries to each.
+      fireEvent.pointerMove(window, { pointerId: 2, clientX: 2, clientY: 112 });
+
+      expect(card.classList.contains('resizing')).toBe(true);
+      expect(card.style.gridColumn).toBe('span 2');
+      expect(screen.getByText('2 columns · 7 entries')).toBeTruthy();
+      expect(limits('one')).toEqual([5, 5]);
+
+      fireEvent.pointerUp(window, { pointerId: 2 });
+      expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 2 });
+      expect(limits('one')).toEqual([7, 7]);
+      expect(card.classList.contains('resizing')).toBe(false);
+    });
+
+    it('cancels a resize with Escape', async () => {
+      await renderRepos();
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(window, { pointerId: 2, clientX: 2, clientY: 112 });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.pointerUp(window, { pointerId: 2 });
+      expect(saved().layout.cardSpans).toEqual({});
+      expect(limits('one')).toEqual([5, 5]);
+    });
+  });
 });
