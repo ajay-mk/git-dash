@@ -297,6 +297,17 @@ describe('github.listRepos', () => {
     await expect(github.listRepos(['acme'])).rejects.toThrow('offline');
   });
 
+  it('treats GraphQL errors without data as a failure, but keeps partial data', async () => {
+    graphql.mockResolvedValue({ data: null, errors: [{ type: 'RATE_LIMITED', message: 'rate limited' }] });
+    await expect(github.listRepos([])).rejects.toThrow();
+
+    graphql.mockResolvedValue({
+      data: { viewer: { repositories: { nodes: [{ nameWithOwner: 'octo/one', isArchived: false }] } } },
+      errors: [{ type: 'FORBIDDEN', message: 'SAML' }],
+    });
+    await expect(github.listRepos([])).resolves.toEqual(['octo/one']);
+  });
+
   it('ignores tokens that fail', async () => {
     graphql.mockImplementation((_query, _variables, owner) =>
       owner ? Promise.reject(new Error('revoked')) : Promise.resolve({ data: { viewer: { repositories: nodes('octo/one') } } }),

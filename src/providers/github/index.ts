@@ -109,14 +109,20 @@ export const github: Provider = {
 
   async listRepos(tokenOwners) {
     const n = REPO_SUGGESTIONS_FETCHED;
-    // Partial data (e.g. an organization behind SSO) still yields the rest.
+    // Partial data (e.g. an organization behind SSO) still yields the rest,
+    // but errors with no repositories at all (e.g. a rate limit) count as a
+    // failure.
+    const suggestions = (connection: unknown, errors: unknown[] | undefined) => {
+      if (connection == null && errors?.length) throw new AppError('http', 'Could not list repositories.');
+      return mapRepoSuggestions(connection);
+    };
     const lists = await Promise.allSettled([
       githubGraphql<{ viewer?: { repositories?: unknown } }>(VIEWER_REPOS_QUERY, { n }).then((res) =>
-        mapRepoSuggestions(res.data?.viewer?.repositories),
+        suggestions(res.data?.viewer?.repositories, res.errors),
       ),
       ...tokenOwners.map((owner) =>
         githubGraphql<{ repositoryOwner?: { repositories?: unknown } }>(OWNER_REPOS_QUERY, { owner, n }, owner).then(
-          (res) => mapRepoSuggestions(res.data?.repositoryOwner?.repositories),
+          (res) => suggestions(res.data?.repositoryOwner?.repositories, res.errors),
         ),
       ),
     ]);
