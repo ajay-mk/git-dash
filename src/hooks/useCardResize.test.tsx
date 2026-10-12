@@ -20,7 +20,9 @@ describe('planResize', () => {
   it('opens folded lists from the top down before adding entries', () => {
     const folded = sections(['pullRequests', 'issues']);
     expect(plan(folded, 20, 140)).toEqual({ collapsed: ['pullRequests', 'issues'], delta: 0 });
-    expect(plan(folded, 32, 152)).toEqual({ collapsed: ['issues'], delta: 0 });
+    // Pull requests open once there is room for both of their entries.
+    expect(plan(folded, 32, 152)).toEqual({ collapsed: ['pullRequests', 'issues'], delta: 0 });
+    expect(plan(folded, 60, 180)).toEqual({ collapsed: ['issues'], delta: 0 });
     expect(plan(folded, 120, 240)).toEqual({ collapsed: [], delta: 0 });
     // Two entries for each list, then one more each.
     expect(plan(folded, 168, 288)).toEqual({ collapsed: [], delta: 1 });
@@ -55,11 +57,13 @@ describe('planResize', () => {
 });
 
 /** A card whose header and folded lists are 120px tall, each entry 28px. */
-function Card({ onFold, onRows, onHeight, limit = 2 }: {
+function Card({ onFold, onRows, onHeight, limit = 2, rows = limit }: {
   onFold: (collapsed: WidgetType[]) => void;
   onRows: (delta: number, collapsed: WidgetType[]) => void;
   onHeight: (rows: number | null) => void;
   limit?: number;
+  /** Entries each list shows, which may be fewer than its limit. */
+  rows?: number;
 }) {
   const [grid, setGrid] = useState<HTMLElement | null>(null);
   const [collapsed, setCollapsed] = useState<WidgetType[]>([]);
@@ -94,7 +98,7 @@ function Card({ onFold, onRows, onHeight, limit = 2 }: {
             </section>
           ))}
         </div>
-        <button type="button" {...resize.gripProps('card', 'card', 1, sections(collapsed, limit))} />
+        <button type="button" {...resize.gripProps('card', 'card', 1, sections(collapsed, limit).map((s) => ({ ...s, rows })))} />
       </article>
     </div>
   );
@@ -128,7 +132,7 @@ describe('useCardResize', () => {
     expect(onRows).not.toHaveBeenCalled();
 
     fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
-    fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 0, clientY: 32 });
+    fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 0, clientY: 64 });
     expect(folded()).toEqual(['issues']);
     fireEvent.pointerUp(window, { pointerId: 1 });
     expect(onFold).toHaveBeenLastCalledWith(['issues']);
@@ -163,5 +167,15 @@ describe('useCardResize', () => {
     fireEvent.keyDown(grip, { key: 'ArrowDown' });
     expect(onFold).toHaveBeenLastCalledWith(['issues']);
     expect(onRows).not.toHaveBeenCalled();
+  });
+
+  it('folds with the up arrow once the lists show one entry, whatever their limit', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { width: 300, height: Number(this.dataset.height ?? 0) } as DOMRect;
+    });
+    const onFold = vi.fn();
+    render(<Card onFold={onFold} onRows={() => {}} onHeight={() => {}} limit={10} rows={1} />);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Resize card' }), { key: 'ArrowUp' });
+    expect(onFold).toHaveBeenLastCalledWith(['issues']);
   });
 });
