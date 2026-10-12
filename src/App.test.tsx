@@ -242,7 +242,7 @@ describe('App', () => {
       expect(limits('one')).toEqual([6, 6]);
     });
 
-    it('leaves collapsed lists alone and does nothing at the entry limit', async () => {
+    it('folds lists with the up arrow at one entry, and opens them with down before adding entries', async () => {
       vi.mocked(tokens.list).mockResolvedValue(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       const layout = { ...defaultConfig().layout, collapsedWidgets: ['github:octo/one#issues'] };
@@ -252,14 +252,22 @@ describe('App', () => {
       saveConfig({ ...defaultConfig(), repos: [one, repos[1]!], layout, inbox: { ...defaultConfig().inbox, enabled: false } });
       render(<App />);
       (await screen.findByRole('button', { name: 'Resize octo/one' })).focus();
+      const folded = () => (JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}').layout.collapsedWidgets as string[]).sort();
 
       await userEvent.keyboard('{ArrowUp}');
       expect(limits('one')).toEqual([1, 5]);
-      expect(screen.queryByText(/octo\/one is/)).toBeNull();
+      expect(folded()).toEqual(['github:octo/one#issues', 'github:octo/one#pullRequests']);
+      expect(screen.getByText('octo/one is 1 column wide, lists folded.')).toBeTruthy();
 
       await userEvent.keyboard('{ArrowDown}');
-      expect(limits('one')).toEqual([2, 5]);
-      expect(screen.getByText('octo/one is 1 column wide, 2 entries.')).toBeTruthy();
+      expect(folded()).toEqual(['github:octo/one#issues']);
+      await userEvent.keyboard('{ArrowDown}');
+      expect(folded()).toEqual([]);
+      expect(limits('one')).toEqual([1, 5]);
+
+      await userEvent.keyboard('{ArrowDown}');
+      expect(limits('one')).toEqual([2, 6]);
+      expect(screen.getByText('octo/one is 1 column wide, 2 pull requests, 6 issues.')).toBeTruthy();
     });
 
     it('resizes by dragging the grip and only saves on release', async () => {

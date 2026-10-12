@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useWindowDrag } from './useWindowDrag';
-import { MAX_CARD_ROWS, MAX_CARD_SPAN, MAX_ITEMS, MIN_CARD_ROWS } from '../config/schema';
+import { MAX_CARD_ROWS, MAX_CARD_SPAN, MAX_ITEMS, MIN_CARD_ROWS, MIN_ITEMS, type WidgetType } from '../config/schema';
 import { gridRowMetrics } from './useMasonry';
 
 /** A resize in progress, as previewed on the card. */
@@ -12,6 +12,16 @@ export interface CardResize {
   delta: number;
   /** Height in grid rows. */
   rows: number;
+  /** The card's lists folded at this size. */
+  collapsed: WidgetType[];
+}
+
+/** A list on a card, in the order the card shows them. */
+export interface CardSection {
+  type: WidgetType;
+  collapsed: boolean;
+  /** Entries the list shows when open. */
+  limit: number;
 }
 
 interface Drag extends CardResize {
@@ -28,7 +38,10 @@ interface Drag extends CardResize {
   unit: number;
   rowGap: number;
   row: number;
-  lists: number;
+  /** Height of the card with every list folded, the smallest it can be. */
+  base: number;
+  minRows: number;
+  sections: readonly CardSection[];
   columns: number;
 }
 
@@ -37,10 +50,53 @@ const ROW_HEIGHT = 28;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
-/** Grid rows a card of `height` pixels spans, within the saved range. */
-function rowsFor(height: number, unit: number, gap: number): number {
-  return clamp(Math.round((height + gap) / unit), MIN_CARD_ROWS, MAX_CARD_ROWS);
+/** Grid rows a card of `height` pixels spans, within the saved range and no less than `min`. */
+function rowsFor(height: number, unit: number, gap: number, min = MIN_CARD_ROWS): number {
+  return clamp(Math.round((height + gap) / unit), Math.max(min, MIN_CARD_ROWS), MAX_CARD_ROWS);
 }
+
+/**
+ * Which lists stay open, and how many entries each gains or loses, when a
+ * card is resized by `grown` pixels to `height`. Growing opens folded lists
+ * first, top down, as soon as there is room for an entry, then adds entries.
+ * Shrinking removes entries, then folds lists from the bottom up once there
+ * is no room left for one entry in each; `base` is the card's height with
+ * every list folded and `entry` the height of one entry.
+ */
+export function planResize(
+  sections: readonly CardSection[],
+  grown: number,
+  height: number,
+  base: number,
+  entry: number,
+): { collapsed: WidgetType[]; delta: number } {
+  const open = sections.filter((s) => !s.collapsed);
+  let delta: number;
+  let kept: CardSection[];
+  if (grown >= 0) {
+    let room = grown;
+    kept = [...open];
+    for (const s of sections) {
+      if (!s.collapsed) continue;
+      if (room < entry) break;
+      kept.push(s);
+      room -= entry * s.limit;
+    }
+    delta = room > 0 && kept.length > 0 ? Math.round(room / (entry * kept.length)) : 0;
+  } else {
+    // Room for one entry in each list that stays open.
+    const fits = Math.max(0, Math.floor((height - base) / entry + 1e-6));
+    kept = open.slice(0, fits);
+    delta = kept.length > 0 ? Math.round(grown / (entry * open.length)) : 0;
+  }
+  return {
+    collapsed: sections.filter((s) => !kept.includes(s)).map((s) => s.type),
+    delta: clamp(delta, -MAX_ITEMS, MAX_ITEMS),
+  };
+}
+
+const sameTypes = (a: readonly WidgetType[], b: readonly WidgetType[]) =>
+  a.length === b.length && a.every((t) => b.includes(t));
 
 /** Number of columns a grid lays out, or null when the browser does not resolve them. */
 function gridColumns(grid: HTMLElement): number | null {
@@ -58,21 +114,28 @@ function gridColumns(grid: HTMLElement): number | null {
  * Lets the user resize repo cards from a grip in the corner. Dragging
  * sideways snaps the width to whole grid columns; dragging down or up sets
  * the card's height in whole grid rows, whatever it holds, and adds or
- * removes list entries to match. The keyboard does the same with the arrow
+ * removes list entries to match. Shrinking a card past one entry per list
+ * folds its lists, down to just their headers, and growing it opens them
+ * again (see `planResize`). The keyboard does the same with the arrow
  * keys on the grip, and Delete (or a double click) lets the card fit its
  * content again. Like reordering, a drag only commits when it ends (Escape
  * cancels), because changing the entry count refetches the card.
  */
-export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
+export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe }: {
   /** The grid that holds the cards. */
   grid: HTMLElement | null;
   onSpan: (id: string, span: number) => void;
   /** Sets a card's height in grid rows, or lets it fit its content with null. */
   onHeight: (id: string, rows: number | null) => void;
-  /** Returns whether any list actually changed (they may be at their limit). */
-  onRows: (id: string, delta: number) => boolean;
+  /** Sets which of a card's lists are folded. */
+  onFold: (id: string, collapsed: WidgetType[]) => void;
+  /**
+   * Adds `delta` entries to the card's lists, except the `collapsed` ones.
+   * Returns whether any list actually changed (they may be at their limit).
+   */
+  onRows: (id: string, delta: number, collapsed: WidgetType[]) => boolean;
   /** Describes a card's size after a change, for the live announcement. */
-  describe: (id: string, span: number, delta: number) => string;
+  describe: (id: string, span: number, delta: number, collapsed: WidgetType[]) => string;
 }) {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -80,9 +143,9 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
   const [tracks, setTracks] = useState(MAX_CARD_SPAN);
   const columns = Math.min(tracks, MAX_CARD_SPAN);
   const dragRef = useRef<Drag | null>(null);
-  const callbacks = useRef({ onSpan, onHeight, onRows, describe });
+  const callbacks = useRef({ onSpan, onHeight, onFold, onRows, describe });
   useEffect(() => {
-    callbacks.current = { onSpan, onHeight, onRows, describe };
+    callbacks.current = { onSpan, onHeight, onFold, onRows, describe };
   });
 
   // Cards cannot be wider than the grid, so track how many columns it has.
@@ -107,12 +170,15 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
       if (!current) return;
       setDragState(null);
       if (!commit) return setAnnouncement('Resizing cancelled.');
-      const { id, span, delta, rows, startSpan, startRows } = current;
-      if (span === startSpan && rows === startRows) return;
-      if (span !== startSpan) callbacks.current.onSpan(id, span);
-      if (rows !== startRows) callbacks.current.onHeight(id, rows);
-      const changed = delta !== 0 && callbacks.current.onRows(id, delta);
-      setAnnouncement(callbacks.current.describe(id, span, changed ? delta : 0));
+      const { id, span, delta, rows, collapsed, startSpan, startRows, sections } = current;
+      const folded = !sameTypes(collapsed, sections.filter((s) => s.collapsed).map((s) => s.type));
+      if (span === startSpan && rows === startRows && !folded) return;
+      const { onSpan, onHeight, onFold, onRows, describe } = callbacks.current;
+      if (span !== startSpan) onSpan(id, span);
+      if (rows !== startRows) onHeight(id, rows);
+      if (folded) onFold(id, collapsed);
+      const changed = delta !== 0 && onRows(id, delta, collapsed);
+      setAnnouncement(describe(id, span, changed ? delta : 0, collapsed));
     },
     [setDragState],
   );
@@ -128,11 +194,16 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
       const dy = e.clientY - d.startY;
       const span = clamp(Math.round((d.width + dx + d.gap) / (d.column + d.gap)), 1, d.columns);
       // The card snaps to whole grid rows as it follows the pointer.
-      const rows = rowsFor(d.height + dy, d.unit, d.rowGap);
-      const grown = (rows - d.startRows) * d.unit;
-      const delta = clamp(Math.round(grown / (d.row * d.lists)), -MAX_ITEMS, MAX_ITEMS);
-      if (span !== d.span || delta !== d.delta || rows !== d.rows) {
-        setDragState({ ...d, span, delta, rows });
+      const rows = rowsFor(d.height + dy, d.unit, d.rowGap, d.minRows);
+      const { collapsed, delta } = planResize(
+        d.sections,
+        (rows - d.startRows) * d.unit,
+        rows * d.unit - d.rowGap,
+        d.base,
+        d.row,
+      );
+      if (span !== d.span || delta !== d.delta || rows !== d.rows || !sameTypes(collapsed, d.collapsed)) {
+        setDragState({ ...d, span, delta, rows, collapsed });
       }
     },
     finish,
@@ -143,7 +214,22 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
     const rect = card.getBoundingClientRect();
     const gap = parseFloat(getComputedStyle(gridEl).columnGap) || 0;
     const { unit, gap: rowGap } = gridRowMetrics(gridEl);
+    // The card's height with all of its content showing (a sized card may
+    // scroll), less the bodies of its open lists: what is left are the
+    // header and the folded lists' headers.
+    const body = card.querySelector<HTMLElement>('.card-body');
+    const content = rect.height + (body ? body.scrollHeight - body.clientHeight : 0);
+    const bodies = new Map<string, number>();
+    for (const section of card.querySelectorAll<HTMLElement>('[data-section]')) {
+      const height = section.lastElementChild?.getBoundingClientRect().height ?? 0;
+      bodies.set(section.dataset.section ?? '', height);
+    }
+    // Until its lists load there is nothing to fold, nor a header to stop at.
+    const base = bodies.size > 0 ? content - [...bodies.values()].reduce((a, b) => a + b, 0) : -Infinity;
     return {
+      base,
+      bodies,
+      minRows: Number.isFinite(base) ? Math.ceil((base + rowGap) / unit) : MIN_CARD_ROWS,
       width: rect.width,
       height: rect.height,
       gap,
@@ -158,10 +244,9 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
 
   /**
    * Props for a card's resize grip. `span` is the card's current width and
-   * `lists` the number of open list widgets on it, which new entries are
-   * spread across.
+   * `sections` the lists on it, which new entries are spread across.
    */
-  const gripProps = (id: string, label: string, span: number, lists: number) => ({
+  const gripProps = (id: string, label: string, span: number, sections: readonly CardSection[]) => ({
     'aria-label': `Resize ${label}`,
     'aria-describedby': 'resize-help',
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
@@ -177,11 +262,12 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
         span,
         delta: 0,
         rows: m.startRows,
+        collapsed: sections.filter((s) => s.collapsed).map((s) => s.type),
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
         startSpan: span,
-        lists: Math.max(1, lists),
+        sections,
         columns,
       });
     },
@@ -219,16 +305,37 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
       e.preventDefault();
       nextSpan = clamp(nextSpan, 1, columns);
       if (nextSpan !== span) onSpan(id, nextSpan);
+      const open = sections.filter((s) => !s.collapsed);
+      const folded = sections.filter((s) => s.collapsed);
+      let collapsed = folded.map((s) => s.type);
+      // Up folds the bottom list once every open list is down to one entry;
+      // down opens folded lists, top first, before adding entries.
+      let fold: CardSection | undefined;
+      if (delta < 0 && open.length > 0 && open.every((s) => s.limit <= MIN_ITEMS)) {
+        fold = open[open.length - 1]!;
+        collapsed = [...collapsed, fold.type];
+      } else if (delta > 0 && folded.length > 0) {
+        fold = folded[0]!;
+        collapsed = collapsed.filter((t) => t !== fold!.type);
+      }
       let resized = false;
       if (delta !== 0 && card && grid) {
-        // One step is one entry in each open list.
         const m = measure(card, grid, span);
-        const rows = rowsFor(m.height + delta * m.row * Math.max(1, lists), m.unit, m.rowGap);
+        // One step is one entry in each open list, or the list folded or opened.
+        const step = !fold
+          ? m.row * Math.max(1, open.length)
+          : delta < 0
+            ? (m.bodies.get(fold.type) ?? m.row)
+            : m.row * fold.limit;
+        const rows = rowsFor(m.height + delta * step, m.unit, m.rowGap, delta < 0 ? m.minRows : undefined);
         resized = rows !== m.startRows;
         if (resized) onHeight(id, rows);
       }
-      const changed = delta !== 0 && onRows(id, delta);
-      if (nextSpan !== span || resized || changed) setAnnouncement(describe(id, nextSpan, changed ? delta : 0));
+      if (fold) onFold(id, collapsed);
+      const changed = delta !== 0 && !fold && onRows(id, delta, collapsed);
+      if (nextSpan !== span || resized || fold || changed) {
+        setAnnouncement(describe(id, nextSpan, changed ? delta : 0, collapsed));
+      }
     },
   });
 
@@ -236,7 +343,7 @@ export function useCardResize({ grid, onSpan, onHeight, onRows, describe }: {
     /** Columns in the grid; spans are clamped to it. */
     columns,
     /** The resize in progress, if any. */
-    resizing: drag && { id: drag.id, span: drag.span, delta: drag.delta, rows: drag.rows },
+    resizing: drag && { id: drag.id, span: drag.span, delta: drag.delta, rows: drag.rows, collapsed: drag.collapsed },
     announcement,
     gripProps,
   };

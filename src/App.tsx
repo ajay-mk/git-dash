@@ -119,23 +119,29 @@ export default function App() {
         else cardRows[id] = rows;
         return { ...c, layout: { ...c.layout, cardRows } };
       }),
-    onRows: (id, delta) => {
+    onFold: (id, collapsed) =>
+      update((c) => {
+        const repo = c.repos.find((r) => repoId(r) === id);
+        if (!repo) return c;
+        const keys = new Set(WIDGET_TYPES.map((t) => widgetKey(repo, t)));
+        const others = c.layout.collapsedWidgets.filter((k) => !keys.has(k));
+        return { ...c, layout: { ...c.layout, collapsedWidgets: [...others, ...collapsed.map((t) => widgetKey(repo, t))] } };
+      }),
+    onRows: (id, delta, collapsed) => {
       // Collapsed lists are not part of the card's height, so they keep their limit.
       const repo = reposById.get(id);
       if (!repo) return false;
-      const widgets = shiftListLimits(repo.widgets, delta, collapsedTypes(config, repo));
+      const widgets = shiftListLimits(repo.widgets, delta, collapsed);
       if (widgets.every((w, i) => w === repo.widgets[i])) return false;
       update((c) => ({
         ...c,
-        repos: c.repos.map((r) =>
-          repoId(r) === id ? { ...r, widgets: shiftListLimits(r.widgets, delta, collapsedTypes(c, r)) } : r,
-        ),
+        repos: c.repos.map((r) => (repoId(r) === id ? { ...r, widgets: shiftListLimits(r.widgets, delta, collapsed) } : r)),
       }));
       return true;
     },
-    describe: (id, span, delta) => {
+    describe: (id, span, delta, collapsed) => {
       const repo = reposById.get(id);
-      return `${repoLabel(id)} is ${span} ${span === 1 ? 'column' : 'columns'} wide${repo ? `, ${entriesText(repo, delta, collapsedTypes(config, repo))}` : ''}.`;
+      return `${repoLabel(id)} is ${span} ${span === 1 ? 'column' : 'columns'} wide${repo ? `, ${entriesText(repo, delta, collapsed)}` : ''}.`;
     },
   });
 
@@ -230,7 +236,7 @@ export default function App() {
           <>
             <p id="reorder-help" className="sr-only">Drag to reorder, or use the arrow keys.</p>
             <p id="resize-help" className="sr-only">
-              Drag to resize. Left and right arrows change the width, up and down change the height and how many entries show. Delete lets the card fit its content again.
+              Drag to resize. Left and right arrows change the width, up and down change the height and how many entries show. Shrinking past one entry folds the lists, and growing opens them again. Delete lets the card fit its content again.
             </p>
             <p className="sr-only" aria-live="polite">{reorder.announcement}</p>
             <p className="sr-only" aria-live="polite">{resize.announcement}</p>
@@ -240,7 +246,9 @@ export default function App() {
                 const collapsedWidgets = collapsedTypes(config, repo);
                 const span = Math.min(config.layout.cardSpans[id] ?? 1, resize.columns);
                 const resizing = resize.resizing?.id === id ? resize.resizing : null;
-                const lists = repo.widgets.filter((w) => w.type !== 'ci' && !collapsedWidgets.includes(w.type)).length;
+                const sections = repo.widgets.flatMap((w) =>
+                  w.type === 'ci' ? [] : [{ type: w.type, limit: w.limit, collapsed: collapsedWidgets.includes(w.type) }],
+                );
                 return (
                   <RepoCard
                     key={id}
@@ -253,10 +261,10 @@ export default function App() {
                       <>
                         {resizing && (
                           <span className="resize-hint" aria-hidden="true">
-                            {resizing.span} {resizing.span === 1 ? 'column' : 'columns'} · {entriesText(repo, resizing.delta, collapsedWidgets)}
+                            {resizing.span} {resizing.span === 1 ? 'column' : 'columns'} · {entriesText(repo, resizing.delta, resizing.collapsed)}
                           </span>
                         )}
-                        <button type="button" className="resize-grip" title="Drag to resize, double-click to fit the content" {...resize.gripProps(id, repoLabel(id), span, lists)} />
+                        <button type="button" className="resize-grip" title="Drag to resize, double-click to fit the content" {...resize.gripProps(id, repoLabel(id), span, sections)} />
                       </>
                     }
                     handle={
@@ -341,7 +349,7 @@ function entriesText(repo: PinnedRepo, delta: number, collapsed: readonly Widget
   const limits = shiftListLimits(repo.widgets, delta).flatMap((w) =>
     w.type === 'ci' || collapsed.includes(w.type) ? [] : [{ type: w.type, limit: w.limit }],
   );
-  if (limits.length === 0) return 'no open lists';
+  if (limits.length === 0) return repo.widgets.some((w) => w.type !== 'ci') ? 'lists folded' : 'no lists';
   const first = limits[0]!.limit;
   if (limits.every((l) => l.limit === first)) return `${first} ${first === 1 ? 'entry' : 'entries'}`;
   return limits.map((l) => `${l.limit} ${l.type === 'pullRequests' ? 'pull requests' : 'issues'}`).join(', ');
