@@ -54,7 +54,9 @@ export function useCardResize({ onSpan, onRows, describe }: {
 }) {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [announcement, setAnnouncement] = useState('');
-  const [columns, setColumns] = useState(MAX_CARD_SPAN);
+  // Tracks the grid lays out; cards span at most MAX_CARD_SPAN of them.
+  const [tracks, setTracks] = useState(MAX_CARD_SPAN);
+  const columns = Math.min(tracks, MAX_CARD_SPAN);
   const [grid, setGrid] = useState<HTMLElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const callbacks = useRef({ onSpan, onRows, describe });
@@ -65,7 +67,7 @@ export function useCardResize({ onSpan, onRows, describe }: {
   // Cards cannot be wider than the grid, so track how many columns it has.
   useEffect(() => {
     if (!grid) return;
-    const measure = () => setColumns(Math.min(gridColumns(grid) ?? MAX_CARD_SPAN, MAX_CARD_SPAN));
+    const measure = () => setTracks(gridColumns(grid) ?? MAX_CARD_SPAN);
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
@@ -128,7 +130,8 @@ export function useCardResize({ onSpan, onRows, describe }: {
       e.currentTarget.focus();
       const rect = card.getBoundingClientRect();
       const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
-      const column = (grid.clientWidth - gap * (columns - 1)) / columns || rect.width / span || 1;
+      // One track's width, from every track the grid has (not just the ones a card may span).
+      const column = (grid.clientWidth - gap * (tracks - 1)) / tracks || rect.width / span || 1;
       const row = card.querySelector('.rows > li')?.getBoundingClientRect().height || ROW_HEIGHT;
       setDragState({
         id,

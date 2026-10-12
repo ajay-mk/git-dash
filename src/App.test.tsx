@@ -280,6 +280,31 @@ describe('App', () => {
       expect(card.classList.contains('resizing')).toBe(false);
     });
 
+    it('measures columns from every grid track when the grid has more than three', async () => {
+      const style = window.getComputedStyle;
+      vi.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+        const real = style(el);
+        if (!(el as HTMLElement).classList.contains('grid')) return real;
+        return { ...real, gridTemplateColumns: '100px 100px 100px 100px', columnGap: '0px' } as CSSStyleDeclaration;
+      });
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      const layout = { ...defaultConfig().layout, cardSpans: { 'github:octo/one': 3 } };
+      saveConfig({ ...defaultConfig(), repos, layout, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      const grip = await screen.findByRole('button', { name: 'Resize octo/one' });
+      const card = screen.getByRole('article', { name: /^octo\/one:/ });
+      Object.defineProperty(card.parentElement!, 'clientWidth', { value: 400 });
+      vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 200 } as DOMRect);
+
+      // A purely vertical drag keeps the card three columns wide.
+      fireEvent.pointerDown(grip, { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 0, clientY: 60 });
+      expect(card.style.gridColumn).toBe('span 3');
+      fireEvent.pointerUp(window, { pointerId: 2 });
+      expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 3 });
+    });
+
     it('cancels a resize with Escape', async () => {
       await renderRepos();
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
