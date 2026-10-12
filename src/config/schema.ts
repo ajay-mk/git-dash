@@ -24,9 +24,10 @@ export const MAX_REPOS = 50;
 export const MAX_CARD_SPAN = 3;
 /**
  * Card heights are kept in grid rows (see `.grid` in styles.css) so they
- * snap; these bound a saved height.
+ * snap; these bound a saved height. A resize stops sooner, at the card's
+ * header and its folded lists.
  */
-export const MIN_CARD_ROWS = 12;
+export const MIN_CARD_ROWS = 6;
 export const MAX_CARD_ROWS = 200;
 export const REFRESH_CHOICES = [0, 1, 2, 5, 10, 15, 30, 60] as const;
 export const THEMES = ['system', 'light', 'dark'] as const;

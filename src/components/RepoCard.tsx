@@ -34,6 +34,7 @@ function Widget({ widget, data, collapsed, onToggle, delta }: {
       return (
         <Collapsible
           className="widget"
+          name={widget.type}
           title="Pull requests"
           count={prs.total}
           collapsed={collapsed}
@@ -58,6 +59,7 @@ function Widget({ widget, data, collapsed, onToggle, delta }: {
       return (
         <Collapsible
           className="widget"
+          name={widget.type}
           title={widget.label ? `Issues · ${widget.label}` : 'Issues'}
           count={issues.total}
           collapsed={collapsed}
@@ -115,6 +117,8 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
   const data = result?.ok ? result.data : null;
   const fullName = data?.fullName ?? `${repo.owner}/${repo.name}`;
   const height = resize?.rows ?? rows;
+  // A resize folds and opens lists as the card shrinks and grows.
+  const collapsed = resize?.collapsed ?? collapsedWidgets;
 
   return (
     <article
@@ -152,7 +156,7 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
               key={w.type}
               widget={w}
               data={data}
-              collapsed={collapsedWidgets.includes(w.type)}
+              collapsed={collapsed.includes(w.type)}
               onToggle={() => onToggleWidget(w.type)}
               delta={resize?.delta ?? 0}
             />

@@ -52,7 +52,7 @@ describe('parseConfig', () => {
       cardSpans: { 'github:a/b': 2 },
       cardRows: { 'github:a/b': 30 },
     });
-    for (const rows of [11, 201, 30.5, '30']) {
+    for (const rows of [5, 201, 30.5, '30']) {
       const layout = { ...defaultConfig().layout, cardRows: { 'github:a/b': rows } };
       expect(parseConfig({ ...valid, layout }).layout.cardRows).toEqual({});
     }

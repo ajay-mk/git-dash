@@ -1,7 +1,7 @@
 import { useId } from 'react';
 
 /** A titled section whose body can be collapsed from its header. */
-export function Collapsible({ title, count, collapsed, onToggle, badge, className, children }: {
+export function Collapsible({ title, count, collapsed, onToggle, badge, className, name, children }: {
   title: string;
   count: number;
   collapsed: boolean;
@@ -9,11 +9,13 @@ export function Collapsible({ title, count, collapsed, onToggle, badge, classNam
   /** Shown next to the title, even while collapsed. */
   badge?: React.ReactNode;
   className: string;
+  /** Identifies the section to code that measures it (`data-section`). */
+  name?: string;
   children: React.ReactNode;
 }) {
   const bodyId = useId();
   return (
-    <section className={className}>
+    <section className={className} data-section={name}>
       <div className="section-header">
         <h3 className="widget-title">
           <button

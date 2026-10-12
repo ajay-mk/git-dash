@@ -210,7 +210,7 @@ describe('App', () => {
     function saved() {
       return JSON.parse(localStorage.getItem('gitdash.config.v1') ?? '{}') as {
         repos: { name: string; widgets: { type: string; limit?: number }[] }[];
-        layout: { cardSpans: Record<string, number>; cardRows: Record<string, number> };
+        layout: { cardSpans: Record<string, number>; cardRows: Record<string, number>; collapsedWidgets: string[] };
       };
     }
     const limits = (name: string) =>
@@ -242,7 +242,7 @@ describe('App', () => {
       expect(limits('one')).toEqual([6, 6]);
     });
 
-    it('leaves collapsed lists alone and does nothing at the entry limit', async () => {
+    it('leaves lists that have not loaded as they are, and collapsed lists at their limit', async () => {
       vi.mocked(tokens.list).mockResolvedValue(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       const layout = { ...defaultConfig().layout, collapsedWidgets: ['github:octo/one#issues'] };
@@ -253,12 +253,14 @@ describe('App', () => {
       render(<App />);
       (await screen.findByRole('button', { name: 'Resize octo/one' })).focus();
 
+      // Nothing has loaded, so there is nothing on the card to fold.
       await userEvent.keyboard('{ArrowUp}');
       expect(limits('one')).toEqual([1, 5]);
-      expect(screen.queryByText(/octo\/one is/)).toBeNull();
+      expect(saved().layout.collapsedWidgets).toEqual(['github:octo/one#issues']);
 
       await userEvent.keyboard('{ArrowDown}');
       expect(limits('one')).toEqual([2, 5]);
+      expect(saved().layout.collapsedWidgets).toEqual(['github:octo/one#issues']);
       expect(screen.getByText('octo/one is 1 column wide, 2 entries.')).toBeTruthy();
     });
 
