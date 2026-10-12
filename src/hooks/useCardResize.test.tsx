@@ -39,6 +39,12 @@ describe('planResize', () => {
     expect(plan(few, 56, 176)).toEqual({ collapsed: [], delta: 1 });
   });
 
+  it('counts the entries a folded list gave back before removing any from the others', () => {
+    const few = sections([], 10).map((s) => ({ ...s, rows: 1 }));
+    // 168px leaves room for one list, and folding Issues frees the one row asked for.
+    expect(plan(few, -28, 168)).toEqual({ collapsed: ['issues'], delta: 0 });
+  });
+
   it('leaves lists the user folded alone while shrinking', () => {
     expect(plan(sections(['pullRequests']), -28, 200)).toEqual({ collapsed: ['pullRequests'], delta: -1 });
   });
@@ -49,10 +55,11 @@ describe('planResize', () => {
 });
 
 /** A card whose header and folded lists are 120px tall, each entry 28px. */
-function Card({ onFold, onRows, onHeight }: {
+function Card({ onFold, onRows, onHeight, limit = 2 }: {
   onFold: (collapsed: WidgetType[]) => void;
   onRows: (delta: number, collapsed: WidgetType[]) => void;
   onHeight: (rows: number | null) => void;
+  limit?: number;
 }) {
   const [grid, setGrid] = useState<HTMLElement | null>(null);
   const [collapsed, setCollapsed] = useState<WidgetType[]>([]);
@@ -87,7 +94,7 @@ function Card({ onFold, onRows, onHeight }: {
             </section>
           ))}
         </div>
-        <button type="button" {...resize.gripProps('card', 'card', 1, sections(collapsed))} />
+        <button type="button" {...resize.gripProps('card', 'card', 1, sections(collapsed, limit))} />
       </article>
     </div>
   );
@@ -139,5 +146,22 @@ describe('useCardResize', () => {
     fireEvent.keyDown(grip, { key: 'ArrowUp' });
     expect(onRows).toHaveBeenLastCalledWith(-1, []);
     expect(onFold).not.toHaveBeenCalled();
+  });
+
+  it('folds the bottom list with the up arrow at one entry, and opens the top one first with down', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { width: 300, height: Number(this.dataset.height ?? 0) } as DOMRect;
+    });
+    const onFold = vi.fn();
+    const onRows = vi.fn();
+    render(<Card onFold={onFold} onRows={onRows} onHeight={() => {}} limit={1} />);
+    const grip = screen.getByRole('button', { name: 'Resize card' });
+    fireEvent.keyDown(grip, { key: 'ArrowUp' });
+    expect(onFold).toHaveBeenLastCalledWith(['issues']);
+    fireEvent.keyDown(grip, { key: 'ArrowUp' });
+    expect(onFold).toHaveBeenLastCalledWith(['issues', 'pullRequests']);
+    fireEvent.keyDown(grip, { key: 'ArrowDown' });
+    expect(onFold).toHaveBeenLastCalledWith(['issues']);
+    expect(onRows).not.toHaveBeenCalled();
   });
 });

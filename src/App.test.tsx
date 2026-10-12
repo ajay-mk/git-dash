@@ -242,7 +242,7 @@ describe('App', () => {
       expect(limits('one')).toEqual([6, 6]);
     });
 
-    it('folds lists with the up arrow at one entry, and opens them with down before adding entries', async () => {
+    it('leaves lists that have not loaded as they are, and collapsed lists at their limit', async () => {
       vi.mocked(tokens.list).mockResolvedValue(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       const layout = { ...defaultConfig().layout, collapsedWidgets: ['github:octo/one#issues'] };
@@ -252,22 +252,16 @@ describe('App', () => {
       saveConfig({ ...defaultConfig(), repos: [one, repos[1]!], layout, inbox: { ...defaultConfig().inbox, enabled: false } });
       render(<App />);
       (await screen.findByRole('button', { name: 'Resize octo/one' })).focus();
-      const folded = () => [...saved().layout.collapsedWidgets].sort();
 
+      // Nothing has loaded, so there is nothing on the card to fold.
       await userEvent.keyboard('{ArrowUp}');
       expect(limits('one')).toEqual([1, 5]);
-      expect(folded()).toEqual(['github:octo/one#issues', 'github:octo/one#pullRequests']);
-      expect(screen.getByText('octo/one is 1 column wide, lists folded.')).toBeTruthy();
+      expect(saved().layout.collapsedWidgets).toEqual(['github:octo/one#issues']);
 
       await userEvent.keyboard('{ArrowDown}');
-      expect(folded()).toEqual(['github:octo/one#issues']);
-      await userEvent.keyboard('{ArrowDown}');
-      expect(folded()).toEqual([]);
-      expect(limits('one')).toEqual([1, 5]);
-
-      await userEvent.keyboard('{ArrowDown}');
-      expect(limits('one')).toEqual([2, 6]);
-      expect(screen.getByText('octo/one is 1 column wide, 2 pull requests, 6 issues.')).toBeTruthy();
+      expect(limits('one')).toEqual([2, 5]);
+      expect(saved().layout.collapsedWidgets).toEqual(['github:octo/one#issues']);
+      expect(screen.getByText('octo/one is 1 column wide, 2 entries.')).toBeTruthy();
     });
 
     it('resizes by dragging the grip and only saves on release', async () => {
