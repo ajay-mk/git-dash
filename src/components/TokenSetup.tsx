@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { providers } from '../providers';
 import { tokens } from '../lib/transport';
+import logo from '../assets/logo.svg';
 import { ExternalLink } from './ExternalLink';
 import { PermissionList } from './PermissionList';
 
@@ -36,16 +37,19 @@ export function TokenSetup({ onDone, onCancel, reason }: {
   return (
     <main className="setup">
       <form className="setup-card" onSubmit={submit}>
-        <h1>Connect GitHub</h1>
+        <h1>
+          <img className="setup-logo" src={logo} alt="" />
+          Connect GitHub
+        </h1>
         {reason && <p className="error-text">{reason}</p>}
         <p>
-          git-dash needs a personal access token. It is stored in your operating system&apos;s keychain
+          GitDash needs a personal access token. It is stored in your operating system&apos;s keychain
           and only ever sent to <code>api.github.com</code>. The app itself never displays or exports it.
         </p>
         <ol className="help-list">
           <li>
             <ExternalLink href={provider.newTokenUrl()}>Create a fine-grained token</ExternalLink>. The link
-            fills in the read-only permissions git-dash needs:{' '}
+            fills in the read-only permissions GitDash needs:{' '}
             <PermissionList permissions={provider.tokenPermissions} />.
           </li>
           <li>
@@ -64,9 +68,9 @@ export function TokenSetup({ onDone, onCancel, reason }: {
             </li>
             <li>
               <strong>Classic token:</strong> works across organizations. No scopes are needed for public
-              repositories; private ones need <code>repo</code>, which also grants write access. git-dash
+              repositories; private ones need <code>repo</code>, which also grants write access. GitDash
               only ever sends read-only queries, but prefer fine-grained tokens where you can.{' '}
-              <ExternalLink href="https://github.com/settings/tokens/new?description=git-dash">
+              <ExternalLink href="https://github.com/settings/tokens/new?description=GitDash">
                 Create a classic token
               </ExternalLink>
             </li>
