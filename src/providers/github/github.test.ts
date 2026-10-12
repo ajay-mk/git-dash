@@ -264,7 +264,7 @@ describe('github.listRepos', () => {
             },
       ),
     );
-    await expect(github.listRepos(['acme'])).resolves.toEqual(['octo/one', 'acme/api', 'acme/web']);
+    await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['octo/one', 'acme/api', 'acme/web'], complete: true });
     expect(graphql).toHaveBeenCalledWith(expect.stringContaining('repositoryOwner(login: $owner)'), expect.objectContaining({ owner: 'acme' }), 'acme');
   });
 
@@ -283,7 +283,7 @@ describe('github.listRepos', () => {
             },
       ),
     );
-    await expect(github.listRepos(['acme'])).resolves.toEqual(['acme/new', 'octo/a', 'octo/b', 'octo/empty']);
+    await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['acme/new', 'octo/a', 'octo/b', 'octo/empty'], complete: true });
   });
 
   it('only fetches active repositories', async () => {
@@ -305,13 +305,13 @@ describe('github.listRepos', () => {
       data: { viewer: { repositories: { nodes: [{ nameWithOwner: 'octo/one', isArchived: false }] } } },
       errors: [{ type: 'FORBIDDEN', message: 'SAML' }],
     });
-    await expect(github.listRepos([])).resolves.toEqual(['octo/one']);
+    await expect(github.listRepos([])).resolves.toEqual({ repos: ['octo/one'], complete: true });
   });
 
   it('ignores tokens that fail', async () => {
     graphql.mockImplementation((_query, _variables, owner) =>
       owner ? Promise.reject(new Error('revoked')) : Promise.resolve({ data: { viewer: { repositories: nodes('octo/one') } } }),
     );
-    await expect(github.listRepos(['acme'])).resolves.toEqual(['octo/one']);
+    await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['octo/one'], complete: false });
   });
 });

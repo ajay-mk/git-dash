@@ -159,8 +159,11 @@ function RepoInput({
     loadedFor.current = key;
     setRepos([]);
     providers.github.listRepos(tokenOwners).then(
-      (names) => {
-        if (loadedFor.current === key) setRepos(names);
+      ({ repos: names, complete }) => {
+        if (loadedFor.current !== key) return;
+        setRepos(names);
+        // Keep what loaded, but let the next focus retry the failed tokens.
+        if (!complete) loadedFor.current = null;
       },
       () => {
         // Let the next focus try again.

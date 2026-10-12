@@ -141,8 +141,9 @@ export const github: Provider = {
     // Each token's list is already newest first; interleave them so a recent
     // push seen only by a per-owner token is not buried. Stable for ties, and
     // never-pushed repositories go last.
-    return [...seen.values()]
+    const repos = [...seen.values()]
       .sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
       .map((r) => r.name);
+    return { repos, complete: !failed };
   },
 };

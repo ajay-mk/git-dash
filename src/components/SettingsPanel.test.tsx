@@ -186,6 +186,40 @@ describe('SettingsPanel', () => {
       expect(await screen.findByRole('option', { name: 'octo/api' })).toBeTruthy();
     });
 
+    it('shows partial results and retries the failed token on the next focus', async () => {
+      vi.mocked(githubGraphql).mockImplementation((_query, _variables, owner) =>
+        owner
+          ? Promise.reject(new Error('offline'))
+          : Promise.resolve({ data: { viewer: { repositories: { nodes: [{ nameWithOwner: 'octo/api' }] } } } }),
+      );
+      render(
+        <SettingsPanel
+          open
+          onClose={vi.fn()}
+          config={defaultConfig()}
+          update={vi.fn()}
+          viewer="octocat"
+          ownerTokens={[{ owner: 'acme', login: 'octocat' }]}
+          onOwnerTokensChanged={vi.fn()}
+          onChangeToken={vi.fn()}
+          onSignOut={vi.fn()}
+        />,
+      );
+      await userEvent.click(field());
+      expect(await screen.findByRole('option', { name: 'octo/api' })).toBeTruthy();
+
+      vi.mocked(githubGraphql).mockImplementation((_query, _variables, owner) =>
+        Promise.resolve(
+          owner
+            ? { data: { repositoryOwner: { repositories: { nodes: [{ nameWithOwner: 'acme/web' }] } } } }
+            : { data: { viewer: { repositories: { nodes: [{ nameWithOwner: 'octo/api' }] } } } },
+        ),
+      );
+      await userEvent.click(document.body);
+      await userEvent.click(field());
+      expect(await screen.findByRole('option', { name: 'acme/web' })).toBeTruthy();
+    });
+
     it('still pins typed input when suggestions fail to load', async () => {
       const { config } = setup();
       await pin('octo/repo');
