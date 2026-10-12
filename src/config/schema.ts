@@ -20,6 +20,8 @@ export const WIDGET_LABELS: Record<WidgetType, string> = {
 export const MIN_ITEMS = 1;
 export const MAX_ITEMS = 20;
 export const MAX_REPOS = 50;
+/** Widest a repo card can be, in grid columns. */
+export const MAX_CARD_SPAN = 3;
 export const REFRESH_CHOICES = [0, 1, 2, 5, 10, 15, 30, 60] as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
@@ -68,6 +70,8 @@ export interface LayoutConfig {
   groupMyPullRequests: PrGrouping;
   /** Repo card widgets the user has collapsed, as `widgetKey()` values. */
   collapsedWidgets: string[];
+  /** Repo cards wider than one grid column, by `repoId()`. */
+  cardSpans: Record<string, number>;
 }
 
 /**
@@ -80,11 +84,30 @@ export function pinnedWidgetKeys(repos: readonly PinnedRepo[], keys: readonly un
   );
 }
 
-/** Drops layout entries for widgets that are no longer pinned. */
+/** The card widths in `raw` that are valid and belong to a pinned repo. */
+export function pinnedCardSpans(repos: readonly PinnedRepo[], raw: unknown): Record<string, number> {
+  const spans: Record<string, number> = {};
+  if (!isObj(raw)) return spans;
+  for (const repo of repos) {
+    const id = repoId(repo);
+    const span = Object.hasOwn(raw, id) ? raw[id] : undefined;
+    if (typeof span === 'number' && Number.isInteger(span) && span > 1 && span <= MAX_CARD_SPAN) spans[id] = span;
+  }
+  return spans;
+}
+
+/** Drops layout entries for repos and widgets that are no longer pinned. */
 export function pruneLayout(config: DashboardConfig): DashboardConfig {
-  const collapsedWidgets = pinnedWidgetKeys(config.repos, config.layout.collapsedWidgets);
-  if (collapsedWidgets.length === config.layout.collapsedWidgets.length) return config;
-  return { ...config, layout: { ...config.layout, collapsedWidgets } };
+  const { layout } = config;
+  const collapsedWidgets = pinnedWidgetKeys(config.repos, layout.collapsedWidgets);
+  const cardSpans = pinnedCardSpans(config.repos, layout.cardSpans);
+  if (
+    collapsedWidgets.length === layout.collapsedWidgets.length &&
+    Object.keys(cardSpans).length === Object.keys(layout.cardSpans).length
+  ) {
+    return config;
+  }
+  return { ...config, layout: { ...layout, collapsedWidgets, cardSpans } };
 }
 
 /** Identifies one widget on one repo card. */
@@ -126,6 +149,24 @@ export function defaultWidget(type: WidgetType): WidgetConfig {
   }
 }
 
+/**
+ * Grows or shrinks every list widget (pull requests, issues) by `delta`
+ * entries, within the allowed range, keeping their differences. Widgets in
+ * `skip` (such as collapsed ones) are left alone.
+ */
+export function shiftListLimits(
+  widgets: readonly WidgetConfig[],
+  delta: number,
+  skip: readonly WidgetType[] = [],
+): WidgetConfig[] {
+  return widgets.map((w) => {
+    if (w.type === 'ci' || skip.includes(w.type)) return w;
+    const limit = Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, w.limit + delta));
+    // Unchanged widgets keep their identity, so callers can tell nothing moved.
+    return limit === w.limit ? w : { ...w, limit };
+  });
+}
+
 export function defaultWidgets(): WidgetConfig[] {
   return WIDGET_TYPES.map(defaultWidget);
 }
@@ -135,7 +176,7 @@ export function defaultConfig(): DashboardConfig {
     version: CONFIG_VERSION,
     repos: [],
     inbox: { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 10 },
-    layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [] },
+    layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [], cardSpans: {} },
     refreshMinutes: 5,
     theme: 'system',
   };
@@ -269,6 +310,7 @@ export function parseConfig(raw: unknown): DashboardConfig {
     collapsedWidgets: Array.isArray(layoutRaw.collapsedWidgets)
       ? pinnedWidgetKeys(repos, layoutRaw.collapsedWidgets)
       : [],
+    cardSpans: pinnedCardSpans(repos, layoutRaw.cardSpans),
   };
 
   const refresh = (REFRESH_CHOICES as readonly number[]).includes(raw.refreshMinutes as number)

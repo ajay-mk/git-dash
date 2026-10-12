@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput, pruneLayout } from './schema';
+import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput, pruneLayout, shiftListLimits } from './schema';
 
 describe('parseRepoInput', () => {
   it('accepts owner/name and GitHub URLs', () => {
@@ -41,13 +41,20 @@ describe('parseConfig', () => {
         collapsedInbox: ['assigned', 'bogus', 'assigned', 7],
         groupMyPullRequests: 'repo',
         collapsedWidgets: ['github:a/b#issues', 'github:gone/repo#issues', 'github:a/b#nope', 1],
+        cardSpans: { 'github:a/b': 2, 'github:gone/repo': 2 },
       },
     });
     expect(parsed.layout).toEqual({
       collapsedInbox: ['assigned'],
       groupMyPullRequests: 'repo',
       collapsedWidgets: ['github:a/b#issues'],
+      cardSpans: { 'github:a/b': 2 },
     });
+    for (const span of [1, 4, 2.5, '2', null]) {
+      const layout = { ...defaultConfig().layout, cardSpans: { 'github:a/b': span } };
+      expect(parseConfig({ ...valid, layout }).layout.cardSpans).toEqual({});
+    }
+    expect(parseConfig({ ...valid, layout: { cardSpans: [2] } }).layout.cardSpans).toEqual({});
     expect(parseConfig({ ...valid, layout: { groupMyPullRequests: 'size' } }).layout).toEqual(
       defaultConfig().layout,
     );
@@ -100,5 +107,32 @@ describe('pruneLayout', () => {
     const fewer = { ...config, repos: [{ ...repo, widgets: defaultWidgets().filter((w) => w.type !== 'issues') }] };
     expect(pruneLayout(fewer).layout.collapsedWidgets).toEqual(['github:a/b#pullRequests']);
     expect(pruneLayout({ ...config, repos: [] }).layout.collapsedWidgets).toEqual([]);
+  });
+
+  it('forgets the width of unpinned cards', () => {
+    const repo = { provider: 'github' as const, owner: 'a', name: 'b', widgets: defaultWidgets() };
+    const config = { ...defaultConfig(), repos: [repo], layout: { ...defaultConfig().layout, cardSpans: { 'github:a/b': 3 } } };
+    expect(pruneLayout(config)).toBe(config);
+    expect(pruneLayout({ ...config, repos: [] }).layout.cardSpans).toEqual({});
+  });
+});
+
+describe('shiftListLimits', () => {
+  it('moves every list by the same amount within the allowed range', () => {
+    const widgets = [
+      { type: 'ci' as const },
+      { type: 'pullRequests' as const, limit: 5, hideDrafts: false },
+      { type: 'issues' as const, limit: 2, label: null },
+    ];
+    expect(shiftListLimits(widgets, 3)).toEqual([
+      { type: 'ci' },
+      { type: 'pullRequests', limit: 8, hideDrafts: false },
+      { type: 'issues', limit: 5, label: null },
+    ]);
+    expect(shiftListLimits(widgets, -4).map((w) => ('limit' in w ? w.limit : null))).toEqual([null, 1, 1]);
+    expect(shiftListLimits(widgets, 40).map((w) => ('limit' in w ? w.limit : null))).toEqual([null, 20, 20]);
+    expect(shiftListLimits(widgets, 1, ['issues'])[2]).toBe(widgets[2]);
+    const atMin = shiftListLimits(widgets, -10);
+    expect(shiftListLimits(atMin, -1).every((w, i) => w === atMin[i])).toBe(true);
   });
 });

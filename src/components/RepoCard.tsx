@@ -1,4 +1,7 @@
-import type { PinnedRepo, WidgetConfig, WidgetType } from '../config/schema';
+import type { ReactNode } from 'react';
+import { MAX_ITEMS, MIN_ITEMS, repoId, type PinnedRepo, type WidgetConfig, type WidgetType } from '../config/schema';
+import type { CardResize } from '../hooks/useCardResize';
+import { REORDER_ATTR } from '../hooks/useReorder';
 import { HEALTH_LABELS, repoHealth } from '../lib/health';
 import type { RepoError, RepoResult, RepoSnapshot } from '../providers/types';
 import { Collapsible } from './Collapsible';
@@ -6,11 +9,18 @@ import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
 import { CiIcon } from './StatusIcons';
 
-function Widget({ widget, data, collapsed, onToggle }: {
+/** Entries a list widget shows while its card is being resized by `delta`. */
+function shown(widget: { limit: number }, delta: number): number {
+  return Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, widget.limit + delta));
+}
+
+function Widget({ widget, data, collapsed, onToggle, delta }: {
   widget: WidgetConfig;
   data: RepoSnapshot;
   collapsed: boolean;
   onToggle: () => void;
+  /** Entries added or removed by a resize in progress. */
+  delta: number;
 }) {
   switch (widget.type) {
     case 'ci':
@@ -34,7 +44,7 @@ function Widget({ widget, data, collapsed, onToggle }: {
             <p className="empty">No open pull requests</p>
           ) : (
             <ul className="rows">
-              {prs.items.map((pr) => (
+              {prs.items.slice(0, shown(widget, delta)).map((pr) => (
                 <PullRequestRow key={pr.number} pr={pr} />
               ))}
             </ul>
@@ -57,7 +67,7 @@ function Widget({ widget, data, collapsed, onToggle }: {
             <p className="empty">No open issues</p>
           ) : (
             <ul className="rows">
-              {issues.items.map((issue) => (
+              {issues.items.slice(0, shown(widget, delta)).map((issue) => (
                 <IssueRow key={issue.number} issue={issue} />
               ))}
             </ul>
@@ -82,12 +92,22 @@ function RepoErrorText({ error }: { error: RepoError }) {
   );
 }
 
-export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget }: {
+export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handle, dragging = false, span = 1, resize = null, grip }: {
   repo: PinnedRepo;
   result: RepoResult | undefined;
   /** Widget types collapsed on this card. */
   collapsedWidgets: readonly WidgetType[];
   onToggleWidget: (type: WidgetType) => void;
+  /** Drag handle for reordering the cards, shown at the start of the header. */
+  handle?: ReactNode;
+  /** Whether this card is being dragged. */
+  dragging?: boolean;
+  /** Width in grid columns. */
+  span?: number;
+  /** A resize of this card in progress. */
+  resize?: CardResize | null;
+  /** Resize grip, shown in the bottom corner. */
+  grip?: ReactNode;
 }) {
   const health = repoHealth(result);
   const data = result?.ok ? result.data : null;
@@ -95,10 +115,16 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget }: {
 
   return (
     <article
-      className={`card health-${health ?? 'loading'}`}
+      className={`card health-${health ?? 'loading'}${dragging ? ' dragging' : ''}${resize ? ' resizing' : ''}`}
+      style={{
+        gridColumn: (resize?.span ?? span) > 1 ? `span ${resize?.span ?? span}` : undefined,
+        minHeight: resize?.minHeight,
+      }}
+      {...{ [REORDER_ATTR]: repoId(repo) }}
       aria-label={`${fullName}: ${health ? HEALTH_LABELS[health] : 'Loading'}`}
     >
       <header className="card-header">
+        {handle}
         <ExternalLink href={data?.url ?? `https://github.com/${repo.owner}/${repo.name}`} className="card-title">
           <span className="owner">{repo.owner}/</span>
           {repo.name}
@@ -123,9 +149,11 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget }: {
             data={data}
             collapsed={collapsedWidgets.includes(w.type)}
             onToggle={() => onToggleWidget(w.type)}
+            delta={resize?.delta ?? 0}
           />
         ))}
       {data && repo.widgets.length === 0 && <p className="empty">No widgets enabled</p>}
+      {grip}
     </article>
   );
 }

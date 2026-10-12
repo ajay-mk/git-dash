@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -105,5 +105,247 @@ describe('App', () => {
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(JSON.parse(localStorage.getItem('git-dash.config.v1')!)).toMatchObject({ theme: 'dark' });
+  });
+
+  describe('reordering repo cards', () => {
+    const repos = [pinned('octo', 'one'), pinned('octo', 'two'), pinned('octo', 'three')];
+
+    function titles() {
+      return screen.getAllByRole('article').map((a) => a.getAttribute('aria-label')?.split(':')[0]);
+    }
+
+    function savedOrder() {
+      const saved = JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}') as { repos: { name: string }[] };
+      return saved.repos.map((r) => r.name);
+    }
+
+    async function renderRepos() {
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      saveConfig({ ...defaultConfig(), repos, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      await screen.findByRole('button', { name: 'Reorder octo/one' });
+      // Let the initial (debounced) fetch go out before counting requests.
+      await waitFor(() => expect(githubGraphql).toHaveBeenCalled());
+      vi.mocked(githubGraphql).mockClear();
+    }
+
+    it('moves a card with the arrow keys and saves the order', async () => {
+      await renderRepos();
+      const handle = screen.getByRole('button', { name: 'Reorder octo/one' });
+      handle.focus();
+      await userEvent.keyboard('{ArrowDown}');
+
+      expect(titles()).toEqual(['octo/two', 'octo/one', 'octo/three']);
+      expect(savedOrder()).toEqual(['two', 'one', 'three']);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder octo/one' }));
+      expect(screen.getByText('Moved octo/one to position 2 of 3.')).toBeTruthy();
+
+      await userEvent.keyboard('{End}');
+      expect(savedOrder()).toEqual(['two', 'three', 'one']);
+      await userEvent.keyboard('{Home}');
+      expect(savedOrder()).toEqual(['one', 'two', 'three']);
+      await userEvent.keyboard('{ArrowUp}');
+      expect(savedOrder()).toEqual(['one', 'two', 'three']);
+    });
+
+    it('moves a card by dragging its handle and only saves on drop', async () => {
+      await renderRepos();
+      const card = (name: string) => screen.getByRole('article', { name: new RegExp(`^octo/${name}:`) });
+      const over = vi.spyOn(document, 'elementFromPoint');
+
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Reorder octo/three' }), { button: 0, pointerId: 1 });
+      over.mockReturnValue(card('one'));
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 5, clientY: 5 });
+
+      expect(titles()).toEqual(['octo/three', 'octo/one', 'octo/two']);
+      expect(card('three').classList.contains('dragging')).toBe(true);
+      expect(savedOrder()).toEqual(['one', 'two', 'three']);
+
+      fireEvent.pointerUp(window, { pointerId: 1 });
+      expect(savedOrder()).toEqual(['three', 'one', 'two']);
+      expect(card('three').classList.contains('dragging')).toBe(false);
+
+      // Reordering is not a data change, so nothing is refetched.
+      await new Promise((r) => setTimeout(r, 500));
+      expect(githubGraphql).not.toHaveBeenCalled();
+      over.mockRestore();
+    });
+
+    it('ignores other pointers and ends a drag released outside the window', async () => {
+      await renderRepos();
+      const over = vi.spyOn(document, 'elementFromPoint');
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Reorder octo/one' }), { button: 0, pointerId: 1 });
+      over.mockReturnValue(screen.getByRole('article', { name: /^octo\/two:/ }));
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 5, clientY: 5 });
+      fireEvent.pointerCancel(window, { pointerId: 7 });
+      expect(titles()).toEqual(['octo/two', 'octo/one', 'octo/three']);
+
+      // Back in the window with no button held: the drop already happened.
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 0, clientX: 5, clientY: 5 });
+      expect(savedOrder()).toEqual(['two', 'one', 'three']);
+      expect(screen.getByRole('article', { name: /^octo\/one:/ }).classList.contains('dragging')).toBe(false);
+      over.mockRestore();
+    });
+
+    it('cancels a drag with Escape', async () => {
+      await renderRepos();
+      const over = vi.spyOn(document, 'elementFromPoint');
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Reorder octo/one' }), { button: 0, pointerId: 1 });
+      over.mockReturnValue(screen.getByRole('article', { name: /^octo\/three:/ }));
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 5, clientY: 5 });
+      expect(titles()).toEqual(['octo/two', 'octo/three', 'octo/one']);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.pointerUp(window, { pointerId: 1 });
+      expect(titles()).toEqual(['octo/one', 'octo/two', 'octo/three']);
+      expect(savedOrder()).toEqual(['one', 'two', 'three']);
+      over.mockRestore();
+    });
+  });
+
+  describe('resizing repo cards', () => {
+    const repos = [pinned('octo', 'one'), pinned('octo', 'two')];
+
+    function saved() {
+      return JSON.parse(localStorage.getItem('git-dash.config.v1') ?? '{}') as {
+        repos: { name: string; widgets: { type: string; limit?: number }[] }[];
+        layout: { cardSpans: Record<string, number> };
+      };
+    }
+    const limits = (name: string) =>
+      saved().repos.find((r) => r.name === name)!.widgets.flatMap((w) => (w.limit === undefined ? [] : [w.limit]));
+
+    async function renderRepos() {
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      saveConfig({ ...defaultConfig(), repos, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      await screen.findByRole('button', { name: 'Resize octo/one' });
+    }
+
+    it('changes the width and entry count with the arrow keys', async () => {
+      await renderRepos();
+      screen.getByRole('button', { name: 'Resize octo/one' }).focus();
+
+      await userEvent.keyboard('{ArrowRight}');
+      expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 2 });
+      expect(screen.getByRole('article', { name: /^octo\/one:/ }).style.gridColumn).toBe('span 2');
+      expect(screen.getByText('octo/one is 2 columns wide, 5 entries.')).toBeTruthy();
+
+      await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+      expect(limits('one')).toEqual([7, 7]);
+      expect(limits('two')).toEqual([5, 5]);
+
+      await userEvent.keyboard('{ArrowLeft}{ArrowUp}');
+      expect(saved().layout.cardSpans).toEqual({});
+      expect(limits('one')).toEqual([6, 6]);
+    });
+
+    it('leaves collapsed lists alone and does nothing at the entry limit', async () => {
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      const layout = { ...defaultConfig().layout, collapsedWidgets: ['github:octo/one#issues'] };
+      const one = pinned('octo', 'one', {
+        widgets: [{ type: 'pullRequests', limit: 1, hideDrafts: false }, { type: 'issues', limit: 5, label: null }],
+      });
+      saveConfig({ ...defaultConfig(), repos: [one, repos[1]!], layout, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      (await screen.findByRole('button', { name: 'Resize octo/one' })).focus();
+
+      await userEvent.keyboard('{ArrowUp}');
+      expect(limits('one')).toEqual([1, 5]);
+      expect(screen.queryByText(/octo\/one is/)).toBeNull();
+
+      await userEvent.keyboard('{ArrowDown}');
+      expect(limits('one')).toEqual([2, 5]);
+      expect(screen.getByText('octo/one is 1 column wide, 2 entries.')).toBeTruthy();
+    });
+
+    it('resizes by dragging the grip and only saves on release', async () => {
+      await renderRepos();
+      const card = screen.getByRole('article', { name: /^octo\/one:/ });
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+      // Two open lists with 28px rows: 112px down adds two entries to each.
+      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 2, clientY: 112 });
+
+      expect(card.classList.contains('resizing')).toBe(true);
+      expect(card.style.gridColumn).toBe('span 2');
+      expect(screen.getByText('2 columns · 7 entries')).toBeTruthy();
+      expect(limits('one')).toEqual([5, 5]);
+
+      fireEvent.pointerUp(window, { pointerId: 2 });
+      expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 2 });
+      expect(limits('one')).toEqual([7, 7]);
+      expect(card.classList.contains('resizing')).toBe(false);
+    });
+
+    function gridOf(width: number) {
+      // happy-dom does not lay out, so give the grid a width and a track size.
+      const style = window.getComputedStyle;
+      const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+        if (!(el as HTMLElement).classList.contains('grid')) return style(el);
+        return { columnGap: '0px', getPropertyValue: (name: string) => (name === '--card-min' ? '100px' : '') } as CSSStyleDeclaration;
+      });
+      const clientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.classList.contains('grid') ? width : 0;
+        },
+      });
+      return () => {
+        spy.mockRestore();
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', { ...clientWidth, configurable: true });
+      };
+    }
+
+    async function renderSpan(span: number) {
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      const layout = { ...defaultConfig().layout, cardSpans: { 'github:octo/one': span } };
+      saveConfig({ ...defaultConfig(), repos, layout, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      const grip = await screen.findByRole('button', { name: 'Resize octo/one' });
+      return { grip, card: screen.getByRole('article', { name: /^octo\/one:/ }) };
+    }
+
+    it('measures columns from every grid track when the grid has more than three', async () => {
+      const restore = gridOf(400);
+      try {
+        const { grip, card } = await renderSpan(3);
+        vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 200 } as DOMRect);
+
+        // A purely vertical drag keeps the card three columns wide.
+        fireEvent.pointerDown(grip, { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+        fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 0, clientY: 60 });
+        expect(card.style.gridColumn).toBe('span 3');
+        fireEvent.pointerUp(window, { pointerId: 2 });
+        expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 3 });
+      } finally {
+        restore();
+      }
+    });
+
+    it('narrows a wide card to the columns that fit, keeping its saved width', async () => {
+      const restore = gridOf(200);
+      try {
+        const { card } = await renderSpan(3);
+        await waitFor(() => expect(card.style.gridColumn).toBe('span 2'));
+        expect(saved().layout.cardSpans).toEqual({ 'github:octo/one': 3 });
+      } finally {
+        restore();
+      }
+    });
+
+    it('cancels a resize with Escape', async () => {
+      await renderRepos();
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 2, clientY: 112 });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.pointerUp(window, { pointerId: 2 });
+      expect(saved().layout.cardSpans).toEqual({});
+      expect(limits('one')).toEqual([5, 5]);
+    });
   });
 });

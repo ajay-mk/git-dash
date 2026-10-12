@@ -1,0 +1,198 @@
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useWindowDrag } from './useWindowDrag';
+import { MAX_CARD_SPAN, MAX_ITEMS } from '../config/schema';
+
+/** A resize in progress, as previewed on the card. */
+export interface CardResize {
+  id: string;
+  /** Width in grid columns. */
+  span: number;
+  /** Entries added to (or removed from) each list on the card. */
+  delta: number;
+  /** Keeps the card as tall as the pointer while it grows, before the new entries load. */
+  minHeight: number | undefined;
+}
+
+interface Drag extends CardResize {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startSpan: number;
+  width: number;
+  height: number;
+  column: number;
+  gap: number;
+  row: number;
+  lists: number;
+  columns: number;
+}
+
+/** Fallback height of one list entry, for when it cannot be measured. */
+const ROW_HEIGHT = 28;
+
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/** Number of columns a grid lays out, or null when the browser does not resolve them. */
+function gridColumns(grid: HTMLElement): number | null {
+  // Worked out from the grid's width and its `--card-min` track size, as
+  // auto-fill does. The resolved track list cannot be used: a wide card adds
+  // implicit tracks to it, so it never shrinks below that card's span.
+  const style = getComputedStyle(grid);
+  const min = parseFloat(style.getPropertyValue('--card-min'));
+  const gap = parseFloat(style.columnGap) || 0;
+  if (!(min > 0) || !(grid.clientWidth > 0)) return null;
+  return Math.max(1, Math.floor((grid.clientWidth + gap) / (min + gap)));
+}
+
+/**
+ * Lets the user resize repo cards from a grip in the corner: dragging
+ * sideways snaps the width to whole grid columns, dragging down or up adds or
+ * removes list entries. The keyboard does the same with the arrow keys on the
+ * grip. Like reordering, a drag only commits when it ends (Escape cancels),
+ * because changing the entry count refetches the card.
+ */
+export function useCardResize({ onSpan, onRows, describe }: {
+  onSpan: (id: string, span: number) => void;
+  /** Returns whether any list actually changed (they may be at their limit). */
+  onRows: (id: string, delta: number) => boolean;
+  /** Describes a card's size after a change, for the live announcement. */
+  describe: (id: string, span: number, delta: number) => string;
+}) {
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  // Tracks the grid lays out; cards span at most MAX_CARD_SPAN of them.
+  const [tracks, setTracks] = useState(MAX_CARD_SPAN);
+  const columns = Math.min(tracks, MAX_CARD_SPAN);
+  const [grid, setGrid] = useState<HTMLElement | null>(null);
+  const dragRef = useRef<Drag | null>(null);
+  const callbacks = useRef({ onSpan, onRows, describe });
+  useEffect(() => {
+    callbacks.current = { onSpan, onRows, describe };
+  });
+
+  // Cards cannot be wider than the grid, so track how many columns it has.
+  useEffect(() => {
+    if (!grid) return;
+    const measure = () => setTracks(gridColumns(grid) ?? MAX_CARD_SPAN);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [grid]);
+
+  const setDragState = useCallback((next: Drag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  }, []);
+
+  const finish = useCallback(
+    (commit: boolean) => {
+      const current = dragRef.current;
+      if (!current) return;
+      setDragState(null);
+      if (!commit) return setAnnouncement('Resizing cancelled.');
+      const { id, span, delta, startSpan } = current;
+      if (span === startSpan && delta === 0) return;
+      if (span !== startSpan) callbacks.current.onSpan(id, span);
+      const rows = delta !== 0 && callbacks.current.onRows(id, delta);
+      if (span !== startSpan || rows) setAnnouncement(callbacks.current.describe(id, span, rows ? delta : 0));
+    },
+    [setDragState],
+  );
+
+  const dragging = drag !== null;
+  useWindowDrag(
+    dragging,
+    () => dragRef.current?.pointerId,
+    (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = e.clientX - d.startX;
+      const dy = e.clientY - d.startY;
+      const span = clamp(Math.round((d.width + dx + d.gap) / (d.column + d.gap)), 1, d.columns);
+      const delta = clamp(Math.round(dy / (d.row * d.lists)), -MAX_ITEMS, MAX_ITEMS);
+      const minHeight = dy > 0 ? d.height + dy : undefined;
+      if (span !== d.span || delta !== d.delta || minHeight !== d.minHeight) {
+        setDragState({ ...d, span, delta, minHeight });
+      }
+    },
+    finish,
+  );
+
+  /**
+   * Props for a card's resize grip. `span` is the card's current width and
+   * `lists` the number of open list widgets on it, which the height spreads
+   * new entries across.
+   */
+  const gripProps = (id: string, label: string, span: number, lists: number) => ({
+    'aria-label': `Resize ${label}`,
+    'aria-describedby': 'resize-help',
+    onPointerDown: (e: PointerEvent<HTMLElement>) => {
+      if (e.button !== 0 || dragRef.current) return;
+      const card = e.currentTarget.closest('article');
+      if (!card || !grid) return;
+      e.preventDefault();
+      e.currentTarget.focus();
+      const rect = card.getBoundingClientRect();
+      const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+      // One track's width, from every track the grid has (not just the ones a card may span).
+      const column = (grid.clientWidth - gap * (tracks - 1)) / tracks || rect.width / span || 1;
+      const row = card.querySelector('.rows > li')?.getBoundingClientRect().height || ROW_HEIGHT;
+      setDragState({
+        id,
+        span,
+        delta: 0,
+        minHeight: undefined,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startSpan: span,
+        width: rect.width,
+        height: rect.height,
+        column,
+        gap,
+        row,
+        lists: Math.max(1, lists),
+        columns,
+      });
+    },
+    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+      if (dragRef.current) return;
+      let nextSpan = span;
+      let delta = 0;
+      switch (e.key) {
+        case 'ArrowLeft':
+          nextSpan = span - 1;
+          break;
+        case 'ArrowRight':
+          nextSpan = span + 1;
+          break;
+        case 'ArrowUp':
+          delta = -1;
+          break;
+        case 'ArrowDown':
+          delta = 1;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      nextSpan = clamp(nextSpan, 1, columns);
+      if (nextSpan !== span) onSpan(id, nextSpan);
+      const rows = delta !== 0 && onRows(id, delta);
+      if (nextSpan !== span || rows) setAnnouncement(describe(id, nextSpan, rows ? delta : 0));
+    },
+  });
+
+  return {
+    /** Pass as the `ref` of the grid that holds the cards. */
+    bindGrid: setGrid,
+    /** Columns in the grid; spans are clamped to it. */
+    columns,
+    /** The resize in progress, if any. */
+    resizing: drag && { id: drag.id, span: drag.span, delta: drag.delta, minHeight: drag.minHeight },
+    announcement,
+    gripProps,
+  };
+}
