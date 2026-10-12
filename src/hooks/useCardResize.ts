@@ -76,6 +76,8 @@ export function planResize(
   entry: number,
 ): { collapsed: WidgetType[]; delta: number } {
   const open = sections.filter((s) => !s.collapsed);
+  // A width change alone, or a drag back to where it started, leaves the lists as they are.
+  if (grown === 0) return { collapsed: sections.filter((s) => s.collapsed).map((s) => s.type), delta: 0 };
   let room = grown;
   let kept: CardSection[];
   if (grown >= 0) {
@@ -135,15 +137,18 @@ function measureFolded(card: HTMLElement, grid: HTMLElement) {
   // open lists: what is left are the header and the folded lists' headers.
   let content = rect.height;
   const body = card.querySelector<HTMLElement>('.card-body');
-  const last = body?.lastElementChild;
-  if (body && last) {
+  if (body) {
     const box = body.getBoundingClientRect();
-    const inner =
-      last.getBoundingClientRect().bottom -
-      box.top +
-      body.scrollTop +
-      (parseFloat(getComputedStyle(last).marginBottom) || 0) +
-      (parseFloat(getComputedStyle(body).paddingBottom) || 0);
+    const style = getComputedStyle(body);
+    const last = body.lastElementChild;
+    // An empty body (a card with only CI on it) holds nothing but its padding.
+    const inner = last
+      ? last.getBoundingClientRect().bottom -
+        box.top +
+        body.scrollTop +
+        (parseFloat(getComputedStyle(last).marginBottom) || 0) +
+        (parseFloat(style.paddingBottom) || 0)
+      : (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
     if (Number.isFinite(inner)) content = rect.height - box.height + inner;
   }
   const bodies = new Map<string, number>();

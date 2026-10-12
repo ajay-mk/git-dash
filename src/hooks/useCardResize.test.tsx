@@ -51,6 +51,10 @@ describe('planResize', () => {
     expect(plan(sections(['pullRequests']), -28, 200)).toEqual({ collapsed: ['pullRequests'], delta: -1 });
   });
 
+  it('leaves the lists alone when the height does not change', () => {
+    expect(plan(sections(['issues']), 0, 400)).toEqual({ collapsed: ['issues'], delta: 0 });
+  });
+
   it('opens folded lists into space the card already has', () => {
     // A 400px card with Issues folded and two pull requests showing: room to spare.
     expect(plan(sections(['issues']), 8, 400)).toEqual({ collapsed: [], delta: 0 });
