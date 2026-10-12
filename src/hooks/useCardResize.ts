@@ -46,6 +46,8 @@ interface Drag extends CardResize {
   card: HTMLElement;
   /** The width `base` was measured at; headers can wrap at another. */
   measuredSpan: number;
+  /** The height the pointer asks for, before the card snaps or stops at its folded lists. */
+  requested: number;
   sections: readonly CardSection[];
   columns: number;
 }
@@ -82,10 +84,11 @@ export function planResize(
   let kept: CardSection[];
   if (grown >= 0) {
     kept = [...open];
-    // Lists open into the space the card has left over, which may be more
-    // than it grew by, and only once it has room for all the entries they
-    // show. Lists that have not loaded are not shown, so they stay as they are.
-    let free = Math.max(grown, height - base - open.reduce((n, s) => n + entry * s.rows, 0));
+    // Lists open into the space the card has left over (more than it grew
+    // by if it had room to spare, less if its lists already overflow), and
+    // only once it has room for all the entries they show. Lists that have
+    // not loaded are not shown, so they stay as they are.
+    let free = height - base - open.reduce((n, s) => n + entry * s.rows, 0);
     for (const s of sections) {
       if (!s.collapsed) continue;
       if (!Number.isFinite(base) || free < entry * s.rows) break;
@@ -270,7 +273,7 @@ export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe
         // Released right after changing width: the card shows that width now,
         // so make sure the height still fits its folded lists there.
         const at = { ...current, ...measureFolded(current.card, grid) };
-        resized = { ...at, ...layoutAt(at, Math.max(current.rows, at.minRows) * at.unit - at.rowGap) };
+        resized = { ...at, ...layoutAt(at, current.requested) };
       }
       const { id, span, delta, rows, collapsed, startSpan, startRows, sections } = resized;
       const folded = !sameTypes(collapsed, sections.filter((s) => s.collapsed).map((s) => s.type));
@@ -316,7 +319,8 @@ export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe
         dragRef.current = d;
       }
       const span = clamp(Math.round((d.width + e.clientX - d.startX + d.gap) / (d.column + d.gap)), 1, d.columns);
-      const next = { ...d, span, ...layoutAt(d, d.height + e.clientY - d.startY) };
+      const requested = d.height + e.clientY - d.startY;
+      const next = { ...d, span, requested, ...layoutAt(d, requested) };
       if (span !== d.span || next.delta !== d.delta || next.rows !== d.rows || !sameTypes(next.collapsed, d.collapsed)) {
         setDragState(next);
       }
@@ -346,6 +350,7 @@ export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe
         rows: m.startRows,
         card,
         measuredSpan: span,
+        requested: m.height,
         collapsed: sections.filter((s) => s.collapsed).map((s) => s.type),
         pointerId: e.pointerId,
         startX: e.clientX,

@@ -51,6 +51,15 @@ describe('planResize', () => {
     expect(plan(sections(['pullRequests']), -28, 200)).toEqual({ collapsed: ['pullRequests'], delta: -1 });
   });
 
+  it('does not open lists while the open ones already overflow the card', () => {
+    // 228px tall, but its five open pull requests need 120 + 140px.
+    const full: CardSection[] = [
+      { type: 'pullRequests', limit: 5, rows: 5, collapsed: false },
+      { type: 'issues', limit: 1, rows: 1, collapsed: true },
+    ];
+    expect(plan(full, 28, 228)).toEqual({ collapsed: ['issues'], delta: 1 });
+  });
+
   it('leaves the lists alone when the height does not change', () => {
     expect(plan(sections(['issues']), 0, 400)).toEqual({ collapsed: ['issues'], delta: 0 });
   });
