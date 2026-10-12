@@ -1390,7 +1390,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-dash"
+name = "gitdash"
 version = "0.1.0"
 dependencies = [
  "keyring",

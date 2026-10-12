@@ -1,5 +1,5 @@
 {
-  "name": "git-dash",
+  "name": "gitdash",
   "private": true,
   "version": "0.1.0",
   "description": "A glanceable, customizable dashboard for your GitHub repositories.",
