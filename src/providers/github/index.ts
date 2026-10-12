@@ -12,6 +12,7 @@ import {
   repoAlias,
   VIEWER_REPOS_QUERY,
 } from './queries';
+import { fineGrainedTokenUrl, PERMISSION_LABELS } from './tokenTemplate';
 
 /** GitHub limits query complexity; batch repositories to stay well under it. */
 const REPOS_PER_REQUEST = 10;
@@ -25,7 +26,8 @@ function chunk<T>(items: T[], size: number): T[][] {
 export const github: Provider = {
   id: 'github',
   label: 'GitHub',
-  tokenHelpUrl: 'https://github.com/settings/personal-access-tokens/new',
+  newTokenUrl: fineGrainedTokenUrl,
+  tokenPermissions: PERMISSION_LABELS,
 
   async fetchRepos(repos: PinnedRepo[], tokenOwners: readonly string[]) {
     const results = new Map<string, RepoResult>();

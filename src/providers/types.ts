@@ -115,8 +115,14 @@ export interface RepoSuggestions {
 export interface Provider {
   id: ProviderId;
   label: string;
-  /** Where users create an access token for this provider. */
-  tokenHelpUrl: string;
+  /**
+   * Where users create an access token for this provider, prefilled where the
+   * provider allows it. With `owner`, the token is for that account or
+   * organization.
+   */
+  newTokenUrl(owner?: string | null): string;
+  /** Permissions a token needs, as the provider labels them. */
+  tokenPermissions: readonly string[];
   /**
    * `tokenOwners` are the owners (lowercase logins) that have their own
    * access token; everything else is fetched with the default token.

@@ -193,6 +193,12 @@ describe('describeRepoError', () => {
     expect(describeRepoError(undefined, 'acme').kind).toBe('unknown');
   });
 
+  it('names the permissions a token needs when access is denied', () => {
+    const permissions = 'read-only Metadata, Contents, Pull requests, Issues, Commit statuses and Actions permissions';
+    expect(describeRepoError(PLAIN_FORBIDDEN_ERROR, 'acme').message).toContain(permissions);
+    expect(describeRepoError(NOT_FOUND_ERROR, 'acme').message).toContain(permissions);
+  });
+
   it('never echoes API error text and only links to GitHub', () => {
     const hostile = { type: 'FORBIDDEN', message: '<img src=x onerror=alert(1)> SAML enforcement' };
     for (const e of [SAML_ERROR, NOT_FOUND_ERROR, CLASSIC_FORBIDDEN_ERROR, PLAIN_FORBIDDEN_ERROR, RATE_LIMIT_ERROR, hostile]) {

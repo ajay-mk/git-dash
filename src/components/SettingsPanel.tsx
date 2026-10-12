@@ -22,6 +22,8 @@ import {
 import { matchRepos } from '../lib/suggest';
 import { tokens, type OwnerToken } from '../lib/transport';
 import { providers } from '../providers';
+import { ExternalLink } from './ExternalLink';
+import { PermissionList } from './PermissionList';
 
 type Update = (fn: (c: DashboardConfig) => DashboardConfig) => void;
 
@@ -412,6 +414,7 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
   const tokenInput = useRef<HTMLInputElement>(null);
 
   const replacing = owners.some((o) => o.owner === owner.trim().toLowerCase());
+  const target = isValidOwner(owner.trim()) ? owner.trim() : null;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -448,7 +451,11 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
     <>
       <p className="hint">
         Fine-grained tokens cover a single account or organization. Add one per owner and git-dash uses it for
-        that owner&apos;s repositories; everything else uses the default token.
+        that owner&apos;s repositories; everything else uses the default token. Each token needs read-only{' '}
+        <PermissionList permissions={providers.github.tokenPermissions} />.{' '}
+        <ExternalLink href={providers.github.newTokenUrl(target)}>
+          {target ? `Create a token for ${target}` : 'Create a token'}
+        </ExternalLink>
       </p>
       {owners.length > 0 && (
         <ul className="token-list">
