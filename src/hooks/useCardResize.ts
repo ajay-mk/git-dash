@@ -80,11 +80,15 @@ export function planResize(
   let kept: CardSection[];
   if (grown >= 0) {
     kept = [...open];
+    // Lists open into the space the card has left over, which may be more
+    // than it grew by, and only once it has room for all the entries they
+    // show. Lists that have not loaded are not shown, so they stay as they are.
+    let free = Math.max(grown, height - base - open.reduce((n, s) => n + entry * s.rows, 0));
     for (const s of sections) {
       if (!s.collapsed) continue;
-      // Only once the card has room for all of the entries it shows.
-      if (room < entry * s.rows) break;
+      if (!Number.isFinite(base) || free < entry * s.rows) break;
       kept.push(s);
+      free -= entry * s.rows;
       room -= entry * s.rows;
     }
   } else {

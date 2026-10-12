@@ -51,8 +51,14 @@ describe('planResize', () => {
     expect(plan(sections(['pullRequests']), -28, 200)).toEqual({ collapsed: ['pullRequests'], delta: -1 });
   });
 
-  it('does not fold anything when the lists were not measured', () => {
+  it('opens folded lists into space the card already has', () => {
+    // A 400px card with Issues folded and two pull requests showing: room to spare.
+    expect(plan(sections(['issues']), 8, 400)).toEqual({ collapsed: [], delta: 0 });
+  });
+
+  it('does not fold or open anything when the lists were not measured', () => {
     expect(planResize(sections(), -400, 50, -Infinity, 28)).toEqual({ collapsed: [], delta: -1 });
+    expect(planResize(sections(['issues']), 400, 600, -Infinity, 28)).toEqual({ collapsed: ['issues'], delta: 14 });
   });
 });
 
