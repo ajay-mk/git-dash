@@ -142,6 +142,38 @@ describe('SettingsPanel', () => {
       expect(onClose).not.toHaveBeenCalled();
     });
 
+    it('reloads suggestions after the stored tokens change', async () => {
+      viewerRepos('octo/api');
+      const props = {
+        open: true,
+        onClose: vi.fn(),
+        config: defaultConfig(),
+        update: vi.fn(),
+        viewer: 'octocat',
+        onOwnerTokensChanged: vi.fn(),
+        onChangeToken: vi.fn(),
+        onSignOut: vi.fn(),
+      };
+      const owners = [{ owner: 'acme', login: 'octocat' }];
+      const { rerender } = render(<SettingsPanel {...props} ownerTokens={owners} />);
+      await userEvent.click(field());
+      expect(await screen.findByRole('option', { name: 'octo/api' })).toBeTruthy();
+      const calls = vi.mocked(githubGraphql).mock.calls.length;
+
+      // Refocusing with the same tokens uses the cached list.
+      await userEvent.click(document.body);
+      await userEvent.click(field());
+      expect(vi.mocked(githubGraphql).mock.calls.length).toBe(calls);
+
+      // Replacing acme's token reloads the token list with the same owners.
+      viewerRepos('octo/web');
+      rerender(<SettingsPanel {...props} ownerTokens={[{ owner: 'acme', login: 'octocat' }]} />);
+      await userEvent.click(document.body);
+      await userEvent.click(field());
+      expect(await screen.findByRole('option', { name: 'octo/web' })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: 'octo/api' })).toBeNull();
+    });
+
     it('still pins typed input when suggestions fail to load', async () => {
       const { config } = setup();
       await pin('octo/repo');

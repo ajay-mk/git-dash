@@ -129,7 +129,8 @@ const MAX_SUGGESTIONS = 8;
 
 /**
  * Text field for the repository to pin, suggesting repositories the stored
- * tokens can see. Suggestions load once, the first time the field is focused.
+ * tokens can see. Suggestions load when the field is first focused, and again
+ * after the stored tokens change.
  */
 function RepoInput({
   value,
@@ -148,13 +149,15 @@ function RepoInput({
   const [repos, setRepos] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const loadedFor = useRef<string | null>(null);
+  const loadedFor = useRef<readonly string[] | null>(null);
 
   function load() {
-    // Reload when the set of tokens changes, e.g. after adding one.
-    const key = tokenOwners.join(',');
+    // The token list is reloaded whenever a token is added, replaced or
+    // removed, so a new array means the suggestions may be stale.
+    const key = tokenOwners;
     if (loadedFor.current === key) return;
     loadedFor.current = key;
+    setRepos([]);
     providers.github.listRepos(tokenOwners).then(
       (names) => {
         if (loadedFor.current === key) setRepos(names);
