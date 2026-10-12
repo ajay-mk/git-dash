@@ -1,9 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig, type LayoutConfig } from '../config/schema';
-import type { InboxSnapshot } from '../providers/types';
+import type { InboxSnapshot, ItemDetails } from '../providers/types';
 import { issue, pr } from '../test/fixtures';
 import { groupPullRequests, InboxPanel } from './InboxPanel';
 
@@ -25,11 +25,20 @@ function snapshotInbox(overrides: Partial<InboxSnapshot> = {}): InboxSnapshot {
   };
 }
 
-function Harness({ initial }: { initial?: Partial<LayoutConfig> }) {
+const noDetails = () => new Promise<ItemDetails>(() => undefined);
+
+function Harness({ initial, loadDetails = noDetails }: { initial?: Partial<LayoutConfig>; loadDetails?: (url: string) => Promise<ItemDetails> }) {
   const [layout, setLayout] = useState<LayoutConfig>({ ...defaultConfig().layout, ...initial });
   return (
     <>
-      <InboxPanel config={defaultConfig().inbox} layout={layout} onLayoutChange={setLayout} inbox={snapshotInbox()} error={null} />
+      <InboxPanel
+        config={defaultConfig().inbox}
+        layout={layout}
+        onLayoutChange={setLayout}
+        inbox={snapshotInbox()}
+        error={null}
+        loadDetails={loadDetails}
+      />
       <output data-testid="view">{JSON.stringify(layout)}</output>
     </>
   );
@@ -90,5 +99,83 @@ describe('InboxPanel', () => {
   ] as const)('groups your pull requests: %s', (groupMyPullRequests, headings) => {
     render(<Harness initial={{ groupMyPullRequests }} />);
     expect(screen.queryAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(headings);
+  });
+});
+
+describe('item details', () => {
+  const details: ItemDetails = {
+    createdAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    body: 'Adds the zeta feature.',
+    comments: 2,
+    labels: [{ name: 'feature', color: '00ff00' }],
+    assignees: [],
+    pr: {
+      baseRef: 'main',
+      headRef: 'feat/zeta',
+      additions: 10,
+      deletions: 4,
+      changedFiles: 3,
+      checks: [
+        { name: 'lint', state: 'failure', url: 'https://github.com/o/zeta/actions/runs/1' },
+        { name: 'test', state: 'success', url: null },
+      ],
+      reviewers: [{ login: 'alice', state: 'approved' }, { login: 'bob', state: 'requested' }],
+    },
+  };
+
+  it('opens a card on click instead of the link, then links to GitHub', async () => {
+    const load = vi.fn(() => Promise.resolve(details));
+    render(<Harness loadDetails={load} />);
+    const row = screen.getByRole('button', { name: /Zeta ready/ });
+    await userEvent.click(row);
+    expect(load).toHaveBeenCalledWith('https://github.com/o/zeta/pull/1');
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+
+    const card = await screen.findByRole('dialog', { name: 'Zeta ready' });
+    expect(await within(card).findByText('1 failing, 1 passing', { exact: false })).toBeTruthy();
+    expect(within(card).getByRole('link', { name: 'lint' }).getAttribute('href')).toBe('https://github.com/o/zeta/actions/runs/1');
+    expect(within(card).getByText('alice')).toBeTruthy();
+    expect(within(card).getByText('feat/zeta')).toBeTruthy();
+    expect(within(card).getByRole('link', { name: 'Open on GitHub' }).getAttribute('href')).toBe('https://github.com/o/zeta/pull/1');
+    expect(within(card).getByRole('link', { name: 'Files' }).getAttribute('href')).toBe('https://github.com/o/zeta/pull/1/files');
+  });
+
+  it('closes on Escape, a click outside, or a second click on the row', async () => {
+    render(<Harness loadDetails={() => Promise.resolve(details)} />);
+    const row = screen.getByRole('button', { name: /Zeta ready/ });
+
+    await userEvent.click(row);
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(row);
+
+    await userEvent.click(row);
+    await screen.findByRole('dialog');
+    await userEvent.click(screen.getByRole('heading', { name: 'Needs you' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(row);
+    await screen.findByRole('dialog');
+    await userEvent.click(row);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('shows issue details and load errors', async () => {
+    const load = vi.fn()
+      .mockResolvedValueOnce({ ...details, pr: null, assignees: ['octocat'] })
+      .mockRejectedValueOnce(new Error('Could not load details from GitHub.'));
+    render(<Harness loadDetails={load} />);
+    const row = screen.getByRole('button', { name: /Assigned issue/ });
+
+    await userEvent.click(row);
+    const card = await screen.findByRole('dialog');
+    expect(await within(card).findByText('Assigned to octocat')).toBeTruthy();
+    expect(within(card).queryByRole('link', { name: 'Files' })).toBeNull();
+
+    await userEvent.click(row);
+    await userEvent.click(row);
+    expect(await screen.findByText('Could not load details from GitHub.')).toBeTruthy();
+    expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Open on GitHub' })).toBeTruthy();
   });
 });

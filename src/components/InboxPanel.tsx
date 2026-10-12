@@ -3,6 +3,7 @@ import { myPrAction } from '../lib/health';
 import type { Counted, InboxSnapshot, IssueItem, PullRequestItem } from '../providers/types';
 import { Collapsible } from './Collapsible';
 import { ExternalLink } from './ExternalLink';
+import type { LoadDetails } from './ItemDetails';
 import { IssueRow, PullRequestRow } from './ItemRows';
 
 interface Subgroup<T> {
@@ -70,12 +71,14 @@ function Group<T>({ title, data, render, emptyText, collapsed, onToggle, subgrou
   );
 }
 
-export function InboxPanel({ config, layout, onLayoutChange, inbox, error }: {
+export function InboxPanel({ config, layout, onLayoutChange, inbox, error, loadDetails }: {
   config: InboxConfig;
   layout: LayoutConfig;
   onLayoutChange: (fn: (layout: LayoutConfig) => LayoutConfig) => void;
   inbox: InboxSnapshot | null;
   error: string | null;
+  /** Clicking an item shows these details first, with the link one click away. */
+  loadDetails: LoadDetails;
 }) {
   // Surface your own PRs that need an action first.
   const sortedMine: Counted<PullRequestItem> | null = inbox
@@ -118,7 +121,7 @@ export function InboxPanel({ config, layout, onLayoutChange, inbox, error }: {
               emptyText="Nothing to review"
               collapsed={isCollapsed('reviewRequests')}
               onToggle={() => toggle('reviewRequests')}
-              render={(pr: PullRequestItem) => <PullRequestRow key={pr.url} pr={pr} showRepo />}
+              render={(pr: PullRequestItem) => <PullRequestRow key={pr.url} pr={pr} showRepo details={loadDetails} />}
             />
           )}
           {config.myPullRequests && sortedMine && (
@@ -131,7 +134,7 @@ export function InboxPanel({ config, layout, onLayoutChange, inbox, error }: {
               subgroups={groupPullRequests(sortedMine.items, grouping)}
               render={(pr: PullRequestItem) => (
                 // The repository is already the heading when grouped by it.
-                <PullRequestRow key={pr.url} pr={pr} showRepo={grouping !== 'repo'} action={myPrAction(pr)} />
+                <PullRequestRow key={pr.url} pr={pr} showRepo={grouping !== 'repo'} action={myPrAction(pr)} details={loadDetails} />
               )}
             />
           )}
@@ -142,7 +145,7 @@ export function InboxPanel({ config, layout, onLayoutChange, inbox, error }: {
               emptyText="Nothing assigned"
               collapsed={isCollapsed('assigned')}
               onToggle={() => toggle('assigned')}
-              render={(issue: IssueItem) => <IssueRow key={issue.url} issue={issue} showRepo />}
+              render={(issue: IssueItem) => <IssueRow key={issue.url} issue={issue} showRepo details={loadDetails} />}
             />
           )}
         </>

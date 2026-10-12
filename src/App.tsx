@@ -6,6 +6,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { TokenSetup } from './components/TokenSetup';
 import { pruneLayout, repoId, widgetKey, WIDGET_TYPES, type DashboardConfig } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
+import { providers } from './providers';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
@@ -63,6 +64,7 @@ export default function App() {
 
   const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
   const dash = useDashboard(config, tokenOwners, auth === 'ready');
+  const loadDetails = useCallback((url: string) => providers.github.fetchDetails(url, tokenOwners), [tokenOwners]);
 
   // A revoked or expired token sends the user back to the setup screen.
   const tokenRejected = isAuthError(dash.error);
@@ -139,6 +141,7 @@ export default function App() {
           onLayoutChange={(fn) => update((c) => ({ ...c, layout: fn(c.layout) }))}
           inbox={dash.inbox}
           error={dash.inboxError}
+          loadDetails={loadDetails}
         />
       )}
 
