@@ -116,4 +116,9 @@ export interface Provider {
    */
   fetchRepos(repos: PinnedRepo[], tokenOwners: readonly string[]): Promise<RepoBatch>;
   fetchInbox(config: InboxConfig, tokenOwners: readonly string[]): Promise<InboxSnapshot>;
+  /**
+   * Repositories (`owner/name`) the stored tokens can see, offered as
+   * suggestions when pinning. Best-effort: tokens that fail are skipped.
+   */
+  listRepos(tokenOwners: readonly string[]): Promise<string[]>;
 }

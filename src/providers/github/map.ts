@@ -5,7 +5,7 @@
  * GitHub web URLs, and label colours must be plain hex.
  */
 
-import type { PinnedRepo } from '../../config/schema';
+import { parseRepoInput, type PinnedRepo } from '../../config/schema';
 import { prNeedsAttention } from '../../lib/health';
 import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
@@ -247,4 +247,18 @@ export function describeRepoError(err: GraphQLError | undefined, owner: string):
     case 'unknown':
       return { kind, message: 'Could not load this repository.' };
   }
+}
+
+/**
+ * Maps a `repositories` connection to `owner/name` strings, skipping archived
+ * repositories and anything that would not pass as a pinned repository.
+ */
+export function mapRepoNames(connection: unknown): string[] {
+  return arr(obj(connection)?.nodes).flatMap((n) => {
+    const node = obj(n);
+    const name = str(node?.nameWithOwner);
+    if (!node || !name || node.isArchived === true) return [];
+    const parsed = parseRepoInput(name);
+    return parsed ? [`${parsed.owner}/${parsed.name}`] : [];
+  });
 }

@@ -2,8 +2,16 @@ import { repoId, type PinnedRepo } from '../../config/schema';
 import { AppError, githubGraphql } from '../../lib/transport';
 import { groupByToken, mergeInbox } from '../tokens';
 import type { InboxSnapshot, Provider, RateLimit, RepoResult } from '../types';
-import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepository } from './map';
-import { buildReposQuery, INBOX_QUERY, INBOX_SEARCHES, repoAlias } from './queries';
+import { describeRepoError, isRateLimited, mapInbox, mapRateLimit, mapRepoNames, mapRepository } from './map';
+import {
+  buildReposQuery,
+  INBOX_QUERY,
+  INBOX_SEARCHES,
+  OWNER_REPOS_QUERY,
+  REPO_SUGGESTIONS_FETCHED,
+  repoAlias,
+  VIEWER_REPOS_QUERY,
+} from './queries';
 
 /** GitHub limits query complexity; batch repositories to stay well under it. */
 const REPOS_PER_REQUEST = 10;
@@ -97,5 +105,29 @@ export const github: Provider = {
     if (primary!.status === 'rejected') throw primary!.reason;
     const extra = others.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
     return mergeInbox(primary!.value, extra, config.limit);
+  },
+
+  async listRepos(tokenOwners) {
+    const n = REPO_SUGGESTIONS_FETCHED;
+    // Partial data (e.g. an organization behind SSO) still yields the rest.
+    const lists = await Promise.allSettled([
+      githubGraphql<{ viewer?: { repositories?: unknown } }>(VIEWER_REPOS_QUERY, { n }).then((res) =>
+        mapRepoNames(res.data?.viewer?.repositories),
+      ),
+      ...tokenOwners.map((owner) =>
+        githubGraphql<{ repositoryOwner?: { repositories?: unknown } }>(OWNER_REPOS_QUERY, { owner, n }, owner).then(
+          (res) => mapRepoNames(res.data?.repositoryOwner?.repositories),
+        ),
+      ),
+    ]);
+    const seen = new Map<string, string>();
+    for (const list of lists) {
+      if (list.status !== 'fulfilled') continue;
+      for (const name of list.value) {
+        const key = name.toLowerCase();
+        if (!seen.has(key)) seen.set(key, name);
+      }
+    }
+    return [...seen.values()];
   },
 };

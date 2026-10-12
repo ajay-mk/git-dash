@@ -118,3 +118,31 @@ export const INBOX_SEARCHES = {
   mineQ: 'is:open is:pr archived:false author:@me sort:updated-desc',
   assignedQ: 'is:open archived:false assignee:@me sort:updated-desc',
 } as const;
+
+/** Repositories offered as suggestions per token, most recently pushed first. */
+export const REPO_SUGGESTIONS_FETCHED = 100;
+
+const SUGGESTION_ORDER = 'orderBy: { field: PUSHED_AT, direction: DESC }';
+
+/** Repositories the default token can see: owned, collaborated on, or via an organization. */
+export const VIEWER_REPOS_QUERY = `
+query GitDashViewerRepos($n: Int!) {
+  viewer {
+    repositories(
+      first: $n
+      affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+      ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+      ${SUGGESTION_ORDER}
+    ) { nodes { nameWithOwner isArchived } }
+  }
+}
+`;
+
+/** Repositories of one account or organization, for a per-owner token. */
+export const OWNER_REPOS_QUERY = `
+query GitDashOwnerRepos($owner: String!, $n: Int!) {
+  repositoryOwner(login: $owner) {
+    repositories(first: $n, ${SUGGESTION_ORDER}) { nodes { nameWithOwner isArchived } }
+  }
+}
+`;
