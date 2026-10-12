@@ -9,6 +9,7 @@ import type { PinnedRepo } from '../../config/schema';
 import { prNeedsAttention } from '../../lib/health';
 import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
+import { PERMISSION_LABELS } from './tokenTemplate';
 import type {
   CiState,
   Counted,
@@ -174,6 +175,7 @@ export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnaps
 
 const CLASSIC_TOKENS_URL = 'https://github.com/settings/tokens';
 const FINE_GRAINED_TOKENS_URL = 'https://github.com/settings/personal-access-tokens';
+const REQUIRED_PERMISSIONS = `read-only ${PERMISSION_LABELS.slice(0, -1).join(', ')} and ${PERMISSION_LABELS.at(-1)} permissions`;
 
 /**
  * True when GitHub withheld a resource because its organization enforces SAML
@@ -233,14 +235,16 @@ export function describeRepoError(err: GraphQLError | undefined, owner: string):
       // private repository, so the cause cannot be told apart here.
       return {
         kind,
-        message: `Repository not found. Check the name for a typo, rename or deletion. A fine-grained token must include this repository, and an owner of ${owner} may need to approve it.`,
+        message: `Repository not found. Check the name for a typo, rename or deletion. A fine-grained token must include this repository and have ${REQUIRED_PERMISSIONS}, and an owner of ${owner} may need to approve it.`,
         help: { url: FINE_GRAINED_TOKENS_URL, label: 'Check token access' },
       };
     case 'forbidden':
       return {
         kind,
-        message: 'Your token is not allowed to read this repository. Check its permissions.',
-        help: { url: FINE_GRAINED_TOKENS_URL, label: 'Check token access' },
+        // Typical for a fine-grained token that covers the repository but is
+        // missing one of the permissions (GitHub: "Resource not accessible").
+        message: `Your token is not allowed to read all of this repository. A fine-grained token needs ${REQUIRED_PERMISSIONS}; edit the token on GitHub to add any that are missing.`,
+        help: { url: FINE_GRAINED_TOKENS_URL, label: 'Edit token permissions' },
       };
     case 'rate_limited':
       return { kind, message: 'GitHub rate limit reached. This will retry on the next refresh.' };
