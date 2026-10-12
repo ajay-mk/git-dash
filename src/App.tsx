@@ -3,7 +3,7 @@ import { InboxPanel } from './components/InboxPanel';
 import { RepoCard } from './components/RepoCard';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TokenSetup } from './components/TokenSetup';
-import { repoId, widgetKey, WIDGET_TYPES, type DashboardConfig } from './config/schema';
+import { pruneLayout, repoId, widgetKey, WIDGET_TYPES, type DashboardConfig } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
 import { repoHealth } from './lib/health';
@@ -28,7 +28,8 @@ export default function App() {
 
   const update = useCallback((fn: (c: DashboardConfig) => DashboardConfig) => {
     setConfig((prev) => {
-      const next = fn(prev);
+      // Removing a repo or widget in settings also forgets that it was collapsed.
+      const next = pruneLayout(fn(prev));
       saveConfig(next);
       return next;
     });

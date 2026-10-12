@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput } from './schema';
+import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput, pruneLayout } from './schema';
 
 describe('parseRepoInput', () => {
   it('accepts owner/name and GitHub URLs', () => {
@@ -84,5 +84,21 @@ describe('parseConfig', () => {
       { type: 'issues', limit: 1, label: 'bug' },
       { type: 'pullRequests', limit: 5, hideDrafts: false },
     ]);
+  });
+});
+
+describe('pruneLayout', () => {
+  it('forgets collapsed widgets that are no longer pinned', () => {
+    const repo = { provider: 'github' as const, owner: 'a', name: 'b', widgets: defaultWidgets() };
+    const config = {
+      ...defaultConfig(),
+      repos: [repo],
+      layout: { ...defaultConfig().layout, collapsedWidgets: ['github:a/b#issues', 'github:a/b#pullRequests'] },
+    };
+    expect(pruneLayout(config)).toBe(config);
+
+    const fewer = { ...config, repos: [{ ...repo, widgets: defaultWidgets().filter((w) => w.type !== 'issues') }] };
+    expect(pruneLayout(fewer).layout.collapsedWidgets).toEqual(['github:a/b#pullRequests']);
+    expect(pruneLayout({ ...config, repos: [] }).layout.collapsedWidgets).toEqual([]);
   });
 });

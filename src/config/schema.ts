@@ -64,6 +64,23 @@ export interface LayoutConfig {
   collapsedWidgets: string[];
 }
 
+/**
+ * The entries of `keys` that name a widget still on a pinned repo, in display
+ * order, so removed repos and widgets do not linger.
+ */
+export function pinnedWidgetKeys(repos: readonly PinnedRepo[], keys: readonly unknown[]): string[] {
+  return repos.flatMap((repo) =>
+    repo.widgets.map((w) => widgetKey(repo, w.type)).filter((key) => keys.includes(key)),
+  );
+}
+
+/** Drops layout entries for widgets that are no longer pinned. */
+export function pruneLayout(config: DashboardConfig): DashboardConfig {
+  const collapsedWidgets = pinnedWidgetKeys(config.repos, config.layout.collapsedWidgets);
+  if (collapsedWidgets.length === config.layout.collapsedWidgets.length) return config;
+  return { ...config, layout: { ...config.layout, collapsedWidgets } };
+}
+
 /** Identifies one widget on one repo card. */
 export function widgetKey(repo: Pick<PinnedRepo, 'provider' | 'owner' | 'name'>, type: WidgetType): string {
   return `${repoId(repo)}#${type}`;
@@ -243,13 +260,8 @@ export function parseConfig(raw: unknown): DashboardConfig {
     groupMyPullRequests: (PR_GROUPINGS as readonly unknown[]).includes(layoutRaw.groupMyPullRequests)
       ? (layoutRaw.groupMyPullRequests as PrGrouping)
       : defaults.layout.groupMyPullRequests,
-    // Only keys for widgets that still exist, so removed repos do not linger.
     collapsedWidgets: Array.isArray(layoutRaw.collapsedWidgets)
-      ? repos.flatMap((repo) =>
-          repo.widgets
-            .map((w) => widgetKey(repo, w.type))
-            .filter((key) => (layoutRaw.collapsedWidgets as unknown[]).includes(key)),
-        )
+      ? pinnedWidgetKeys(repos, layoutRaw.collapsedWidgets)
       : [],
   };
 
