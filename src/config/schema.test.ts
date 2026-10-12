@@ -34,14 +34,22 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...valid, repos: Array(51).fill(valid.repos[0]) })).toThrow(ConfigError);
   });
 
-  it('keeps only known sidebar sections and groupings', () => {
+  it('keeps only known sections, groupings and pinned widgets', () => {
     const parsed = parseConfig({
       ...valid,
-      inboxView: { collapsed: ['assigned', 'bogus', 'assigned', 7], groupMyPullRequests: 'repo' },
+      layout: {
+        collapsedInbox: ['assigned', 'bogus', 'assigned', 7],
+        groupMyPullRequests: 'repo',
+        collapsedWidgets: ['github:a/b#issues', 'github:gone/repo#issues', 'github:a/b#nope', 1],
+      },
     });
-    expect(parsed.inboxView).toEqual({ collapsed: ['assigned'], groupMyPullRequests: 'repo' });
-    expect(parseConfig({ ...valid, inboxView: { groupMyPullRequests: 'size' } }).inboxView).toEqual(
-      defaultConfig().inboxView,
+    expect(parsed.layout).toEqual({
+      collapsedInbox: ['assigned'],
+      groupMyPullRequests: 'repo',
+      collapsedWidgets: ['github:a/b#issues'],
+    });
+    expect(parseConfig({ ...valid, layout: { groupMyPullRequests: 'size' } }).layout).toEqual(
+      defaultConfig().layout,
     );
   });
 
@@ -70,7 +78,7 @@ describe('parseConfig', () => {
     expect(parsed.theme).toBe('system');
     expect(parsed.inbox.enabled).toBe(true);
     expect(parsed.inbox.limit).toBe(20);
-    expect(parsed.inboxView).toEqual(defaultConfig().inboxView);
+    expect(parsed.layout).toEqual(defaultConfig().layout);
     expect(parsed.repos).toHaveLength(1); // case-insensitive duplicate dropped
     expect(parsed.repos[0]!.widgets).toEqual([
       { type: 'issues', limit: 1, label: 'bug' },

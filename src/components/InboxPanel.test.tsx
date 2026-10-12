@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
-import { defaultConfig, type InboxView } from '../config/schema';
+import { defaultConfig, type LayoutConfig } from '../config/schema';
 import type { InboxSnapshot } from '../providers/types';
 import { issue, pr } from '../test/fixtures';
 import { groupPullRequests, InboxPanel } from './InboxPanel';
@@ -25,17 +25,17 @@ function snapshotInbox(overrides: Partial<InboxSnapshot> = {}): InboxSnapshot {
   };
 }
 
-function Harness({ initial }: { initial?: Partial<InboxView> }) {
-  const [view, setView] = useState<InboxView>({ ...defaultConfig().inboxView, ...initial });
+function Harness({ initial }: { initial?: Partial<LayoutConfig> }) {
+  const [layout, setLayout] = useState<LayoutConfig>({ ...defaultConfig().layout, ...initial });
   return (
     <>
-      <InboxPanel config={defaultConfig().inbox} view={view} onViewChange={setView} inbox={snapshotInbox()} error={null} />
-      <output data-testid="view">{JSON.stringify(view)}</output>
+      <InboxPanel config={defaultConfig().inbox} layout={layout} onLayoutChange={setLayout} inbox={snapshotInbox()} error={null} />
+      <output data-testid="view">{JSON.stringify(layout)}</output>
     </>
   );
 }
 
-const view = () => JSON.parse(screen.getByTestId('view').textContent ?? '{}') as InboxView;
+const view = () => JSON.parse(screen.getByTestId('view').textContent ?? '{}') as LayoutConfig;
 
 describe('groupPullRequests', () => {
   const items = snapshotInbox().myPullRequests.items;
@@ -69,15 +69,15 @@ describe('InboxPanel', () => {
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByText('Assigned issue')).toBeNull();
-    expect(view().collapsed).toEqual(['assigned']);
+    expect(view().collapsedInbox).toEqual(['assigned']);
 
     await userEvent.click(toggle);
     expect(screen.getByText('Assigned issue')).toBeTruthy();
-    expect(view().collapsed).toEqual([]);
+    expect(view().collapsedInbox).toEqual([]);
   });
 
   it('keeps the count visible and hides the grouping control while collapsed', () => {
-    render(<Harness initial={{ collapsed: ['myPullRequests'] }} />);
+    render(<Harness initial={{ collapsedInbox: ['myPullRequests'] }} />);
     const toggle = screen.getByRole('button', { name: /Your pull requests/ });
     expect(within(toggle).getByText('3')).toBeTruthy();
     expect(screen.queryByText('Zeta ready')).toBeNull();

@@ -1,7 +1,7 @@
-import { useId } from 'react';
-import type { InboxConfig, InboxSection, InboxView, PrGrouping } from '../config/schema';
+import type { InboxConfig, InboxSection, LayoutConfig, PrGrouping } from '../config/schema';
 import { myPrAction } from '../lib/health';
 import type { Counted, InboxSnapshot, IssueItem, PullRequestItem } from '../providers/types';
+import { Collapsible } from './Collapsible';
 import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
 
@@ -52,48 +52,37 @@ function Group<T>({ title, data, render, emptyText, collapsed, onToggle, subgrou
   /** Extra controls in the header, shown while expanded. */
   controls?: React.ReactNode;
 }) {
-  const bodyId = useId();
   return (
-    <section className="inbox-group">
-      <div className="inbox-group-header">
-        <h3 className="widget-title">
-          <button
-            type="button"
-            className="group-toggle"
-            aria-expanded={!collapsed}
-            aria-controls={bodyId}
-            onClick={onToggle}
-          >
-            <span className="chevron" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
-            {title} <span className="count">{data.total}</span>
-          </button>
-        </h3>
-        {!collapsed && controls}
-      </div>
-      <div id={bodyId} hidden={collapsed}>
-        {collapsed ? null : data.items.length === 0 ? (
-          <p className="empty">{emptyText}</p>
-        ) : subgroups ? (
-          subgroups.map((group) => (
-            <div key={group.key} className="subgroup">
-              <h4 className="subgroup-title" title={group.title}>
-                {group.title} <span className="count">{group.items.length}</span>
-              </h4>
-              <ul className="rows">{group.items.map(render)}</ul>
-            </div>
-          ))
-        ) : (
-          <ul className="rows">{data.items.map(render)}</ul>
-        )}
-      </div>
-    </section>
+    <Collapsible
+      className="inbox-group"
+      title={title}
+      count={data.total}
+      collapsed={collapsed}
+      onToggle={onToggle}
+      controls={controls}
+    >
+      {data.items.length === 0 ? (
+        <p className="empty">{emptyText}</p>
+      ) : subgroups ? (
+        subgroups.map((group) => (
+          <div key={group.key} className="subgroup">
+            <h4 className="subgroup-title" title={group.title}>
+              {group.title} <span className="count">{group.items.length}</span>
+            </h4>
+            <ul className="rows">{group.items.map(render)}</ul>
+          </div>
+        ))
+      ) : (
+        <ul className="rows">{data.items.map(render)}</ul>
+      )}
+    </Collapsible>
   );
 }
 
-export function InboxPanel({ config, view, onViewChange, inbox, error }: {
+export function InboxPanel({ config, layout, onLayoutChange, inbox, error }: {
   config: InboxConfig;
-  view: InboxView;
-  onViewChange: (fn: (view: InboxView) => InboxView) => void;
+  layout: LayoutConfig;
+  onLayoutChange: (fn: (layout: LayoutConfig) => LayoutConfig) => void;
   inbox: InboxSnapshot | null;
   error: string | null;
 }) {
@@ -106,15 +95,15 @@ export function InboxPanel({ config, view, onViewChange, inbox, error }: {
         ),
       }
     : null;
-  const grouping = view.groupMyPullRequests;
+  const grouping = layout.groupMyPullRequests;
 
-  const isCollapsed = (section: InboxSection) => view.collapsed.includes(section);
+  const isCollapsed = (section: InboxSection) => layout.collapsedInbox.includes(section);
   const toggle = (section: InboxSection) =>
-    onViewChange((v) => ({
+    onLayoutChange((v) => ({
       ...v,
-      collapsed: v.collapsed.includes(section)
-        ? v.collapsed.filter((s) => s !== section)
-        : [...v.collapsed, section],
+      collapsedInbox: v.collapsedInbox.includes(section)
+        ? v.collapsedInbox.filter((s) => s !== section)
+        : [...v.collapsedInbox, section],
     }));
 
   return (
@@ -156,7 +145,7 @@ export function InboxPanel({ config, view, onViewChange, inbox, error }: {
                   value={grouping}
                   onChange={(e) => {
                     const groupMyPullRequests = e.target.value as PrGrouping;
-                    onViewChange((v) => ({ ...v, groupMyPullRequests }));
+                    onLayoutChange((v) => ({ ...v, groupMyPullRequests }));
                   }}
                 >
                   {(Object.keys(GROUPING_LABELS) as PrGrouping[]).map((g) => (

@@ -52,21 +52,28 @@ export const PR_GROUPINGS = ['none', 'repo', 'status'] as const;
 export type PrGrouping = (typeof PR_GROUPINGS)[number];
 
 /**
- * How the sidebar is laid out. Kept apart from `InboxConfig` because changing
- * it should not refetch anything.
+ * How the sidebar and repo cards are laid out. Kept apart from the repo and
+ * inbox settings because changing it should not refetch anything.
  */
-export interface InboxView {
+export interface LayoutConfig {
   /** Sections the user has collapsed. */
-  collapsed: InboxSection[];
+  collapsedInbox: InboxSection[];
   /** How "Your pull requests" is grouped. */
   groupMyPullRequests: PrGrouping;
+  /** Repo card widgets the user has collapsed, as `widgetKey()` values. */
+  collapsedWidgets: string[];
+}
+
+/** Identifies one widget on one repo card. */
+export function widgetKey(repo: Pick<PinnedRepo, 'provider' | 'owner' | 'name'>, type: WidgetType): string {
+  return `${repoId(repo)}#${type}`;
 }
 
 export interface DashboardConfig {
   version: typeof CONFIG_VERSION;
   repos: PinnedRepo[];
   inbox: InboxConfig;
-  inboxView: InboxView;
+  layout: LayoutConfig;
   /** Auto-refresh interval in minutes; 0 disables it. */
   refreshMinutes: number;
   theme: Theme;
@@ -105,7 +112,7 @@ export function defaultConfig(): DashboardConfig {
     version: CONFIG_VERSION,
     repos: [],
     inbox: { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 10 },
-    inboxView: { collapsed: [], groupMyPullRequests: 'none' },
+    layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [] },
     refreshMinutes: 5,
     theme: 'system',
   };
@@ -229,13 +236,21 @@ export function parseConfig(raw: unknown): DashboardConfig {
     limit: clampInt(inboxRaw.limit, MIN_ITEMS, MAX_ITEMS, defaults.inbox.limit),
   };
 
-  const viewRaw = isObj(raw.inboxView) ? raw.inboxView : {};
-  const collapsedRaw: unknown[] = Array.isArray(viewRaw.collapsed) ? viewRaw.collapsed : [];
-  const inboxView: InboxView = {
-    collapsed: INBOX_SECTIONS.filter((section) => collapsedRaw.includes(section)),
-    groupMyPullRequests: (PR_GROUPINGS as readonly unknown[]).includes(viewRaw.groupMyPullRequests)
-      ? (viewRaw.groupMyPullRequests as PrGrouping)
-      : defaults.inboxView.groupMyPullRequests,
+  const layoutRaw = isObj(raw.layout) ? raw.layout : {};
+  const collapsedInboxRaw: unknown[] = Array.isArray(layoutRaw.collapsedInbox) ? layoutRaw.collapsedInbox : [];
+  const layout: LayoutConfig = {
+    collapsedInbox: INBOX_SECTIONS.filter((section) => collapsedInboxRaw.includes(section)),
+    groupMyPullRequests: (PR_GROUPINGS as readonly unknown[]).includes(layoutRaw.groupMyPullRequests)
+      ? (layoutRaw.groupMyPullRequests as PrGrouping)
+      : defaults.layout.groupMyPullRequests,
+    // Only keys for widgets that still exist, so removed repos do not linger.
+    collapsedWidgets: Array.isArray(layoutRaw.collapsedWidgets)
+      ? repos.flatMap((repo) =>
+          repo.widgets
+            .map((w) => widgetKey(repo, w.type))
+            .filter((key) => (layoutRaw.collapsedWidgets as unknown[]).includes(key)),
+        )
+      : [],
   };
 
   const refresh = (REFRESH_CHOICES as readonly number[]).includes(raw.refreshMinutes as number)
@@ -244,5 +259,5 @@ export function parseConfig(raw: unknown): DashboardConfig {
 
   const theme = (THEMES as readonly unknown[]).includes(raw.theme) ? (raw.theme as Theme) : defaults.theme;
 
-  return { version: CONFIG_VERSION, repos, inbox, inboxView, refreshMinutes: refresh, theme };
+  return { version: CONFIG_VERSION, repos, inbox, layout, refreshMinutes: refresh, theme };
 }

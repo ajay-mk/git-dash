@@ -3,7 +3,7 @@ import { InboxPanel } from './components/InboxPanel';
 import { RepoCard } from './components/RepoCard';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TokenSetup } from './components/TokenSetup';
-import { repoId, type DashboardConfig } from './config/schema';
+import { repoId, widgetKey, WIDGET_TYPES, type DashboardConfig } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
 import { repoHealth } from './lib/health';
@@ -130,8 +130,8 @@ export default function App() {
       {config.inbox.enabled && (
         <InboxPanel
           config={config.inbox}
-          view={config.inboxView}
-          onViewChange={(fn) => update((c) => ({ ...c, inboxView: fn(c.inboxView) }))}
+          layout={config.layout}
+          onLayoutChange={(fn) => update((c) => ({ ...c, layout: fn(c.layout) }))}
           inbox={dash.inbox}
           error={dash.inboxError}
         />
@@ -151,7 +151,27 @@ export default function App() {
         ) : (
           <div className="grid">
             {config.repos.map((repo) => (
-              <RepoCard key={repoId(repo)} repo={repo} result={dash.repos.get(repoId(repo))} />
+              <RepoCard
+                key={repoId(repo)}
+                repo={repo}
+                result={dash.repos.get(repoId(repo))}
+                collapsedWidgets={WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)))}
+                onToggleWidget={(type) => {
+                  const key = widgetKey(repo, type);
+                  update((c) => {
+                    const collapsed = c.layout.collapsedWidgets;
+                    return {
+                      ...c,
+                      layout: {
+                        ...c.layout,
+                        collapsedWidgets: collapsed.includes(key)
+                          ? collapsed.filter((k) => k !== key)
+                          : [...collapsed, key],
+                      },
+                    };
+                  });
+                }}
+              />
             ))}
           </div>
         )}

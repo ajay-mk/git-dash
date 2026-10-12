@@ -1,28 +1,17 @@
-import type { PinnedRepo, WidgetConfig } from '../config/schema';
+import type { PinnedRepo, WidgetConfig, WidgetType } from '../config/schema';
 import { HEALTH_LABELS, repoHealth } from '../lib/health';
 import type { RepoError, RepoResult, RepoSnapshot } from '../providers/types';
+import { Collapsible } from './Collapsible';
 import { ExternalLink } from './ExternalLink';
 import { IssueRow, PullRequestRow } from './ItemRows';
 import { CiIcon } from './StatusIcons';
 
-function Section({ title, count, extra, children }: {
-  title: string;
-  count: number;
-  extra?: React.ReactNode;
-  children: React.ReactNode;
+function Widget({ widget, data, collapsed, onToggle }: {
+  widget: WidgetConfig;
+  data: RepoSnapshot;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
-  return (
-    <section className="widget">
-      <h3 className="widget-title">
-        {title} <span className="count">{count}</span>
-        {extra}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function Widget({ widget, data }: { widget: WidgetConfig; data: RepoSnapshot }) {
   switch (widget.type) {
     case 'ci':
       // Shown in the card header; nothing to render in the body.
@@ -33,10 +22,13 @@ function Widget({ widget, data }: { widget: WidgetConfig; data: RepoSnapshot }) 
       // Counted across all fetched PRs, so it matches the card's health.
       const attention = data.prsNeedingAttention;
       return (
-        <Section
+        <Collapsible
+          className="widget"
           title="Pull requests"
           count={prs.total}
-          extra={attention > 0 ? <span className="badge badge-bad">{attention} need attention</span> : null}
+          collapsed={collapsed}
+          onToggle={onToggle}
+          badge={attention > 0 ? <span className="badge badge-bad">{attention} need attention</span> : null}
         >
           {prs.items.length === 0 ? (
             <p className="empty">No open pull requests</p>
@@ -47,16 +39,19 @@ function Widget({ widget, data }: { widget: WidgetConfig; data: RepoSnapshot }) 
               ))}
             </ul>
           )}
-        </Section>
+        </Collapsible>
       );
     }
     case 'issues': {
       const issues = data.issues;
       if (!issues) return null;
       return (
-        <Section
+        <Collapsible
+          className="widget"
           title={widget.label ? `Issues · ${widget.label}` : 'Issues'}
           count={issues.total}
+          collapsed={collapsed}
+          onToggle={onToggle}
         >
           {issues.items.length === 0 ? (
             <p className="empty">No open issues</p>
@@ -67,7 +62,7 @@ function Widget({ widget, data }: { widget: WidgetConfig; data: RepoSnapshot }) 
               ))}
             </ul>
           )}
-        </Section>
+        </Collapsible>
       );
     }
   }
@@ -87,7 +82,13 @@ function RepoErrorText({ error }: { error: RepoError }) {
   );
 }
 
-export function RepoCard({ repo, result }: { repo: PinnedRepo; result: RepoResult | undefined }) {
+export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget }: {
+  repo: PinnedRepo;
+  result: RepoResult | undefined;
+  /** Widget types collapsed on this card. */
+  collapsedWidgets: readonly WidgetType[];
+  onToggleWidget: (type: WidgetType) => void;
+}) {
   const health = repoHealth(result);
   const data = result?.ok ? result.data : null;
   const fullName = data?.fullName ?? `${repo.owner}/${repo.name}`;
@@ -114,7 +115,16 @@ export function RepoCard({ repo, result }: { repo: PinnedRepo; result: RepoResul
 
       {!result && <p className="empty">Loading…</p>}
       {result && !result.ok && <RepoErrorText error={result.error} />}
-      {data && repo.widgets.map((w) => <Widget key={w.type} widget={w} data={data} />)}
+      {data &&
+        repo.widgets.map((w) => (
+          <Widget
+            key={w.type}
+            widget={w}
+            data={data}
+            collapsed={collapsedWidgets.includes(w.type)}
+            onToggle={() => onToggleWidget(w.type)}
+          />
+        ))}
       {data && repo.widgets.length === 0 && <p className="empty">No widgets enabled</p>}
     </article>
   );

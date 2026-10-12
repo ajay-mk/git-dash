@@ -159,9 +159,9 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 }
 .sidebar-title { font-size: 14px; margin-bottom: 8px; }
 .inbox-group { margin-bottom: 14px; }
-.inbox-group-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
-.inbox-group-header .widget-title { margin-bottom: 0; min-width: 0; }
-.group-toggle {
+.section-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.section-header .widget-title { margin-bottom: 0; min-width: 0; }
+.section-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -176,7 +176,7 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
   text-transform: inherit;
   cursor: pointer;
 }
-.group-toggle:hover { background: var(--surface-2); }
+.section-toggle:hover { background: var(--surface-2); }
 .chevron { width: 10px; text-align: center; }
 .group-select { font-size: 11px; padding: 1px 4px; }
 .subgroup { margin-top: 4px; }
