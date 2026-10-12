@@ -1,5 +1,5 @@
 /**
- * Read-only repository permissions git-dash needs from a fine-grained token.
+ * Read-only repository permissions GitDash needs from a fine-grained token.
  * `key` is the name GitHub uses for the permission in token template URLs.
  */
 export const FINE_GRAINED_PERMISSIONS = [
@@ -24,9 +24,9 @@ const MAX_NAME_LENGTH = 40;
  */
 export function fineGrainedTokenUrl(owner?: string | null): string {
   const url = new URL('https://github.com/settings/personal-access-tokens/new');
-  const name = owner ? `git-dash ${owner}` : 'git-dash';
+  const name = owner ? `GitDash ${owner}` : 'GitDash';
   url.searchParams.set('name', name.slice(0, MAX_NAME_LENGTH));
-  url.searchParams.set('description', 'Read-only access for the git-dash dashboard');
+  url.searchParams.set('description', 'Read-only access for the GitDash dashboard');
   if (owner) url.searchParams.set('target_name', owner);
   for (const { key } of FINE_GRAINED_PERMISSIONS) url.searchParams.set(key, 'read');
   return url.toString();

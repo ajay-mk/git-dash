@@ -1,10 +1,10 @@
-# git-dash
+# GitDash
 
 A glanceable, customizable desktop dashboard for your GitHub repositories.
 Pin the repos you care about, choose what each card shows, and see at a glance
 what is failing, what needs your review, and what is waiting on you.
 
-- **Repo cards** with a colour-coded status stripe: CI failing on the default
+- **Repo cards** with a colour-coded status dot: CI failing on the default
   branch (red), pull requests needing attention (amber), CI running (yellow),
   all good (green).
 - **Per-repo widgets**: default-branch CI, open pull requests (with CI and
@@ -28,9 +28,9 @@ Download the installer for your platform from the
 
 | Platform | File |
 | --- | --- |
-| macOS (Apple Silicon) | `git-dash_<version>_aarch64.dmg` |
-| macOS (Intel) | `git-dash_<version>_x64.dmg` |
-| Windows | `git-dash_<version>_x64-setup.exe` or `git-dash_<version>_x64_en-US.msi` |
+| macOS (Apple Silicon) | `GitDash_<version>_aarch64.dmg` |
+| macOS (Intel) | `GitDash_<version>_x64.dmg` |
+| Windows | `GitDash_<version>_x64-setup.exe` or `GitDash_<version>_x64_en-US.msi` |
 | Linux | `.AppImage`, `.deb` or `.rpm` |
 
 Each release includes `SHA256SUMS.txt`. Check your download against it before
@@ -44,7 +44,7 @@ the first time you open them:
 - **macOS** blocks the app with a message that Apple could not verify it is
   free of malware. The app is only ad-hoc signed, not signed with an Apple
   Developer ID or notarized. To open it once, go to *System Settings → Privacy
-  & Security*, find the message about git-dash and choose *Open Anyway*.
+  & Security*, find the message about GitDash and choose *Open Anyway*.
 - **Windows** SmartScreen shows "Windows protected your PC". Choose *More info
   → Run anyway*. The installer is not Authenticode-signed, so it also shows an
   unknown publisher.
@@ -64,7 +64,7 @@ only allows read-only GraphQL queries to `api.github.com`. See
 
 **Fine-grained token (recommended).** A fine-grained token needs *read-only*
 access to: Metadata, Contents, Pull requests, Issues, Commit statuses and
-Actions. [This link](https://github.com/settings/personal-access-tokens/new?name=git-dash&description=Read-only+access+for+the+git-dash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read)
+Actions. [This link](https://github.com/settings/personal-access-tokens/new?name=GitDash&description=Read-only+access+for+the+GitDash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read)
 opens GitHub's token form with those permissions filled in; the setup screen
 links to it too. You still choose *Repository access* yourself (*All
 repositories* or a selection), because GitHub cannot fill that in from a link.
@@ -74,7 +74,7 @@ limited to one account or organization.
 
 **Classic token.** Works across organizations. Public repositories need no
 scopes; private repositories need `repo`, which also grants write access.
-git-dash only sends read-only queries, but prefer fine-grained tokens where
+GitDash only sends read-only queries, but prefer fine-grained tokens where
 possible.
 
 **Organizations with SAML SSO.** A classic token must be authorized for each
@@ -93,13 +93,13 @@ for it, GitHub reports the repository as not found.
 
 ### Several accounts or organizations
 
-git-dash keeps a **default token** plus optional **per-owner tokens**, so you
+GitDash keeps a **default token** plus optional **per-owner tokens**, so you
 can use a fine-grained token for your personal repositories and another for
 each organization:
 
 1. Add the default token on first launch (usually one for your own account).
 2. In **Settings → Access tokens → Per-owner tokens**, enter an account or
-   organization name and a token for it. git-dash verifies the token with
+   organization name and a token for it. GitDash verifies the token with
    GitHub and shows the login it belongs to; the token itself is never shown
    again.
 3. Pinned repositories owned by that account or organization are fetched with

@@ -15,7 +15,7 @@ Only the latest release receives security fixes.
 
 ## Security model
 
-git-dash is a desktop app (Tauri) with no server component. Nobody but the
+GitDash is a desktop app (Tauri) with no server component. Nobody but the
 user ever holds their credentials.
 
 | Concern | How it is handled |
@@ -25,7 +25,7 @@ user ever holds their credentials.
 | Token selection | The frontend passes an owner name (or nothing) with each query and the backend picks the token: that owner's token if configured, the default token otherwise. A per-owner token is only used for that owner's repositories and for the "Needs you" searches, and like every token it is only ever sent to `api.github.com`. |
 | Keychain entry names | Fixed allow-list: the frontend cannot name keychain entries. Owners are validated against GitHub's login rules (1-39 letters, digits or hyphens; no `:`), lowercased, and mapped to `github:owner:<owner>`, so they cannot collide with the default (`github`) or index (`github:index`) entries. At most 20 per-owner tokens are stored. |
 | Network destinations | The backend only talks to `https://api.github.com/graphql`, with HTTPS enforced and redirects disabled so the token cannot be forwarded elsewhere. The webview's CSP blocks all network access other than IPC to the backend. |
-| Write access | The backend rejects any GraphQL document containing a `mutation` or `subscription` operation (`src-tauri/src/graphql_guard.rs`), so even a token with write scopes cannot be used to change anything through git-dash. Read-only tokens are still recommended. |
+| Write access | The backend rejects any GraphQL document containing a `mutation` or `subscription` operation (`src-tauri/src/graphql_guard.rs`), so even a token with write scopes cannot be used to change anything through GitDash. Read-only tokens are still recommended. |
 | Injection | User input (owners, repo names, labels) is only ever passed as GraphQL variables, never interpolated into query text. API data is rendered as text (raw HTML rendering is forbidden by lint rules). |
 | Untrusted API data | URLs are only rendered as links if they are plain `https://github.com/` URLs; label colours must be hex. External links open in the system browser, restricted to `https://github.com/*` by a Tauri capability. |
 | Webview navigation | The main window can only ever show the bundled app; any other navigation is blocked. |
