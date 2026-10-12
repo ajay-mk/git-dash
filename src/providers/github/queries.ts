@@ -130,6 +130,7 @@ query GitDashViewerRepos($n: Int!) {
   viewer {
     repositories(
       first: $n
+      isArchived: false
       affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       ${SUGGESTION_ORDER}
@@ -142,7 +143,7 @@ query GitDashViewerRepos($n: Int!) {
 export const OWNER_REPOS_QUERY = `
 query GitDashOwnerRepos($owner: String!, $n: Int!) {
   repositoryOwner(login: $owner) {
-    repositories(first: $n, ${SUGGESTION_ORDER}) { nodes { nameWithOwner isArchived pushedAt } }
+    repositories(first: $n, isArchived: false, ${SUGGESTION_ORDER}) { nodes { nameWithOwner isArchived pushedAt } }
   }
 }
 `;

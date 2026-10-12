@@ -286,6 +286,17 @@ describe('github.listRepos', () => {
     await expect(github.listRepos(['acme'])).resolves.toEqual(['acme/new', 'octo/a', 'octo/b', 'octo/empty']);
   });
 
+  it('only fetches active repositories', async () => {
+    graphql.mockResolvedValue({ data: {} });
+    await github.listRepos(['acme']);
+    for (const [query] of graphql.mock.calls) expect(query).toMatch(/repositories\([^)]*isArchived: false/);
+  });
+
+  it('rejects when every token fails, so the caller can retry', async () => {
+    graphql.mockRejectedValue(new Error('offline'));
+    await expect(github.listRepos(['acme'])).rejects.toThrow('offline');
+  });
+
   it('ignores tokens that fail', async () => {
     graphql.mockImplementation((_query, _variables, owner) =>
       owner ? Promise.reject(new Error('revoked')) : Promise.resolve({ data: { viewer: { repositories: nodes('octo/one') } } }),

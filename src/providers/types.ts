@@ -118,7 +118,8 @@ export interface Provider {
   fetchInbox(config: InboxConfig, tokenOwners: readonly string[]): Promise<InboxSnapshot>;
   /**
    * Repositories (`owner/name`) the stored tokens can see, offered as
-   * suggestions when pinning. Best-effort: tokens that fail are skipped.
+   * suggestions when pinning. Best-effort: tokens that fail are skipped; it
+   * rejects only when every token fails.
    */
   listRepos(tokenOwners: readonly string[]): Promise<string[]>;
 }

@@ -120,6 +120,10 @@ export const github: Provider = {
         ),
       ),
     ]);
+    // Every token failing is likely transient (network, rate limit); let the
+    // caller retry rather than cache an empty list.
+    const failed = lists.find((l) => l.status === 'rejected');
+    if (failed && lists.every((l) => l.status === 'rejected')) throw failed.reason;
     const seen = new Map<string, RepoSuggestion>();
     for (const list of lists) {
       if (list.status !== 'fulfilled') continue;
