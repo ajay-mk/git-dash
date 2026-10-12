@@ -18,6 +18,7 @@ import { loadConfig, saveConfig } from './config/storage';
 import { providers } from './providers';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
 import { useCardResize } from './hooks/useCardResize';
+import { useMasonry } from './hooks/useMasonry';
 import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
@@ -100,13 +101,23 @@ export default function App() {
       }),
     repoLabel,
   );
-  const { bindGrid, ...resize } = useCardResize({
+  const [grid, setGrid] = useState<HTMLElement | null>(null);
+  useMasonry(grid);
+  const resize = useCardResize({
+    grid,
     onSpan: (id, span) =>
       update((c) => {
         const cardSpans = { ...c.layout.cardSpans };
         if (span > 1) cardSpans[id] = span;
         else delete cardSpans[id];
         return { ...c, layout: { ...c.layout, cardSpans } };
+      }),
+    onHeight: (id, rows) =>
+      update((c) => {
+        const cardRows = { ...c.layout.cardRows };
+        if (rows === null) delete cardRows[id];
+        else cardRows[id] = rows;
+        return { ...c, layout: { ...c.layout, cardRows } };
       }),
     onRows: (id, delta) => {
       // Collapsed lists are not part of the card's height, so they keep their limit.
@@ -219,11 +230,11 @@ export default function App() {
           <>
             <p id="reorder-help" className="sr-only">Drag to reorder, or use the arrow keys.</p>
             <p id="resize-help" className="sr-only">
-              Drag to resize. Left and right arrows change the width, up and down change how many entries show.
+              Drag to resize. Left and right arrows change the width, up and down change the height and how many entries show. Delete lets the card fit its content again.
             </p>
             <p className="sr-only" aria-live="polite">{reorder.announcement}</p>
             <p className="sr-only" aria-live="polite">{resize.announcement}</p>
-            <div ref={bindGrid} className={`grid${reorder.dragging ? ' reordering' : ''}${resize.resizing ? ' resizing' : ''}`}>
+            <div ref={setGrid} className={`grid${reorder.dragging ? ' reordering' : ''}${resize.resizing ? ' resizing' : ''}`}>
               {reorder.order.map((id) => reposById.get(id)).filter((r) => r !== undefined).map((repo) => {
                 const id = repoId(repo);
                 const collapsedWidgets = collapsedTypes(config, repo);
@@ -236,6 +247,7 @@ export default function App() {
                     repo={repo}
                     dragging={reorder.dragging === id}
                     span={span}
+                    rows={config.layout.cardRows[id]}
                     resize={resizing}
                     grip={
                       <>
@@ -244,7 +256,7 @@ export default function App() {
                             {resizing.span} {resizing.span === 1 ? 'column' : 'columns'} · {entriesText(repo, resizing.delta, collapsedWidgets)}
                           </span>
                         )}
-                        <button type="button" className="resize-grip" title="Drag to resize" {...resize.gripProps(id, repoLabel(id), span, lists)} />
+                        <button type="button" className="resize-grip" title="Drag to resize, double-click to fit the content" {...resize.gripProps(id, repoLabel(id), span, lists)} />
                       </>
                     }
                     handle={

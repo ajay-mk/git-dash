@@ -92,7 +92,7 @@ function RepoErrorText({ error }: { error: RepoError }) {
   );
 }
 
-export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handle, dragging = false, span = 1, resize = null, grip }: {
+export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handle, dragging = false, span = 1, rows, resize = null, grip }: {
   repo: PinnedRepo;
   result: RepoResult | undefined;
   /** Widget types collapsed on this card. */
@@ -104,6 +104,8 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
   dragging?: boolean;
   /** Width in grid columns. */
   span?: number;
+  /** Height in grid rows; the card fits its content without one. */
+  rows?: number | undefined;
   /** A resize of this card in progress. */
   resize?: CardResize | null;
   /** Resize grip, shown in the bottom corner. */
@@ -112,13 +114,15 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
   const health = repoHealth(result);
   const data = result?.ok ? result.data : null;
   const fullName = data?.fullName ?? `${repo.owner}/${repo.name}`;
+  const height = resize?.rows ?? rows;
 
   return (
     <article
-      className={`card health-${health ?? 'loading'}${dragging ? ' dragging' : ''}${resize ? ' resizing' : ''}`}
+      className={`card health-${health ?? 'loading'}${dragging ? ' dragging' : ''}${resize ? ' resizing' : ''}${height ? ' sized' : ''}`}
       style={{
         gridColumn: (resize?.span ?? span) > 1 ? `span ${resize?.span ?? span}` : undefined,
-        minHeight: resize?.minHeight,
+        // Whole grid rows, less the space kept under each card (see `.grid`).
+        height: height ? `calc(${height} * var(--row-unit) - var(--row-gap))` : undefined,
       }}
       {...{ [REORDER_ATTR]: repoId(repo) }}
       aria-label={`${fullName}: ${health ? HEALTH_LABELS[health] : 'Loading'}`}
@@ -139,20 +143,22 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
         )}
       </header>
 
-      {!result && <p className="empty">Loading…</p>}
-      {result && !result.ok && <RepoErrorText error={result.error} />}
-      {data &&
-        repo.widgets.map((w) => (
-          <Widget
-            key={w.type}
-            widget={w}
-            data={data}
-            collapsed={collapsedWidgets.includes(w.type)}
-            onToggle={() => onToggleWidget(w.type)}
-            delta={resize?.delta ?? 0}
-          />
-        ))}
-      {data && repo.widgets.length === 0 && <p className="empty">No widgets enabled</p>}
+      <div className="card-body">
+        {!result && <p className="empty">Loading…</p>}
+        {result && !result.ok && <RepoErrorText error={result.error} />}
+        {data &&
+          repo.widgets.map((w) => (
+            <Widget
+              key={w.type}
+              widget={w}
+              data={data}
+              collapsed={collapsedWidgets.includes(w.type)}
+              onToggle={() => onToggleWidget(w.type)}
+              delta={resize?.delta ?? 0}
+            />
+          ))}
+        {data && repo.widgets.length === 0 && <p className="empty">No widgets enabled</p>}
+      </div>
       {grip}
     </article>
   );

@@ -22,6 +22,12 @@ export const MAX_ITEMS = 20;
 export const MAX_REPOS = 50;
 /** Widest a repo card can be, in grid columns. */
 export const MAX_CARD_SPAN = 3;
+/**
+ * Card heights are kept in grid rows (see `.grid` in styles.css) so they
+ * snap; these bound a saved height.
+ */
+export const MIN_CARD_ROWS = 12;
+export const MAX_CARD_ROWS = 200;
 export const REFRESH_CHOICES = [0, 1, 2, 5, 10, 15, 30, 60] as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
@@ -72,6 +78,8 @@ export interface LayoutConfig {
   collapsedWidgets: string[];
   /** Repo cards wider than one grid column, by `repoId()`. */
   cardSpans: Record<string, number>;
+  /** Repo cards with a height the user set, in grid rows, by `repoId()`. Others fit their content. */
+  cardRows: Record<string, number>;
 }
 
 /**
@@ -84,16 +92,26 @@ export function pinnedWidgetKeys(repos: readonly PinnedRepo[], keys: readonly un
   );
 }
 
-/** The card widths in `raw` that are valid and belong to a pinned repo. */
-export function pinnedCardSpans(repos: readonly PinnedRepo[], raw: unknown): Record<string, number> {
-  const spans: Record<string, number> = {};
-  if (!isObj(raw)) return spans;
+/** The card sizes in `raw` that are whole numbers in [min, max] and belong to a pinned repo. */
+function pinnedCardSizes(repos: readonly PinnedRepo[], raw: unknown, min: number, max: number): Record<string, number> {
+  const sizes: Record<string, number> = {};
+  if (!isObj(raw)) return sizes;
   for (const repo of repos) {
     const id = repoId(repo);
-    const span = Object.hasOwn(raw, id) ? raw[id] : undefined;
-    if (typeof span === 'number' && Number.isInteger(span) && span > 1 && span <= MAX_CARD_SPAN) spans[id] = span;
+    const size = Object.hasOwn(raw, id) ? raw[id] : undefined;
+    if (typeof size === 'number' && Number.isInteger(size) && size >= min && size <= max) sizes[id] = size;
   }
-  return spans;
+  return sizes;
+}
+
+/** The card widths in `raw` that are valid and belong to a pinned repo. */
+export function pinnedCardSpans(repos: readonly PinnedRepo[], raw: unknown): Record<string, number> {
+  return pinnedCardSizes(repos, raw, 2, MAX_CARD_SPAN);
+}
+
+/** The card heights in `raw` that are valid and belong to a pinned repo. */
+export function pinnedCardRows(repos: readonly PinnedRepo[], raw: unknown): Record<string, number> {
+  return pinnedCardSizes(repos, raw, MIN_CARD_ROWS, MAX_CARD_ROWS);
 }
 
 /** Drops layout entries for repos and widgets that are no longer pinned. */
@@ -101,13 +119,15 @@ export function pruneLayout(config: DashboardConfig): DashboardConfig {
   const { layout } = config;
   const collapsedWidgets = pinnedWidgetKeys(config.repos, layout.collapsedWidgets);
   const cardSpans = pinnedCardSpans(config.repos, layout.cardSpans);
+  const cardRows = pinnedCardRows(config.repos, layout.cardRows);
   if (
     collapsedWidgets.length === layout.collapsedWidgets.length &&
-    Object.keys(cardSpans).length === Object.keys(layout.cardSpans).length
+    Object.keys(cardSpans).length === Object.keys(layout.cardSpans).length &&
+    Object.keys(cardRows).length === Object.keys(layout.cardRows).length
   ) {
     return config;
   }
-  return { ...config, layout: { ...layout, collapsedWidgets, cardSpans } };
+  return { ...config, layout: { ...layout, collapsedWidgets, cardSpans, cardRows } };
 }
 
 /** Identifies one widget on one repo card. */
@@ -176,7 +196,7 @@ export function defaultConfig(): DashboardConfig {
     version: CONFIG_VERSION,
     repos: [],
     inbox: { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 10 },
-    layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [], cardSpans: {} },
+    layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [], cardSpans: {}, cardRows: {} },
     refreshMinutes: 5,
     theme: 'system',
   };
@@ -311,6 +331,7 @@ export function parseConfig(raw: unknown): DashboardConfig {
       ? pinnedWidgetKeys(repos, layoutRaw.collapsedWidgets)
       : [],
     cardSpans: pinnedCardSpans(repos, layoutRaw.cardSpans),
+    cardRows: pinnedCardRows(repos, layoutRaw.cardRows),
   };
 
   const refresh = (REFRESH_CHOICES as readonly number[]).includes(raw.refreshMinutes as number)
