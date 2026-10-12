@@ -67,16 +67,19 @@ describe('planResize', () => {
 });
 
 /** A card whose header and folded lists are 120px tall, each entry 28px. */
-function Card({ onFold, onRows, onHeight, limit = 2, rows = limit }: {
+function Card({ onFold, onRows, onHeight, limit = 2, rows = limit, folded = [], height }: {
   onFold: (collapsed: WidgetType[]) => void;
   onRows: (delta: number, collapsed: WidgetType[]) => void;
   onHeight: (rows: number | null) => void;
   limit?: number;
   /** Entries each list shows, which may be fewer than its limit. */
   rows?: number;
+  folded?: WidgetType[];
+  /** A saved height in pixels, when the card is taller than what it shows. */
+  height?: number;
 }) {
   const [grid, setGrid] = useState<HTMLElement | null>(null);
-  const [collapsed, setCollapsed] = useState<WidgetType[]>([]);
+  const [collapsed, setCollapsed] = useState<WidgetType[]>(folded);
   const resize = useCardResize({
     grid,
     onSpan: () => {},
@@ -95,10 +98,16 @@ function Card({ onFold, onRows, onHeight, limit = 2, rows = limit }: {
   const open = sections(collapsed).filter((s) => !s.collapsed).length;
   return (
     <div ref={setGrid} className="grid" style={{ '--row-unit': '8px', '--row-gap': '16px' } as React.CSSProperties}>
-      <article data-height={120 + open * 56}>
-        <div className="card-body">
+      <article data-height={height ?? 120 + open * 56}>
+        <div className="card-body" data-height={height}>
           {sections(shown).map((s) => (
-            <section key={s.type} data-section={s.type} data-folded={s.collapsed}>
+            <section
+              key={s.type}
+              data-section={s.type}
+              data-folded={s.collapsed}
+              // Where the content ends, for a card taller than what it shows.
+              data-bottom={height !== undefined && s.type === 'issues' ? 120 + open * 56 : undefined}
+            >
               <div className="section-header">{s.type}</div>
               <div data-height={collapsed.includes(s.type) ? 0 : 56}>
                 <ul className="rows">
@@ -177,6 +186,22 @@ describe('useCardResize', () => {
     fireEvent.keyDown(grip, { key: 'ArrowDown' });
     expect(onFold).toHaveBeenLastCalledWith(['issues']);
     expect(onRows).not.toHaveBeenCalled();
+  });
+
+  it('opens a folded list with the down arrow into room the card already has', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { width: 300, height: Number(this.dataset.height ?? 0) } as DOMRect;
+    });
+    const onFold = vi.fn();
+    const onHeight = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { width: 300, height: Number(this.dataset.height ?? 0), top: 0, bottom: Number(this.dataset.bottom) } as DOMRect;
+    });
+    // 232px tall, showing only the 176px of its pull requests and the folded Issues header.
+    render(<Card onFold={onFold} onRows={() => {}} onHeight={onHeight} folded={['issues']} height={232} />);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Resize card' }), { key: 'ArrowDown' });
+    expect(onFold).toHaveBeenLastCalledWith([]);
+    expect(onHeight).not.toHaveBeenCalled();
   });
 
   it('folds with the up arrow once the lists show one entry, whatever their limit', () => {

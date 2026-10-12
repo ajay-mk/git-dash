@@ -161,15 +161,20 @@ function measureFolded(card: HTMLElement, grid: HTMLElement) {
     base: bodies.size > 0 ? folded : -Infinity,
     bodies,
     minRows: Math.ceil((folded + gap) / unit),
+    /** The height of what the card shows, which may be less than the card's own. */
+    content,
     row: card.querySelector('.rows > li')?.getBoundingClientRect().height || ROW_HEIGHT,
   };
 }
 
 /** The card's height, folded lists and entries when a resize leaves it `height` pixels tall. */
 function layoutAt(d: Drag, height: number) {
-  // The card snaps to whole grid rows as it follows the pointer.
+  // The card snaps to whole grid rows as it follows the pointer, and no
+  // shorter than its folded lists. Rows added only to fit them (when the
+  // card narrows and its headers wrap) are not room to open lists into.
   const rows = rowsFor(height, d.unit, d.rowGap, d.minRows);
-  return { rows, ...planResize(d.sections, (rows - d.startRows) * d.unit, rows * d.unit - d.rowGap, d.base, d.row) };
+  const asked = Math.min(rows, rowsFor(height, d.unit, d.rowGap));
+  return { rows, ...planResize(d.sections, (asked - d.startRows) * d.unit, rows * d.unit - d.rowGap, d.base, d.row) };
 }
 
 const sameTypes = (a: readonly WidgetType[], b: readonly WidgetType[]) =>
@@ -235,6 +240,19 @@ export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe
     observer.observe(grid);
     return () => observer.disconnect();
   }, [grid]);
+
+  // A card whose width just changed from the keyboard. Its headers may
+  // wrap at the new width, so once it is drawn there it grows to fit them.
+  const refit = useRef<{ id: string; card: HTMLElement } | null>(null);
+  useEffect(() => {
+    const pending = refit.current;
+    if (!pending || !grid) return;
+    refit.current = null;
+    const { minRows, content } = measureFolded(pending.card, grid);
+    const { unit, gap } = gridRowMetrics(grid);
+    const height = pending.card.getBoundingClientRect().height;
+    if (height < content && Math.round((height + gap) / unit) < minRows) callbacks.current.onHeight(pending.id, minRows);
+  });
 
   const setDragState = useCallback((next: Drag | null) => {
     dragRef.current = next;
@@ -370,7 +388,11 @@ export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe
       }
       e.preventDefault();
       nextSpan = clamp(nextSpan, 1, columns);
-      if (nextSpan !== span) onSpan(id, nextSpan);
+      if (nextSpan !== span) {
+        onSpan(id, nextSpan);
+        // Once the card shows its new width, check its height still fits its headers there.
+        if (card) refit.current = { id, card };
+      }
       const open = sections.filter((s) => !s.collapsed);
       const folded = sections.filter((s) => s.collapsed);
       let collapsed = folded.map((s) => s.type);
@@ -394,7 +416,8 @@ export function useCardResize({ grid, onSpan, onHeight, onFold, onRows, describe
           ? m.row * Math.max(1, open.length)
           : delta < 0
             ? (m.bodies.get(fold.type) ?? m.row)
-            : m.row * fold.rows;
+            : // Opening a list only needs the room the card does not already have.
+              Math.max(0, m.row * fold.rows - (m.height - m.content));
         const rows = rowsFor(m.height + delta * step, m.unit, m.rowGap, delta < 0 ? m.minRows : undefined);
         resized = rows !== m.startRows;
         if (resized) onHeight(id, rows);
