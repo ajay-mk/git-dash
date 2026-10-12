@@ -174,6 +174,18 @@ describe('SettingsPanel', () => {
       expect(screen.queryByRole('option', { name: 'octo/api' })).toBeNull();
     });
 
+    it('retries on the next focus after a failed load', async () => {
+      vi.mocked(githubGraphql).mockRejectedValue(new Error('offline'));
+      setup();
+      await userEvent.click(field());
+      await userEvent.click(document.body);
+      expect(screen.queryByRole('listbox', { name: 'Suggested repositories' })).toBeNull();
+
+      viewerRepos('octo/api');
+      await userEvent.click(field());
+      expect(await screen.findByRole('option', { name: 'octo/api' })).toBeTruthy();
+    });
+
     it('still pins typed input when suggestions fail to load', async () => {
       const { config } = setup();
       await pin('octo/repo');

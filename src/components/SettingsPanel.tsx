@@ -162,7 +162,10 @@ function RepoInput({
       (names) => {
         if (loadedFor.current === key) setRepos(names);
       },
-      () => undefined,
+      () => {
+        // Let the next focus try again.
+        if (loadedFor.current === key) loadedFor.current = null;
+      },
     );
   }
 
