@@ -244,3 +244,74 @@ describe('github provider', () => {
     expect(inbox.ssoRestricted).toBe(true);
   });
 });
+
+describe('github.listRepos', () => {
+  const nodes = (...names: (string | { nameWithOwner: string; isArchived: boolean })[]) => ({
+    nodes: names.map((n) => (typeof n === 'string' ? { nameWithOwner: n, isArchived: false } : n)),
+  });
+
+  it('merges the default and per-owner tokens, skipping duplicates, archived and invalid names', async () => {
+    graphql.mockImplementation((_query, _variables, owner) =>
+      Promise.resolve(
+        owner
+          ? { data: { repositoryOwner: { repositories: nodes('Acme/API', 'acme/web') } } }
+          : {
+              data: {
+                viewer: {
+                  repositories: nodes('octo/one', 'acme/api', { nameWithOwner: 'octo/old', isArchived: true }, 'bad name'),
+                },
+              },
+            },
+      ),
+    );
+    await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['octo/one', 'acme/api', 'acme/web'], complete: true });
+    expect(graphql).toHaveBeenCalledWith(expect.stringContaining('repositoryOwner(login: $owner)'), expect.objectContaining({ owner: 'acme' }), 'acme');
+  });
+
+  it('orders the merged list by last push across tokens', async () => {
+    const at = (name: string, pushedAt: string | null) => ({ nameWithOwner: name, isArchived: false, pushedAt });
+    graphql.mockImplementation((_query, _variables, owner) =>
+      Promise.resolve(
+        owner
+          ? { data: { repositoryOwner: { repositories: { nodes: [at('acme/new', '2026-10-12T00:00:00Z')] } } } }
+          : {
+              data: {
+                viewer: {
+                  repositories: { nodes: [at('octo/a', '2026-10-10T00:00:00Z'), at('octo/b', '2026-10-01T00:00:00Z'), at('octo/empty', null)] },
+                },
+              },
+            },
+      ),
+    );
+    await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['acme/new', 'octo/a', 'octo/b', 'octo/empty'], complete: true });
+  });
+
+  it('only fetches active repositories', async () => {
+    graphql.mockResolvedValue({ data: {} });
+    await github.listRepos(['acme']);
+    for (const [query] of graphql.mock.calls) expect(query).toMatch(/repositories\([^)]*isArchived: false/);
+  });
+
+  it('rejects when every token fails, so the caller can retry', async () => {
+    graphql.mockRejectedValue(new Error('offline'));
+    await expect(github.listRepos(['acme'])).rejects.toThrow('offline');
+  });
+
+  it('treats GraphQL errors without data as a failure, but keeps partial data', async () => {
+    graphql.mockResolvedValue({ data: null, errors: [{ type: 'RATE_LIMITED', message: 'rate limited' }] });
+    await expect(github.listRepos([])).rejects.toThrow();
+
+    graphql.mockResolvedValue({
+      data: { viewer: { repositories: { nodes: [{ nameWithOwner: 'octo/one', isArchived: false }] } } },
+      errors: [{ type: 'FORBIDDEN', message: 'SAML' }],
+    });
+    await expect(github.listRepos([])).resolves.toEqual({ repos: ['octo/one'], complete: true });
+  });
+
+  it('ignores tokens that fail', async () => {
+    graphql.mockImplementation((_query, _variables, owner) =>
+      owner ? Promise.reject(new Error('revoked')) : Promise.resolve({ data: { viewer: { repositories: nodes('octo/one') } } }),
+    );
+    await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['octo/one'], complete: false });
+  });
+});

@@ -312,7 +312,34 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .token-form { display: flex; gap: 8px; flex-wrap: wrap; }
 .token-form input { flex: 1 1 140px; min-width: 0; }
 .add-repo { display: flex; gap: 8px; }
-.add-repo input { flex: 1; min-width: 0; }
+.add-repo .combobox { flex: 1; min-width: 0; }
+.combobox { position: relative; }
+.combobox input { width: 100%; }
+.combobox-list {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+.combobox-option {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combobox-option[aria-selected='true'] { background: var(--info-bg); }
 .repo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .repo-item { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
 .repo-item-row { display: flex; align-items: center; gap: 2px; }
