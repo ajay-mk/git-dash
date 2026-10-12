@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput } from './schema';
+import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput, pruneLayout } from './schema';
 
 describe('parseRepoInput', () => {
   it('accepts owner/name and GitHub URLs', () => {
@@ -34,6 +34,25 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...valid, repos: Array(51).fill(valid.repos[0]) })).toThrow(ConfigError);
   });
 
+  it('keeps only known sections, groupings and pinned widgets', () => {
+    const parsed = parseConfig({
+      ...valid,
+      layout: {
+        collapsedInbox: ['assigned', 'bogus', 'assigned', 7],
+        groupMyPullRequests: 'repo',
+        collapsedWidgets: ['github:a/b#issues', 'github:gone/repo#issues', 'github:a/b#nope', 1],
+      },
+    });
+    expect(parsed.layout).toEqual({
+      collapsedInbox: ['assigned'],
+      groupMyPullRequests: 'repo',
+      collapsedWidgets: ['github:a/b#issues'],
+    });
+    expect(parseConfig({ ...valid, layout: { groupMyPullRequests: 'size' } }).layout).toEqual(
+      defaultConfig().layout,
+    );
+  });
+
   it('sanitises and clamps fields', () => {
     const parsed = parseConfig({
       ...valid,
@@ -59,10 +78,27 @@ describe('parseConfig', () => {
     expect(parsed.theme).toBe('system');
     expect(parsed.inbox.enabled).toBe(true);
     expect(parsed.inbox.limit).toBe(20);
+    expect(parsed.layout).toEqual(defaultConfig().layout);
     expect(parsed.repos).toHaveLength(1); // case-insensitive duplicate dropped
     expect(parsed.repos[0]!.widgets).toEqual([
       { type: 'issues', limit: 1, label: 'bug' },
       { type: 'pullRequests', limit: 5, hideDrafts: false },
     ]);
+  });
+});
+
+describe('pruneLayout', () => {
+  it('forgets collapsed widgets that are no longer pinned', () => {
+    const repo = { provider: 'github' as const, owner: 'a', name: 'b', widgets: defaultWidgets() };
+    const config = {
+      ...defaultConfig(),
+      repos: [repo],
+      layout: { ...defaultConfig().layout, collapsedWidgets: ['github:a/b#issues', 'github:a/b#pullRequests'] },
+    };
+    expect(pruneLayout(config)).toBe(config);
+
+    const fewer = { ...config, repos: [{ ...repo, widgets: defaultWidgets().filter((w) => w.type !== 'issues') }] };
+    expect(pruneLayout(fewer).layout.collapsedWidgets).toEqual(['github:a/b#pullRequests']);
+    expect(pruneLayout({ ...config, repos: [] }).layout.collapsedWidgets).toEqual([]);
   });
 });

@@ -45,10 +45,52 @@ export interface InboxConfig {
   limit: number;
 }
 
+export const INBOX_SECTIONS = ['reviewRequests', 'myPullRequests', 'assigned'] as const;
+export type InboxSection = (typeof INBOX_SECTIONS)[number];
+
+export const PR_GROUPINGS = ['none', 'repo', 'status'] as const;
+export type PrGrouping = (typeof PR_GROUPINGS)[number];
+
+/**
+ * How the sidebar and repo cards are laid out. Kept apart from the repo and
+ * inbox settings because changing it should not refetch anything.
+ */
+export interface LayoutConfig {
+  /** Sections the user has collapsed. */
+  collapsedInbox: InboxSection[];
+  /** How "Your pull requests" is grouped. */
+  groupMyPullRequests: PrGrouping;
+  /** Repo card widgets the user has collapsed, as `widgetKey()` values. */
+  collapsedWidgets: string[];
+}
+
+/**
+ * The entries of `keys` that name a widget still on a pinned repo, in display
+ * order, so removed repos and widgets do not linger.
+ */
+export function pinnedWidgetKeys(repos: readonly PinnedRepo[], keys: readonly unknown[]): string[] {
+  return repos.flatMap((repo) =>
+    repo.widgets.map((w) => widgetKey(repo, w.type)).filter((key) => keys.includes(key)),
+  );
+}
+
+/** Drops layout entries for widgets that are no longer pinned. */
+export function pruneLayout(config: DashboardConfig): DashboardConfig {
+  const collapsedWidgets = pinnedWidgetKeys(config.repos, config.layout.collapsedWidgets);
+  if (collapsedWidgets.length === config.layout.collapsedWidgets.length) return config;
+  return { ...config, layout: { ...config.layout, collapsedWidgets } };
+}
+
+/** Identifies one widget on one repo card. */
+export function widgetKey(repo: Pick<PinnedRepo, 'provider' | 'owner' | 'name'>, type: WidgetType): string {
+  return `${repoId(repo)}#${type}`;
+}
+
 export interface DashboardConfig {
   version: typeof CONFIG_VERSION;
   repos: PinnedRepo[];
   inbox: InboxConfig;
+  layout: LayoutConfig;
   /** Auto-refresh interval in minutes; 0 disables it. */
   refreshMinutes: number;
   theme: Theme;
@@ -87,6 +129,7 @@ export function defaultConfig(): DashboardConfig {
     version: CONFIG_VERSION,
     repos: [],
     inbox: { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 10 },
+    layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [] },
     refreshMinutes: 5,
     theme: 'system',
   };
@@ -210,11 +253,23 @@ export function parseConfig(raw: unknown): DashboardConfig {
     limit: clampInt(inboxRaw.limit, MIN_ITEMS, MAX_ITEMS, defaults.inbox.limit),
   };
 
+  const layoutRaw = isObj(raw.layout) ? raw.layout : {};
+  const collapsedInboxRaw: unknown[] = Array.isArray(layoutRaw.collapsedInbox) ? layoutRaw.collapsedInbox : [];
+  const layout: LayoutConfig = {
+    collapsedInbox: INBOX_SECTIONS.filter((section) => collapsedInboxRaw.includes(section)),
+    groupMyPullRequests: (PR_GROUPINGS as readonly unknown[]).includes(layoutRaw.groupMyPullRequests)
+      ? (layoutRaw.groupMyPullRequests as PrGrouping)
+      : defaults.layout.groupMyPullRequests,
+    collapsedWidgets: Array.isArray(layoutRaw.collapsedWidgets)
+      ? pinnedWidgetKeys(repos, layoutRaw.collapsedWidgets)
+      : [],
+  };
+
   const refresh = (REFRESH_CHOICES as readonly number[]).includes(raw.refreshMinutes as number)
     ? (raw.refreshMinutes as number)
     : defaults.refreshMinutes;
 
   const theme = (THEMES as readonly unknown[]).includes(raw.theme) ? (raw.theme as Theme) : defaults.theme;
 
-  return { version: CONFIG_VERSION, repos, inbox, refreshMinutes: refresh, theme };
+  return { version: CONFIG_VERSION, repos, inbox, layout, refreshMinutes: refresh, theme };
 }
