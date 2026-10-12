@@ -156,7 +156,7 @@ describe('App', () => {
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Reorder octo/three' }), { button: 0, pointerId: 1 });
       over.mockReturnValue(card('one'));
-      fireEvent.pointerMove(window, { pointerId: 1, clientX: 5, clientY: 5 });
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 5, clientY: 5 });
 
       expect(titles()).toEqual(['octo/three', 'octo/one', 'octo/two']);
       expect(card('three').classList.contains('dragging')).toBe(true);
@@ -172,12 +172,28 @@ describe('App', () => {
       over.mockRestore();
     });
 
+    it('ignores other pointers and ends a drag released outside the window', async () => {
+      await renderRepos();
+      const over = vi.spyOn(document, 'elementFromPoint');
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Reorder octo/one' }), { button: 0, pointerId: 1 });
+      over.mockReturnValue(screen.getByRole('article', { name: /^octo\/two:/ }));
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 5, clientY: 5 });
+      fireEvent.pointerCancel(window, { pointerId: 7 });
+      expect(titles()).toEqual(['octo/two', 'octo/one', 'octo/three']);
+
+      // Back in the window with no button held: the drop already happened.
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 0, clientX: 5, clientY: 5 });
+      expect(savedOrder()).toEqual(['two', 'one', 'three']);
+      expect(screen.getByRole('article', { name: /^octo\/one:/ }).classList.contains('dragging')).toBe(false);
+      over.mockRestore();
+    });
+
     it('cancels a drag with Escape', async () => {
       await renderRepos();
       const over = vi.spyOn(document, 'elementFromPoint');
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Reorder octo/one' }), { button: 0, pointerId: 1 });
       over.mockReturnValue(screen.getByRole('article', { name: /^octo\/three:/ }));
-      fireEvent.pointerMove(window, { pointerId: 1, clientX: 5, clientY: 5 });
+      fireEvent.pointerMove(window, { pointerId: 1, buttons: 1, clientX: 5, clientY: 5 });
       expect(titles()).toEqual(['octo/two', 'octo/three', 'octo/one']);
 
       fireEvent.keyDown(window, { key: 'Escape' });
@@ -231,7 +247,7 @@ describe('App', () => {
       const card = screen.getByRole('article', { name: /^octo\/one:/ });
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
       // Two open lists with 28px rows: 112px down adds two entries to each.
-      fireEvent.pointerMove(window, { pointerId: 2, clientX: 2, clientY: 112 });
+      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 2, clientY: 112 });
 
       expect(card.classList.contains('resizing')).toBe(true);
       expect(card.style.gridColumn).toBe('span 2');
@@ -247,7 +263,7 @@ describe('App', () => {
     it('cancels a resize with Escape', async () => {
       await renderRepos();
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Resize octo/one' }), { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
-      fireEvent.pointerMove(window, { pointerId: 2, clientX: 2, clientY: 112 });
+      fireEvent.pointerMove(window, { pointerId: 2, buttons: 1, clientX: 2, clientY: 112 });
       fireEvent.keyDown(window, { key: 'Escape' });
       fireEvent.pointerUp(window, { pointerId: 2 });
       expect(saved().layout.cardSpans).toEqual({});

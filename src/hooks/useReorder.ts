@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useWindowDrag } from './useWindowDrag';
 
 /** Returns a copy of `list` with the item at `from` moved to `to`. */
 export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
@@ -58,15 +59,13 @@ export function useReorder(ids: readonly string[], onCommit: (ids: string[]) => 
     setAnnouncement(`Moved ${labelRef.current(current.id)} to position ${current.order.indexOf(current.id) + 1} of ${current.order.length}.`);
   }, [setDragState]);
 
-  // While dragging, follow the pointer anywhere in the window. Listening on
-  // the window rather than capturing the pointer on the handle keeps the drag
-  // alive when React moves the dragged card (and its handle) in the DOM.
   const dragging = drag !== null;
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e: globalThis.PointerEvent) => {
+  useWindowDrag(
+    dragging,
+    () => dragRef.current?.pointerId,
+    (e) => {
       const current = dragRef.current;
-      if (!current || current.pointerId !== e.pointerId) return;
+      if (!current) return;
       const over = document
         .elementFromPoint(e.clientX, e.clientY)
         ?.closest(`[${REORDER_ATTR}]`)
@@ -78,30 +77,9 @@ export function useReorder(ids: readonly string[], onCommit: (ids: string[]) => 
       if (over === current.skip) return;
       const order = moveItem(current.order, current.order.indexOf(current.id), current.order.indexOf(over));
       setDragState({ ...current, order, skip: over });
-    };
-    const onUp = (e: globalThis.PointerEvent) => {
-      if (dragRef.current?.pointerId === e.pointerId) finish(true);
-    };
-    const onCancel = () => finish(false);
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        finish(false);
-      }
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onCancel);
-    window.addEventListener('blur', onCancel);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onCancel);
-      window.removeEventListener('blur', onCancel);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [dragging, finish, setDragState]);
+    },
+    finish,
+  );
 
   // Moving an element in the DOM can drop its focus; keep it on the handle
   // that was just moved with the keyboard.

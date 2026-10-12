@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useWindowDrag } from './useWindowDrag';
 import { MAX_CARD_SPAN, MAX_ITEMS } from '../config/schema';
 
 /** A resize in progress, as previewed on the card. */
@@ -92,11 +93,12 @@ export function useCardResize({ onSpan, onRows, describe }: {
   );
 
   const dragging = drag !== null;
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e: globalThis.PointerEvent) => {
+  useWindowDrag(
+    dragging,
+    () => dragRef.current?.pointerId,
+    (e) => {
       const d = dragRef.current;
-      if (!d || d.pointerId !== e.pointerId) return;
+      if (!d) return;
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
       const span = clamp(Math.round((d.width + dx + d.gap) / (d.column + d.gap)), 1, d.columns);
@@ -105,30 +107,9 @@ export function useCardResize({ onSpan, onRows, describe }: {
       if (span !== d.span || delta !== d.delta || minHeight !== d.minHeight) {
         setDragState({ ...d, span, delta, minHeight });
       }
-    };
-    const onUp = (e: globalThis.PointerEvent) => {
-      if (dragRef.current?.pointerId === e.pointerId) finish(true);
-    };
-    const onCancel = () => finish(false);
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        finish(false);
-      }
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onCancel);
-    window.addEventListener('blur', onCancel);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onCancel);
-      window.removeEventListener('blur', onCancel);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [dragging, finish, setDragState]);
+    },
+    finish,
+  );
 
   /**
    * Props for a card's resize grip. `span` is the card's current width and
