@@ -85,7 +85,7 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           # Ad-hoc signature, so the app runs on Apple Silicon (which refuses
-          # unsigned code). It is not trusted by Gatekeeper; see README.
+          # unsigned code). It is not trusted by Gatekeeper; see docs/installing.md.
           # To sign and notarize, replace this with the certificate's identity
           # and add (all from repository secrets):
           #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
@@ -156,4 +156,4 @@ jobs:
             --verify-tag \
             --title "GitDash $TAG" \
             --generate-notes \
-            --notes "These builds are not code-signed yet. See the README's \"Installing\" section for what to expect, and verify downloads against SHA256SUMS.txt."
+            --notes "These builds are not code-signed yet. See docs/installing.md in the repository for what to expect, and verify downloads against SHA256SUMS.txt."
