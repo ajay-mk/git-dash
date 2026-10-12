@@ -47,7 +47,8 @@ function gridColumns(grid: HTMLElement): number | null {
  */
 export function useCardResize({ onSpan, onRows, describe }: {
   onSpan: (id: string, span: number) => void;
-  onRows: (id: string, delta: number) => void;
+  /** Returns whether any list actually changed (they may be at their limit). */
+  onRows: (id: string, delta: number) => boolean;
   /** Describes a card's size after a change, for the live announcement. */
   describe: (id: string, span: number, delta: number) => string;
 }) {
@@ -64,7 +65,7 @@ export function useCardResize({ onSpan, onRows, describe }: {
   // Cards cannot be wider than the grid, so track how many columns it has.
   useEffect(() => {
     if (!grid) return;
-    const measure = () => setColumns(gridColumns(grid) ?? MAX_CARD_SPAN);
+    const measure = () => setColumns(Math.min(gridColumns(grid) ?? MAX_CARD_SPAN, MAX_CARD_SPAN));
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
@@ -86,8 +87,8 @@ export function useCardResize({ onSpan, onRows, describe }: {
       const { id, span, delta, startSpan } = current;
       if (span === startSpan && delta === 0) return;
       if (span !== startSpan) callbacks.current.onSpan(id, span);
-      if (delta !== 0) callbacks.current.onRows(id, delta);
-      setAnnouncement(callbacks.current.describe(id, span, delta));
+      const rows = delta !== 0 && callbacks.current.onRows(id, delta);
+      if (span !== startSpan || rows) setAnnouncement(callbacks.current.describe(id, span, rows ? delta : 0));
     },
     [setDragState],
   );
@@ -170,8 +171,8 @@ export function useCardResize({ onSpan, onRows, describe }: {
       e.preventDefault();
       nextSpan = clamp(nextSpan, 1, columns);
       if (nextSpan !== span) onSpan(id, nextSpan);
-      if (delta !== 0) onRows(id, delta);
-      if (nextSpan !== span || delta !== 0) setAnnouncement(describe(id, nextSpan, delta));
+      const rows = delta !== 0 && onRows(id, delta);
+      if (nextSpan !== span || rows) setAnnouncement(describe(id, nextSpan, rows ? delta : 0));
     },
   });
 

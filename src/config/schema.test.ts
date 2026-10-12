@@ -131,5 +131,8 @@ describe('shiftListLimits', () => {
     ]);
     expect(shiftListLimits(widgets, -4).map((w) => ('limit' in w ? w.limit : null))).toEqual([null, 1, 1]);
     expect(shiftListLimits(widgets, 40).map((w) => ('limit' in w ? w.limit : null))).toEqual([null, 20, 20]);
+    expect(shiftListLimits(widgets, 1, ['issues'])[2]).toBe(widgets[2]);
+    const atMin = shiftListLimits(widgets, -10);
+    expect(shiftListLimits(atMin, -1).every((w, i) => w === atMin[i])).toBe(true);
   });
 });

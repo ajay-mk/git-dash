@@ -11,6 +11,7 @@ import {
   WIDGET_TYPES,
   type DashboardConfig,
   type PinnedRepo,
+  type WidgetType,
 } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { isAuthError, useDashboard } from './hooks/useDashboard';
@@ -104,14 +105,23 @@ export default function App() {
         else delete cardSpans[id];
         return { ...c, layout: { ...c.layout, cardSpans } };
       }),
-    onRows: (id, delta) =>
+    onRows: (id, delta) => {
+      // Collapsed lists are not part of the card's height, so they keep their limit.
+      const repo = reposById.get(id);
+      if (!repo) return false;
+      const widgets = shiftListLimits(repo.widgets, delta, collapsedTypes(config, repo));
+      if (widgets.every((w, i) => w === repo.widgets[i])) return false;
       update((c) => ({
         ...c,
-        repos: c.repos.map((r) => (repoId(r) === id ? { ...r, widgets: shiftListLimits(r.widgets, delta) } : r)),
-      })),
+        repos: c.repos.map((r) =>
+          repoId(r) === id ? { ...r, widgets: shiftListLimits(r.widgets, delta, collapsedTypes(c, r)) } : r,
+        ),
+      }));
+      return true;
+    },
     describe: (id, span, delta) => {
       const repo = reposById.get(id);
-      return `${repoLabel(id)} is ${span} ${span === 1 ? 'column' : 'columns'} wide${repo ? `, ${entriesText(repo, delta)}` : ''}.`;
+      return `${repoLabel(id)} is ${span} ${span === 1 ? 'column' : 'columns'} wide${repo ? `, ${entriesText(repo, delta, collapsedTypes(config, repo))}` : ''}.`;
     },
   });
 
@@ -209,7 +219,7 @@ export default function App() {
             <div ref={bindGrid} className={`grid${reorder.dragging ? ' reordering' : ''}${resize.resizing ? ' resizing' : ''}`}>
               {reorder.order.map((id) => reposById.get(id)).filter((r) => r !== undefined).map((repo) => {
                 const id = repoId(repo);
-                const collapsedWidgets = WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)));
+                const collapsedWidgets = collapsedTypes(config, repo);
                 const span = Math.min(config.layout.cardSpans[id] ?? 1, resize.columns);
                 const resizing = resize.resizing?.id === id ? resize.resizing : null;
                 const lists = repo.widgets.filter((w) => w.type !== 'ci' && !collapsedWidgets.includes(w.type)).length;
@@ -224,7 +234,7 @@ export default function App() {
                       <>
                         {resizing && (
                           <span className="resize-hint" aria-hidden="true">
-                            {resizing.span} {resizing.span === 1 ? 'column' : 'columns'} · {entriesText(repo, resizing.delta)}
+                            {resizing.span} {resizing.span === 1 ? 'column' : 'columns'} · {entriesText(repo, resizing.delta, collapsedWidgets)}
                           </span>
                         )}
                         <button type="button" className="resize-grip" title="Drag to resize" {...resize.gripProps(id, repoLabel(id), span, lists)} />
@@ -302,12 +312,17 @@ export default function App() {
   );
 }
 
-/** "5 entries" or "5 pull requests, 3 issues" for a card's lists after `delta`. */
-function entriesText(repo: PinnedRepo, delta: number): string {
+/** Widget types collapsed on a repo's card. */
+function collapsedTypes(config: DashboardConfig, repo: PinnedRepo): WidgetType[] {
+  return WIDGET_TYPES.filter((t) => config.layout.collapsedWidgets.includes(widgetKey(repo, t)));
+}
+
+/** "5 entries" or "5 pull requests, 3 issues" for a card's open lists after `delta`. */
+function entriesText(repo: PinnedRepo, delta: number, collapsed: readonly WidgetType[]): string {
   const limits = shiftListLimits(repo.widgets, delta).flatMap((w) =>
-    w.type === 'ci' ? [] : [{ type: w.type, limit: w.limit }],
+    w.type === 'ci' || collapsed.includes(w.type) ? [] : [{ type: w.type, limit: w.limit }],
   );
-  if (limits.length === 0) return 'no lists';
+  if (limits.length === 0) return 'no open lists';
   const first = limits[0]!.limit;
   if (limits.every((l) => l.limit === first)) return `${first} ${first === 1 ? 'entry' : 'entries'}`;
   return limits.map((l) => `${l.limit} ${l.type === 'pullRequests' ? 'pull requests' : 'issues'}`).join(', ');

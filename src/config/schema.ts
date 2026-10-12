@@ -145,12 +145,20 @@ export function defaultWidget(type: WidgetType): WidgetConfig {
 
 /**
  * Grows or shrinks every list widget (pull requests, issues) by `delta`
- * entries, within the allowed range, keeping their differences.
+ * entries, within the allowed range, keeping their differences. Widgets in
+ * `skip` (such as collapsed ones) are left alone.
  */
-export function shiftListLimits(widgets: readonly WidgetConfig[], delta: number): WidgetConfig[] {
-  return widgets.map((w) =>
-    w.type === 'ci' ? w : { ...w, limit: Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, w.limit + delta)) },
-  );
+export function shiftListLimits(
+  widgets: readonly WidgetConfig[],
+  delta: number,
+  skip: readonly WidgetType[] = [],
+): WidgetConfig[] {
+  return widgets.map((w) => {
+    if (w.type === 'ci' || skip.includes(w.type)) return w;
+    const limit = Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, w.limit + delta));
+    // Unchanged widgets keep their identity, so callers can tell nothing moved.
+    return limit === w.limit ? w : { ...w, limit };
+  });
 }
 
 export function defaultWidgets(): WidgetConfig[] {

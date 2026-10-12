@@ -242,6 +242,26 @@ describe('App', () => {
       expect(limits('one')).toEqual([6, 6]);
     });
 
+    it('leaves collapsed lists alone and does nothing at the entry limit', async () => {
+      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      const layout = { ...defaultConfig().layout, collapsedWidgets: ['github:octo/one#issues'] };
+      const one = pinned('octo', 'one', {
+        widgets: [{ type: 'pullRequests', limit: 1, hideDrafts: false }, { type: 'issues', limit: 5, label: null }],
+      });
+      saveConfig({ ...defaultConfig(), repos: [one, repos[1]!], layout, inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+      (await screen.findByRole('button', { name: 'Resize octo/one' })).focus();
+
+      await userEvent.keyboard('{ArrowUp}');
+      expect(limits('one')).toEqual([1, 5]);
+      expect(screen.queryByText(/octo\/one is/)).toBeNull();
+
+      await userEvent.keyboard('{ArrowDown}');
+      expect(limits('one')).toEqual([2, 5]);
+      expect(screen.getByText('octo/one is 1 column wide, 2 entries.')).toBeTruthy();
+    });
+
     it('resizes by dragging the grip and only saves on release', async () => {
       await renderRepos();
       const card = screen.getByRole('article', { name: /^octo\/one:/ });
