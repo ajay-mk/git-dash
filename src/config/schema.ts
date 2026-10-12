@@ -45,10 +45,28 @@ export interface InboxConfig {
   limit: number;
 }
 
+export const INBOX_SECTIONS = ['reviewRequests', 'myPullRequests', 'assigned'] as const;
+export type InboxSection = (typeof INBOX_SECTIONS)[number];
+
+export const PR_GROUPINGS = ['none', 'repo', 'status'] as const;
+export type PrGrouping = (typeof PR_GROUPINGS)[number];
+
+/**
+ * How the sidebar is laid out. Kept apart from `InboxConfig` because changing
+ * it should not refetch anything.
+ */
+export interface InboxView {
+  /** Sections the user has collapsed. */
+  collapsed: InboxSection[];
+  /** How "Your pull requests" is grouped. */
+  groupMyPullRequests: PrGrouping;
+}
+
 export interface DashboardConfig {
   version: typeof CONFIG_VERSION;
   repos: PinnedRepo[];
   inbox: InboxConfig;
+  inboxView: InboxView;
   /** Auto-refresh interval in minutes; 0 disables it. */
   refreshMinutes: number;
   theme: Theme;
@@ -87,6 +105,7 @@ export function defaultConfig(): DashboardConfig {
     version: CONFIG_VERSION,
     repos: [],
     inbox: { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 10 },
+    inboxView: { collapsed: [], groupMyPullRequests: 'none' },
     refreshMinutes: 5,
     theme: 'system',
   };
@@ -210,11 +229,20 @@ export function parseConfig(raw: unknown): DashboardConfig {
     limit: clampInt(inboxRaw.limit, MIN_ITEMS, MAX_ITEMS, defaults.inbox.limit),
   };
 
+  const viewRaw = isObj(raw.inboxView) ? raw.inboxView : {};
+  const collapsedRaw: unknown[] = Array.isArray(viewRaw.collapsed) ? viewRaw.collapsed : [];
+  const inboxView: InboxView = {
+    collapsed: INBOX_SECTIONS.filter((section) => collapsedRaw.includes(section)),
+    groupMyPullRequests: (PR_GROUPINGS as readonly unknown[]).includes(viewRaw.groupMyPullRequests)
+      ? (viewRaw.groupMyPullRequests as PrGrouping)
+      : defaults.inboxView.groupMyPullRequests,
+  };
+
   const refresh = (REFRESH_CHOICES as readonly number[]).includes(raw.refreshMinutes as number)
     ? (raw.refreshMinutes as number)
     : defaults.refreshMinutes;
 
   const theme = (THEMES as readonly unknown[]).includes(raw.theme) ? (raw.theme as Theme) : defaults.theme;
 
-  return { version: CONFIG_VERSION, repos, inbox, refreshMinutes: refresh, theme };
+  return { version: CONFIG_VERSION, repos, inbox, inboxView, refreshMinutes: refresh, theme };
 }

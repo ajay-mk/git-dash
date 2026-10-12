@@ -34,6 +34,17 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...valid, repos: Array(51).fill(valid.repos[0]) })).toThrow(ConfigError);
   });
 
+  it('keeps only known sidebar sections and groupings', () => {
+    const parsed = parseConfig({
+      ...valid,
+      inboxView: { collapsed: ['assigned', 'bogus', 'assigned', 7], groupMyPullRequests: 'repo' },
+    });
+    expect(parsed.inboxView).toEqual({ collapsed: ['assigned'], groupMyPullRequests: 'repo' });
+    expect(parseConfig({ ...valid, inboxView: { groupMyPullRequests: 'size' } }).inboxView).toEqual(
+      defaultConfig().inboxView,
+    );
+  });
+
   it('sanitises and clamps fields', () => {
     const parsed = parseConfig({
       ...valid,
@@ -59,6 +70,7 @@ describe('parseConfig', () => {
     expect(parsed.theme).toBe('system');
     expect(parsed.inbox.enabled).toBe(true);
     expect(parsed.inbox.limit).toBe(20);
+    expect(parsed.inboxView).toEqual(defaultConfig().inboxView);
     expect(parsed.repos).toHaveLength(1); // case-insensitive duplicate dropped
     expect(parsed.repos[0]!.widgets).toEqual([
       { type: 'issues', limit: 1, label: 'bug' },
