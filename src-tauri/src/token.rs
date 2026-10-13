@@ -14,6 +14,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::gitlab::{is_valid_login, Host};
 
 const SERVICE: &str = "io.github.ajay-mk.gitdash";
 /// Service name used before the rename to GitDash. Entries found there are
@@ -30,12 +31,14 @@ pub const MAX_OWNER_TOKENS: usize = 20;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Provider {
     GitHub,
+    GitLab,
 }
 
 impl Provider {
     pub fn parse(id: &str) -> Result<Self> {
         match id {
             "github" => Ok(Provider::GitHub),
+            "gitlab" => Ok(Provider::GitLab),
             other => Err(Error::UnknownProvider(other.chars().take(32).collect())),
         }
     }
@@ -43,6 +46,7 @@ impl Provider {
     fn account(self) -> &'static str {
         match self {
             Provider::GitHub => "github",
+            Provider::GitLab => "gitlab",
         }
     }
 }
@@ -106,12 +110,15 @@ fn index_account(provider: Provider) -> String {
 /// Basic sanity check before a token is sent anywhere or stored.
 ///
 /// GitHub tokens (classic `ghp_`, fine-grained `github_pat_`, OAuth `gho_`, ...)
-/// only contain ASCII letters, digits and underscores.
-pub fn validate_format(token: &str) -> Result<()> {
+/// only contain ASCII letters, digits and underscores. GitLab tokens
+/// (`glpat-...`, newer ones with `.`-separated parts) also use `-` and `.`.
+pub fn validate_format(provider: Provider, token: &str) -> Result<()> {
     let len = token.len();
-    let charset_ok = token
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    let charset_ok = token.bytes().all(|b| {
+        b.is_ascii_alphanumeric()
+            || b == b'_'
+            || (provider == Provider::GitLab && (b == b'-' || b == b'.'))
+    });
     if (MIN_TOKEN_LEN..=MAX_TOKEN_LEN).contains(&len) && charset_ok {
         Ok(())
     } else {
@@ -120,12 +127,15 @@ pub fn validate_format(token: &str) -> Result<()> {
 }
 
 /// Non-secret bookkeeping stored next to the tokens: which owners have a
-/// token, and the login each token belongs to (the keychain cannot be
-/// enumerated portably).
+/// token, the login each token belongs to (the keychain cannot be
+/// enumerated portably), and for GitLab the instance the default token is for.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Index {
     #[serde(default)]
     default_login: Option<String>,
+    /// GitLab only: the instance the default token was verified against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    host: Option<String>,
     /// Owner -> login of the account the token belongs to.
     #[serde(default)]
     owners: BTreeMap<String, String>,
@@ -138,9 +148,12 @@ impl Index {
         let Ok(index) = serde_json::from_str::<Index>(raw) else {
             return Index::default();
         };
-        let valid_login = |l: &String| Owner::parse(l).is_ok();
+        let valid_login = |l: &String| is_valid_login(l);
         Index {
             default_login: index.default_login.filter(valid_login),
+            host: index
+                .host
+                .filter(|h| Host::parse(h).is_ok_and(|p| p.as_str() == h)),
             owners: index
                 .owners
                 .into_iter()
@@ -163,6 +176,8 @@ impl Index {
 pub struct TokenSummary {
     pub has_default: bool,
     pub default_login: Option<String>,
+    /// GitLab only: the instance the default token is for.
+    pub host: Option<String>,
     pub owners: Vec<OwnerToken>,
 }
 
@@ -289,6 +304,7 @@ impl TokenStore {
         Ok(TokenSummary {
             has_default,
             default_login: index.default_login.clone().filter(|_| has_default),
+            host: index.host.clone().filter(|_| has_default),
             owners: index
                 .owners
                 .iter()
@@ -300,9 +316,27 @@ impl TokenStore {
         })
     }
 
-    /// Stores `token` (already verified to belong to `login`) in `slot`.
-    pub fn set(&self, provider: Provider, slot: &Slot, token: &str, login: &str) -> Result<()> {
-        validate_format(token)?;
+    /// The GitLab instance the default token was verified against.
+    pub fn host(&self, provider: Provider) -> Result<Option<Host>> {
+        let mut inner = self.lock()?;
+        Ok(inner
+            .index(provider)?
+            .host
+            .as_deref()
+            .and_then(|h| Host::parse(h).ok()))
+    }
+
+    /// Stores `token` (already verified to belong to `login`, on `host` for
+    /// GitLab) in `slot`.
+    pub fn set(
+        &self,
+        provider: Provider,
+        slot: &Slot,
+        token: &str,
+        login: &str,
+        host: Option<&Host>,
+    ) -> Result<()> {
+        validate_format(provider, token)?;
         let mut inner = self.lock()?;
         if let Slot::Owner(owner) = slot {
             let owners = &inner.index(provider)?.owners;
@@ -316,7 +350,10 @@ impl TokenStore {
             .insert((provider, slot.clone()), token.to_owned());
         let index = inner.index(provider)?;
         match slot {
-            Slot::Default => index.default_login = Some(login.to_owned()),
+            Slot::Default => {
+                index.default_login = Some(login.to_owned());
+                index.host = host.map(|h| h.as_str().to_owned());
+            }
             Slot::Owner(owner) => {
                 index
                     .owners
@@ -334,7 +371,10 @@ impl TokenStore {
         delete(&legacy_entry(&account)?)?;
         let index = inner.index(provider)?;
         match slot {
-            Slot::Default => index.default_login = None,
+            Slot::Default => {
+                index.default_login = None;
+                index.host = None;
+            }
             Slot::Owner(owner) => {
                 index.owners.remove(owner.as_str());
             }
@@ -357,22 +397,38 @@ mod tests {
 
     #[test]
     fn accepts_github_token_shapes() {
-        assert!(validate_format("ghp_0123456789abcdefghijABCDEFGHIJ012345").is_ok());
-        assert!(validate_format(&format!("github_pat_{}", "a1".repeat(40))).is_ok());
+        let gh = Provider::GitHub;
+        assert!(validate_format(gh, "ghp_0123456789abcdefghijABCDEFGHIJ012345").is_ok());
+        assert!(validate_format(gh, &format!("github_pat_{}", "a1".repeat(40))).is_ok());
+        assert!(validate_format(gh, "glpat-0123456789abcdefghij").is_err());
+    }
+
+    #[test]
+    fn accepts_gitlab_token_shapes() {
+        let gl = Provider::GitLab;
+        assert!(validate_format(gl, "glpat-0123456789abcdefghij").is_ok());
+        assert!(validate_format(gl, "glpat-AbCdEf0123456789_xYz.01.0w1a2b3c4").is_ok());
+        assert!(validate_format(gl, "glpat-0123456789 abcdefghij").is_err());
+        assert!(validate_format(gl, "glpat-0123456789/abcdefghij").is_err());
     }
 
     #[test]
     fn rejects_bad_tokens() {
-        assert!(validate_format("").is_err());
-        assert!(validate_format("short").is_err());
-        assert!(validate_format("ghp_0123456789abcdef ghijABCDEFGHIJ").is_err());
-        assert!(validate_format("ghp_0123456789abcdefghij\nABCDEFGHIJ").is_err());
-        assert!(validate_format(&"a".repeat(MAX_TOKEN_LEN + 1)).is_err());
+        for provider in [Provider::GitHub, Provider::GitLab] {
+            assert!(validate_format(provider, "").is_err());
+            assert!(validate_format(provider, "short").is_err());
+            assert!(validate_format(provider, "ghp_0123456789abcdef ghijABCDEFGHIJ").is_err());
+            assert!(validate_format(provider, "ghp_0123456789abcdefghij\nABCDEFGHIJ").is_err());
+            assert!(validate_format(provider, &"a".repeat(MAX_TOKEN_LEN + 1)).is_err());
+        }
     }
 
     #[test]
     fn provider_allow_list() {
         assert_eq!(Provider::parse("github").unwrap(), Provider::GitHub);
+        assert_eq!(Provider::parse("gitlab").unwrap(), Provider::GitLab);
+        assert_eq!(Slot::Default.account(Provider::GitLab), "gitlab");
+        assert_eq!(index_account(Provider::GitLab), "gitlab:index");
         assert!(Provider::parse("evil").is_err());
     }
 
@@ -467,6 +523,7 @@ mod tests {
     fn index_round_trips() {
         let mut index = Index {
             default_login: Some("ajay-mk".into()),
+            host: Some("gitlab.example.com:8443".into()),
             ..Index::default()
         };
         index.owners.insert("acme".into(), "ajay-mk".into());
@@ -477,10 +534,12 @@ mod tests {
     fn index_decode_drops_malformed_entries() {
         let raw = r#"{
             "default_login": "bad login",
+            "host": "https://evil.example.com/x",
             "owners": { "acme": "ajay-mk", "Upper": "x", "bad:owner": "x", "ok": "<script>" }
         }"#;
         let index = Index::decode(raw);
         assert_eq!(index.default_login, None);
+        assert_eq!(index.host, None);
         assert_eq!(index.owners.len(), 1);
         assert_eq!(
             index.owners.get("acme").map(String::as_str),

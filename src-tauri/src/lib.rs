@@ -1,7 +1,9 @@
 mod commands;
 mod error;
 mod github;
+mod gitlab;
 mod graphql_guard;
+mod http;
 mod token;
 
 use std::sync::Arc;
@@ -31,6 +33,7 @@ pub fn run() {
     let state = AppState {
         tokens: Arc::new(token::TokenStore::default()),
         github: github::GitHubClient::new().expect("failed to initialise HTTP client"),
+        gitlab: gitlab::GitLabClient::new().expect("failed to initialise HTTP client"),
     };
 
     tauri::Builder::default()
@@ -41,6 +44,8 @@ pub fn run() {
             commands::token_set,
             commands::token_clear,
             commands::github_graphql,
+            commands::gitlab_graphql,
+            commands::open_external,
         ])
         .setup(|app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
