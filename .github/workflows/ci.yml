@@ -17,6 +17,7 @@ jobs:
   frontend:
     name: Frontend (typecheck, lint, test, build)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -34,6 +35,7 @@ jobs:
   backend:
     name: Tauri backend (fmt, clippy, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,3 +60,39 @@ jobs:
         working-directory: src-tauri
       - run: cargo test --locked
         working-directory: src-tauri
+
+  msrv:
+    name: Tauri backend on the minimum Rust version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+      # Keep in step with rust-version in src-tauri/Cargo.toml.
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: '1.90'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: mkdir -p dist && echo '<!doctype html>' > dist/index.html
+      - run: cargo check --all-targets --locked
+        working-directory: src-tauri
+
+  workflows:
+    name: Workflow files (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
