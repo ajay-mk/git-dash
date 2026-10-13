@@ -1,13 +1,14 @@
 /**
  * Provider-agnostic data model.
  *
- * Every service (GitHub today; GitLab, Gitea, ... later) maps its API responses
+ * Every service (GitHub and GitLab today; Gitea, ... later) maps its API responses
  * into these shapes, so widgets never depend on a specific provider's API.
  */
 
 import type { InboxConfig, PinnedRepo } from '../config/schema';
 
-export type ProviderId = 'github';
+export const PROVIDER_IDS = ['github', 'gitlab'] as const;
+export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 /** Aggregated CI state for a commit. */
 export type CiState = 'success' | 'failure' | 'pending' | 'none';
@@ -29,7 +30,7 @@ export interface PullRequestItem {
   isDraft: boolean;
   review: ReviewState;
   ci: CiState;
-  /** Whether it merges cleanly; `null` while GitHub is still computing it. */
+  /** Whether it merges cleanly; `null` while the provider is still computing it. */
   mergeable: boolean | null;
   /** Repository name; set for cross-repo lists such as the inbox. */
   repo?: string;
@@ -76,7 +77,7 @@ export interface ItemDetails {
   } | null;
   /** Issues only. */
   assignees: string[];
-  /** GitHub left out some fields (e.g. checks the token cannot read). */
+  /** The provider left out some fields (e.g. checks the token cannot read). */
   incomplete: boolean;
 }
 
@@ -105,6 +106,7 @@ export type RepoErrorKind =
   | 'token_policy'
   | 'forbidden'
   | 'rate_limited'
+  | 'not_connected'
   | 'unknown';
 
 /** Why a repository could not be loaded. */
@@ -150,11 +152,16 @@ export interface Provider {
   id: ProviderId;
   label: string;
   /**
-   * Where users create an access token for this provider, prefilled where the
-   * provider allows it. With `owner`, the token is for that account or
-   * organization.
+   * Whether this provider uses per-owner tokens next to the default one
+   * (fine-grained GitHub tokens cover a single account or organization).
    */
-  newTokenUrl(owner?: string | null): string;
+  ownerTokens: boolean;
+  /**
+   * Where users create an access token for this provider, prefilled where the
+   * provider allows it. With `target`, the token is for that account or
+   * organization (GitHub) or on that instance (GitLab).
+   */
+  newTokenUrl(target?: string | null): string;
   /** Permissions a token needs, as the provider labels them. */
   tokenPermissions: readonly string[];
   /**

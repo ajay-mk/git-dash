@@ -4,7 +4,7 @@
  * be imported from a file, so everything is validated before use.
  */
 
-import type { ProviderId } from '../providers/types';
+import { PROVIDER_IDS, type ProviderId } from '../providers/types';
 
 export const CONFIG_VERSION = 1;
 
@@ -40,6 +40,7 @@ export type WidgetConfig =
 
 export interface PinnedRepo {
   provider: ProviderId;
+  /** GitHub account or organization, or GitLab namespace (`group/subgroup`). */
   owner: string;
   name: string;
   /** Ordered list; order is the display order on the card. */
@@ -207,6 +208,50 @@ export function repoId(repo: Pick<PinnedRepo, 'provider' | 'owner' | 'name'>): s
   return `${repo.provider}:${repo.owner}/${repo.name}`.toLowerCase();
 }
 
+// GitLab's rules: a project path is one or more groups plus the project, each
+// part letters, digits, '_', '-' and '.', not starting with '-' or '.' and not
+// ending in '.', '.git' or '.atom'. Groups nest at most 20 deep.
+const GITLAB_PART_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/;
+const MAX_GITLAB_PARTS = 21;
+const MAX_GITLAB_PATH = 500;
+
+function isGitLabPart(part: string): boolean {
+  return GITLAB_PART_RE.test(part) && !part.endsWith('.') && !/\.(?:git|atom)$/i.test(part);
+}
+
+/** Splits a GitLab project path (`group/subgroup/project`). Returns null if invalid. */
+export function parseGitLabPath(path: string): { owner: string; name: string } | null {
+  const value = path.replace(/\/+$/, '').replace(/\.git$/i, '');
+  const parts = value.split('/');
+  if (parts.length < 2 || parts.length > MAX_GITLAB_PARTS || value.length > MAX_GITLAB_PATH) return null;
+  if (!parts.every(isGitLabPart)) return null;
+  return { owner: parts.slice(0, -1).join('/'), name: parts.at(-1)! };
+}
+
+/**
+ * Parses "group/project", "group/subgroup/project" or a URL of a page on the
+ * GitLab instance `host` (such as a merge request). Returns null if invalid.
+ */
+export function parseGitLabInput(input: string, host: string): { owner: string; name: string } | null {
+  let value = input.trim();
+  const url = /^(?:https:\/\/)?([^/\s]+)\/(.+)$/i.exec(value);
+  if (url?.[1]?.toLowerCase() === host.toLowerCase()) value = url[2]!;
+  // Pages inside a project live under "/-/", e.g. "/-/merge_requests/1".
+  value = value.replace(/\/-(?:\/.*)?$/, '').replace(/[?#].*$/, '');
+  return parseGitLabPath(value);
+}
+
+/**
+ * The provider a pasted URL belongs to: github.com, or the connected GitLab
+ * instance. `null` for plain paths and other hosts.
+ */
+export function providerOfInput(input: string, gitlabHost: string | null): ProviderId | null {
+  const host = /^(?:https?:\/\/)?(?:www\.)?([^/\s]+)\//i.exec(input.trim())?.[1]?.toLowerCase();
+  if (host === 'github.com') return 'github';
+  if (gitlabHost && host === gitlabHost.toLowerCase()) return 'gitlab';
+  return null;
+}
+
 /** Parses "owner/name" or a github.com URL. Returns null if invalid. */
 export function parseRepoInput(input: string): { owner: string; name: string } | null {
   let value = input.trim();
@@ -272,12 +317,18 @@ function parseWidget(raw: unknown): WidgetConfig | null {
 
 function parseRepo(raw: unknown): PinnedRepo {
   if (!isObj(raw)) throw new ConfigError('Repository entry must be an object');
-  if (raw.provider !== 'github') throw new ConfigError('Unsupported provider');
+  const provider = PROVIDER_IDS.find((p) => p === raw.provider);
+  if (!provider) throw new ConfigError('Unsupported provider');
   if (typeof raw.owner !== 'string' || typeof raw.name !== 'string') {
     throw new ConfigError('Repository entry is missing owner/name');
   }
-  const parsed = parseRepoInput(`${raw.owner}/${raw.name}`);
-  if (!parsed) throw new ConfigError(`Invalid repository name: ${raw.owner}/${raw.name}`.slice(0, 200));
+  const path = `${raw.owner}/${raw.name}`;
+  const parsed = provider === 'github' ? parseRepoInput(path) : parseGitLabPath(path);
+  // GitLab owners may contain '/', so the split must also match what was stored.
+  const resplit = provider === 'gitlab' && (parsed?.owner !== raw.owner || parsed?.name !== raw.name);
+  if (!parsed || resplit) {
+    throw new ConfigError(`Invalid repository name: ${path}`.slice(0, 200));
+  }
 
   const widgets: WidgetConfig[] = [];
   const seen = new Set<WidgetType>();
@@ -290,7 +341,7 @@ function parseRepo(raw: unknown): PinnedRepo {
       }
     }
   }
-  return { provider: 'github', ...parsed, widgets };
+  return { provider, ...parsed, widgets };
 }
 
 /** Validates an untrusted value and returns a well-formed config or throws. */

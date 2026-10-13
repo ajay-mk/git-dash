@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PinnedRepo } from '../config/schema';
-import { groupByToken, mergeInbox } from './tokens';
+import { combineInboxes, groupByToken, mergeInbox } from './tokens';
 import type { Counted, InboxSnapshot, PullRequestItem } from './types';
 
 const pin = (owner: string, name: string): PinnedRepo => ({ provider: 'github', owner, name, widgets: [] });
@@ -84,5 +84,25 @@ describe('mergeInbox', () => {
     const primary = snapshot('me', { total: 1, items: [a] }, true);
     const merged = mergeInbox(primary, [snapshot('me', { total: 1, items: [b] })], 10);
     expect(merged.ssoRestricted).toBe(true);
+  });
+});
+
+describe('combineInboxes', () => {
+  const gh = pr('https://github.com/me/x/pull/1', '2026-01-03T00:00:00Z');
+  const gl = pr('https://gitlab.com/me/y/-/merge_requests/1', '2026-01-04T00:00:00Z');
+
+  it('adds up services, even for different usernames, newest first', () => {
+    const merged = combineInboxes([snapshot('octocat', { total: 3, items: [gh] }), snapshot('jane.doe', { total: 2, items: [gl] }, true)], 10);
+    expect(merged.viewer).toBe('octocat');
+    expect(merged.reviewRequests.items).toEqual([gl, gh]);
+    expect(merged.reviewRequests.total).toBe(5);
+    expect(merged.ssoRestricted).toBe(true);
+    expect(combineInboxes([snapshot('a', { total: 1, items: [gh] }), snapshot('b', { total: 1, items: [gl] })], 1).reviewRequests.items).toEqual([gl]);
+  });
+
+  it('passes a single inbox through and has an empty one for none', () => {
+    const only = snapshot('octocat', { total: 1, items: [gh] });
+    expect(combineInboxes([only], 10)).toBe(only);
+    expect(combineInboxes([], 10).reviewRequests).toEqual({ total: 0, items: [] });
   });
 });
