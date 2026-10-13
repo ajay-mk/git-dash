@@ -44,6 +44,39 @@ function projectOf(reference: unknown): string | null {
 }
 
 /** Pipeline and job states. Cancelled, skipped and manual count as no result. */
+/**
+ * Pipeline sources that never set a branch's CI status: GitLab's own
+ * "dangling" sources (child pipelines, security scans, Duo workloads, ...).
+ */
+const DANGLING_SOURCES = new Set([
+  'webide',
+  'parent_pipeline',
+  'ondemand_dast_scan',
+  'ondemand_dast_validation',
+  'security_orchestration_policy',
+  'container_registry_push',
+  'duo_workflow',
+  'pipeline_execution_policy_schedule',
+  'dependency_management_security_update',
+]);
+
+/**
+ * The newest pipeline that ran for `branch` itself, out of the pipelines of
+ * its head commit (newest first). Others can share the commit: merge request
+ * pipelines, other branches at the same commit, and dangling scans.
+ */
+export function pickBranchPipeline(nodes: unknown[], branch: string | null): Raw | null {
+  if (!branch) return null;
+  for (const node of nodes) {
+    const pipeline = obj(node);
+    if (pipeline?.ref !== branch) continue;
+    const source = str(pipeline.source)?.toLowerCase();
+    if (source && DANGLING_SOURCES.has(source)) continue;
+    return pipeline;
+  }
+  return null;
+}
+
 export function mapPipelineStatus(status: unknown): CiState {
   switch (status) {
     case 'SUCCESS':
@@ -146,7 +179,8 @@ export function mapProject(raw: unknown, config: PinnedRepo): RepoSnapshot {
     prsNeedingAttention = all.items.filter(prNeedsAttention).length;
   }
 
-  const pipeline = obj(arr(obj(obj(obj(repository?.tree)?.lastCommit)?.pipelines)?.nodes)[0]);
+  const pipelines = arr(obj(obj(obj(repository?.tree)?.lastCommit)?.pipelines)?.nodes);
+  const pipeline = pickBranchPipeline(pipelines, str(repository?.rootRef));
   return {
     fullName: str(p.fullPath) ?? `${config.owner}/${config.name}`,
     url: safeUrl(p.webUrl),

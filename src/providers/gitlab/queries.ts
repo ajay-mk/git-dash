@@ -32,6 +32,9 @@ export const OPEN_MRS_FETCHED = 50;
  */
 export const PROJECTS_PER_REQUEST = 2;
 
+/** Pipelines of the default branch's head commit searched for the branch's own. */
+export const PIPELINES_FETCHED = 10;
+
 export function projectAlias(index: number): string {
   return `p${index}`;
 }
@@ -54,9 +57,12 @@ export function buildProjectsQuery(repos: PinnedRepo[]): BuiltQuery {
     const parts = ['fullPath webUrl visibility archived'];
     const ci = repo.widgets.some((w) => w.type === 'ci');
     // The tree defaults to the default branch, so its last commit is the
-    // branch head; its newest pipeline is the branch's CI state.
+    // branch head. That commit's newest pipeline can belong to another ref
+    // (a merge request, a branch at the same commit) or be a scan that does
+    // not count towards the branch's status, so a few are fetched and
+    // `pickBranchPipeline` chooses.
     parts.push(
-      `repository { rootRef ${ci ? 'tree { lastCommit { pipelines(first: 1) { nodes { status } } } }' : ''} }`,
+      `repository { rootRef ${ci ? `tree { lastCommit { pipelines(first: ${PIPELINES_FETCHED}) { nodes { status ref source } } } }` : ''} }`,
     );
 
     for (const widget of repo.widgets) {

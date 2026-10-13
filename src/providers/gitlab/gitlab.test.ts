@@ -4,7 +4,7 @@ import { gitlabGraphql } from '../../lib/transport';
 import { setGitLabHost } from '../../lib/url';
 import { normalizeGitLabHost } from './host';
 import { gitlab } from './index';
-import { mapDetails, mapInbox, mapIssue, mapMergeRequest, mapPipelineStatus, mapProject, parseItemUrl } from './map';
+import { mapDetails, mapInbox, mapIssue, mapMergeRequest, mapPipelineStatus, mapProject, parseItemUrl, pickBranchPipeline } from './map';
 import { buildProjectsQuery, OPEN_MRS_FETCHED, PROJECTS_PER_REQUEST } from './queries';
 import { gitlabTokenUrl } from './tokenTemplate';
 
@@ -103,7 +103,7 @@ describe('buildProjectsQuery', () => {
 
   it('only requests sections for enabled widgets', () => {
     const { query, variables } = buildProjectsQuery([{ ...project, widgets: [{ type: 'ci' }] }]);
-    expect(query).toContain('pipelines(first: 1)');
+    expect(query).toContain('pipelines(first: 10) { nodes { status ref source } }');
     expect(query).not.toContain('mergeRequests(');
     expect(query).not.toContain('issues(');
     expect(Object.keys(variables)).toEqual(['path0']);
@@ -124,6 +124,20 @@ describe('mappers', () => {
     expect(mapPipelineStatus('CANCELED')).toBe('none');
     expect(mapPipelineStatus('MANUAL')).toBe('none');
     expect(mapPipelineStatus(undefined)).toBe('none');
+  });
+
+  it("picks the default branch's own pipeline", () => {
+    // Newest first, as on gitlab.com: workloads and scans share the head commit.
+    const nodes = [
+      { status: 'SUCCESS', ref: 'refs/workloads/df5fa8', source: 'duo_workflow' },
+      { status: 'SUCCESS', ref: 'refs/merge-requests/4/head', source: 'merge_request_event' },
+      { status: 'SUCCESS', ref: 'main', source: 'security_orchestration_policy' },
+      { status: 'FAILED', ref: 'main', source: 'push' },
+      { status: 'SUCCESS', ref: 'main', source: 'push' },
+    ];
+    expect(pickBranchPipeline(nodes, 'main')?.status).toBe('FAILED');
+    expect(pickBranchPipeline(nodes.slice(0, 3), 'main')).toBeNull();
+    expect(pickBranchPipeline(nodes, null)).toBeNull();
   });
 
   it('maps a merge request', () => {
@@ -183,7 +197,7 @@ describe('mappers', () => {
         webUrl: web('acme/platform/api'),
         visibility: 'private',
         archived: false,
-        repository: { rootRef: 'main', tree: { lastCommit: { pipelines: { nodes: [{ status: 'FAILED' }] } } } },
+        repository: { rootRef: 'main', tree: { lastCommit: { pipelines: { nodes: [{ status: 'FAILED', ref: 'main', source: 'push' }] } } } },
         mergeRequests: {
           count: 9,
           nodes: [
