@@ -50,6 +50,8 @@ export interface IssueItem {
   repo?: string;
   /** When it was last assigned to you; set for the inbox's assigned items. */
   assignedAt?: string;
+  /** Some of its fields failed to load, so they may read as empty. */
+  partial?: boolean;
 }
 
 /** One CI check on a pull request's head commit. */

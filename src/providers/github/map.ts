@@ -214,27 +214,33 @@ export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnaps
   const d = obj(data) ?? {};
   const viewer = str(obj(d.viewer)?.login) ?? '';
   const me = viewer.toLowerCase();
-  const reviewRequest = (n: unknown): PullRequestItem | null => {
+  // Items whose fields (a check rollup, the timeline) were lost to an error.
+  const lost = (section: string) =>
+    new Set(
+      errors.flatMap((e) =>
+        e.path?.[0] === section && e.path[1] === 'nodes' && typeof e.path[2] === 'number' && e.path.length > 3
+          ? [e.path[2]]
+          : [],
+      ),
+    );
+  const lostReviews = lost('reviewRequests');
+  const lostMine = lost('myPullRequests');
+  const lostAssigned = lost('assigned');
+  const reviewRequest = (n: unknown, index: number): PullRequestItem | null => {
     const pr = mapPullRequest(n);
+    if (!pr) return null;
     const at = lastEvent(n, 'requestedReviewer', reviewRequestMatcher(n, me));
-    return pr && at ? { ...pr, requestedAt: at } : pr;
+    return { ...pr, ...(at ? { requestedAt: at } : {}), ...(lostReviews.has(index) ? { partial: true } : {}) };
   };
-  const assignment = (n: unknown): IssueItem | null => {
-    const item = mapIssue(n);
-    const at = lastEvent(n, 'assignee', (who) => str(who.login)?.toLowerCase() === me);
-    return item && at ? { ...item, assignedAt: at } : item;
-  };
-  // Pull requests whose fields (e.g. the check rollup) were lost to an error.
-  const partial = new Set(
-    errors.flatMap((e) =>
-      e.path?.[0] === 'myPullRequests' && e.path[1] === 'nodes' && typeof e.path[2] === 'number' && e.path.length > 3
-        ? [e.path[2]]
-        : [],
-    ),
-  );
   const mine = (n: unknown, index: number): PullRequestItem | null => {
     const pr = mapPullRequest(n);
-    return pr && partial.has(index) ? { ...pr, partial: true } : pr;
+    return pr && lostMine.has(index) ? { ...pr, partial: true } : pr;
+  };
+  const assignment = (n: unknown, index: number): IssueItem | null => {
+    const item = mapIssue(n);
+    if (!item) return null;
+    const at = lastEvent(n, 'assignee', (who) => str(who.login)?.toLowerCase() === me);
+    return { ...item, ...(at ? { assignedAt: at } : {}), ...(lostAssigned.has(index) ? { partial: true } : {}) };
   };
   return {
     viewer,

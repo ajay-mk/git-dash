@@ -136,6 +136,27 @@ describe('inboxAlerts', () => {
     expect(inboxAlerts(inbox(), fresh, SINCE).map((a) => a.title)).toEqual(['Review requested', 'Issue assigned to you']);
   });
 
+  it('notifies a re-request made between two refreshes', () => {
+    const first = pr({ url: 'https://github.com/o/r/pull/1', updatedAt: FRESH, requestedAt: OLD });
+    const again = { ...first, requestedAt: FRESH };
+    const seen = new SeenItems();
+    const before = inbox({ reviewRequests: counted(first) });
+    seen.remember(before);
+    expect(inboxAlerts(before, inbox({ reviewRequests: counted(again) }), SINCE, seen)).toEqual([
+      { title: 'Review requested', body: '#1 Add feature' },
+    ]);
+  });
+
+  it('waits for the request time of an item whose timeline failed to load', () => {
+    const lost = pr({ url: 'https://github.com/o/r/pull/1', updatedAt: FRESH, partial: true });
+    const assigned = issue({ url: 'https://github.com/o/r/issues/2', updatedAt: FRESH, partial: true });
+    const next = inbox({ reviewRequests: counted(lost), assigned: counted(assigned), incomplete: true });
+    expect(inboxAlerts(inbox(), next, SINCE)).toEqual([]);
+    // Once it loads, an old request is not news.
+    const loaded = inbox({ reviewRequests: counted(pr({ url: lost.url, updatedAt: FRESH, requestedAt: OLD })) });
+    expect(inboxAlerts(next, loaded, SINCE)).toEqual([]);
+  });
+
   it('reports a pull request that fails CI and gets changes requested at once', () => {
     const before = pr();
     const after = pr({ ci: 'failure', review: 'changes_requested' });
@@ -147,8 +168,8 @@ describe('inboxAlerts', () => {
     const seen = new SeenItems(2);
     const item = (n: number) => pr({ url: `https://github.com/o/r/pull/${n}` });
     seen.remember(inbox({ reviewRequests: counted(item(1), item(2), item(3)) }));
-    expect(seen.has('review https://github.com/o/r/pull/1')).toBe(false);
-    expect(seen.has('review https://github.com/o/r/pull/3')).toBe(true);
+    expect(seen.has('review https://github.com/o/r/pull/1 ')).toBe(false);
+    expect(seen.has('review https://github.com/o/r/pull/3 ')).toBe(true);
   });
 
   it('says nothing when the account changed', () => {

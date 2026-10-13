@@ -23,11 +23,23 @@ function label(item: PullRequestItem | IssueItem): string {
 }
 
 /**
+ * A review request or assignment: the item and when the request was made, so
+ * a re-request of the same pull request is a new one.
+ */
+function requestKey(prefix: string, item: PullRequestItem | IssueItem): string {
+  return `${prefix}${item.url} ${requestTime(item) ?? ''}`;
+}
+
+function requestTime(item: PullRequestItem | IssueItem): string | undefined {
+  return 'isPullRequest' in item ? item.assignedAt : item.requestedAt;
+}
+
+/**
  * Review requests and assignments already seen this session. Lists only hold
  * the newest entries, so an item can drop out for a refresh and come back;
- * remembering it keeps that from notifying twice. An item missing from a list
- * that shows everything has really gone (reviewed, unassigned), so it is
- * forgotten and a later re-request notifies again.
+ * remembering it keeps that from notifying twice. A request missing from a
+ * list that shows everything has really gone (reviewed, unassigned), so it is
+ * forgotten. Items with fields lost to an error are left as they were.
  */
 export class SeenItems {
   private readonly keys = new Set<string>();
@@ -41,11 +53,15 @@ export class SeenItems {
   /** Remembers the review requests and assignments in `snapshot`. */
   remember(snapshot: InboxSnapshot): void {
     for (const [prefix, section] of sections(snapshot)) {
-      const present = new Set(section.items.map((item) => `${prefix}${item.url}`));
+      const loaded = section.items.filter((item) => !item.partial);
+      const present = new Set(loaded.map((item) => requestKey(prefix, item)));
+      const unsure = section.items.filter((item) => item.partial).map((item) => `${prefix}${item.url} `);
       // With a token's results missing, absent items may only be hidden.
       if (!snapshot.incomplete && section.items.length >= section.total) {
         for (const key of this.keys) {
-          if (key.startsWith(prefix) && !present.has(key)) this.keys.delete(key);
+          if (key.startsWith(prefix) && !present.has(key) && !unsure.some((u) => key.startsWith(u))) {
+            this.keys.delete(key);
+          }
         }
       }
       for (const key of present) {
@@ -61,7 +77,7 @@ export class SeenItems {
   }
 }
 
-function sections(snapshot: InboxSnapshot): [string, Counted<{ url: string }>][] {
+function sections(snapshot: InboxSnapshot): [string, Counted<PullRequestItem | IssueItem>][] {
   return [
     ['review ', snapshot.reviewRequests],
     ['assigned ', snapshot.assigned],
@@ -87,17 +103,26 @@ export function inboxAlerts(
   const recent = (at: string) => Date.parse(at) >= since - CLOCK_SLACK_MS;
   const alerts: Alert[] = [];
 
-  const seenReviews = new Set(prev.reviewRequests.items.map((pr) => pr.url));
-  for (const pr of next.reviewRequests.items) {
-    if (!seenReviews.has(pr.url) && !seen.has(`review ${pr.url}`) && recent(pr.requestedAt ?? pr.updatedAt)) {
-      alerts.push({ title: 'Review requested', body: label(pr) });
-    }
-  }
-
-  const seenAssigned = new Set(prev.assigned.items.map((item) => item.url));
-  for (const item of next.assigned.items) {
-    if (!seenAssigned.has(item.url) && !seen.has(`assigned ${item.url}`) && recent(item.assignedAt ?? item.updatedAt)) {
-      alerts.push({ title: item.isPullRequest ? 'Pull request assigned to you' : 'Issue assigned to you', body: label(item) });
+  for (const [prefix, section] of sections(next)) {
+    const before = new Set(
+      sections(prev)
+        .find(([p]) => p === prefix)![1]
+        .items.filter((item) => !item.partial)
+        .map((item) => requestKey(prefix, item)),
+    );
+    for (const item of section.items) {
+      // Without its request time, an item waits until it loads.
+      if (item.partial) continue;
+      const key = requestKey(prefix, item);
+      const at = requestTime(item) ?? item.updatedAt;
+      if (before.has(key) || seen.has(key) || !recent(at)) continue;
+      const title =
+        prefix === 'review '
+          ? 'Review requested'
+          : 'isPullRequest' in item && item.isPullRequest
+            ? 'Pull request assigned to you'
+            : 'Issue assigned to you';
+      alerts.push({ title, body: label(item) });
     }
   }
 

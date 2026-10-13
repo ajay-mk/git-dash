@@ -180,6 +180,12 @@ describe('mappers', () => {
       [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['myPullRequests', 'nodes', 1, 'commits'] }],
     );
     expect(inbox.myPullRequests.items.map((pr) => pr.partial)).toEqual([undefined, true]);
+    const timeline = mapInbox(
+      { viewer: { login: 'me' }, reviewRequests: { issueCount: 1, nodes: [{ number: 1, timelineItems: null }] } },
+      [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['reviewRequests', 'nodes', 0, 'timelineItems'] }],
+    );
+    expect(timeline.reviewRequests.items[0]).toMatchObject({ partial: true });
+    expect(timeline.reviewRequests.items[0]?.requestedAt).toBeUndefined();
   });
 
   it('marks inbox results cut short by other errors incomplete', () => {
