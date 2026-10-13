@@ -156,17 +156,21 @@ pub async fn gitlab_graphql(
 #[tauri::command]
 pub async fn open_external(app: AppHandle, state: State<'_, AppState>, url: String) -> Result<()> {
     let url = Url::parse(&url).map_err(|_| Error::ForbiddenUrl)?;
-    // A keychain problem must not stop GitHub links from opening.
-    let gitlab = blocking(&state.tokens, |t| t.host(Provider::GitLab))
-        .await
-        .ok()
-        .flatten();
-    if !is_allowed_link(&url, gitlab.as_ref()) {
+    let checked = url.clone();
+    if !blocking(&state.tokens, move |t| Ok(may_open(t, &checked))).await? {
         return Err(Error::ForbiddenUrl);
     }
     app.opener()
         .open_url(url.as_str(), None::<&str>)
         .map_err(|_| Error::Internal)
+}
+
+/// Whether `url` may be opened in the system browser. Reads the keychain
+/// index, so call it off the main thread.
+pub(crate) fn may_open(tokens: &TokenStore, url: &Url) -> bool {
+    // A keychain problem must not stop GitHub links from opening.
+    let gitlab = tokens.host(Provider::GitLab).ok().flatten();
+    is_allowed_link(url, gitlab.as_ref())
 }
 
 /// GitHub and gitlab.com pages (where tokens are created before anything is
@@ -214,6 +218,8 @@ mod tests {
             &url("https://github.com.evil.com/a"),
             None
         ));
+        assert!(!is_allowed_link(&url("https://gist.github.com/a"), None));
+        assert!(!is_allowed_link(&url("javascript:alert(1)"), None));
         assert!(!is_allowed_link(&url("file:///etc/passwd"), Some(&gitlab)));
     }
 }

@@ -8,7 +8,10 @@ mod token;
 
 use std::sync::Arc;
 
-use tauri::{webview::WebviewWindowBuilder, Url, WebviewUrl};
+use tauri::{
+    webview::{NewWindowResponse, WebviewWindowBuilder},
+    Url, WebviewUrl,
+};
 
 use commands::AppState;
 
@@ -28,6 +31,25 @@ fn is_app_url(url: &Url) -> bool {
     }
 }
 
+/// The app never opens windows of its own. A request for one (a middle- or
+/// Ctrl-click on a link, `window.open`) would otherwise get a bare webview
+/// popup on Windows, outside the navigation allow-list. Links that
+/// `open_external` would accept go to the system browser instead, like a
+/// normal click; anything else is dropped.
+fn on_new_window<R: tauri::Runtime>(
+    tokens: &Arc<token::TokenStore>,
+    url: Url,
+) -> NewWindowResponse<R> {
+    let tokens = Arc::clone(tokens);
+    // The allow-list reads the keychain, which must not block the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        if commands::may_open(&tokens, &url) {
+            let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+        }
+    });
+    NewWindowResponse::Deny
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = AppState {
@@ -35,6 +57,8 @@ pub fn run() {
         github: github::GitHubClient::new().expect("failed to initialise HTTP client"),
         gitlab: gitlab::GitLabClient::new().expect("failed to initialise HTTP client"),
     };
+
+    let tokens = Arc::clone(&state.tokens);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -53,6 +77,7 @@ pub fn run() {
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(480.0, 400.0)
                 .on_navigation(is_app_url)
+                .on_new_window(move |url, _| on_new_window(&tokens, url))
                 .build()?;
             Ok(())
         })
