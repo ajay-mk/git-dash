@@ -61,7 +61,7 @@ repository cards show the error instead).
 
 ## GitLab
 
-GitDash works with gitlab.com and with self-hosted GitLab 16 or newer that is
+GitDash works with gitlab.com and with self-hosted GitLab 18 or newer that is
 reachable over HTTPS. Choose **GitLab** on the setup screen, or **Settings →
 Access tokens → Connect GitLab** once GitHub is connected.
 

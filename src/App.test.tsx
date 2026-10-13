@@ -105,6 +105,7 @@ describe('App', () => {
     const project = pinned('acme/platform', 'api', { provider: 'gitlab' });
     const projectData = {
       data: {
+        viewer: { username: 'jane.doe' },
         p0: {
           fullPath: 'acme/platform/api',
           webUrl: 'https://gitlab.example.com/acme/platform/api',

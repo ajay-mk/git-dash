@@ -80,7 +80,7 @@ function GitLabHelp({ host }: { host: string | null }) {
         <li>Choose an expiry date, create the token and paste it below.</li>
       </ol>
       <p className="hint">
-        One token covers every group and project your account can see. Self-hosted instances need GitLab 16
+        One token covers every group and project your account can see. Self-hosted instances need GitLab 18
         or newer and must be reachable over HTTPS.
       </p>
     </>
