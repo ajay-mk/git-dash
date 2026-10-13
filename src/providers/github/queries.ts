@@ -89,6 +89,15 @@ export function buildReposQuery(repos: PinnedRepo[]): BuiltQuery {
   return { query, variables };
 }
 
+/** The latest few review requests or assignments, to tell when yours happened. */
+const EVENTS_FETCHED = 10;
+const REVIEW_REQUESTED = `timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: ${EVENTS_FETCHED}) {
+  nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } } }
+}`;
+const ASSIGNED = `timelineItems(itemTypes: [ASSIGNED_EVENT], last: ${EVENTS_FETCHED}) {
+  nodes { ... on AssignedEvent { createdAt assignee { __typename ... on User { login } } } }
+}`;
+
 export const INBOX_QUERY = `
 query GitDashInbox(
   $n: Int!
@@ -97,7 +106,7 @@ query GitDashInbox(
 ) {
   viewer { login }
   reviewRequests: search(query: $reviewQ, type: ISSUE, first: $n) @include(if: $withReview) {
-    issueCount nodes { ... on PullRequest { ${PR_FIELDS} } }
+    issueCount nodes { ... on PullRequest { ${PR_FIELDS} ${REVIEW_REQUESTED} } }
   }
   myPullRequests: search(query: $mineQ, type: ISSUE, first: $n) @include(if: $withMine) {
     issueCount nodes { ... on PullRequest { ${PR_FIELDS} } }
@@ -106,8 +115,8 @@ query GitDashInbox(
     issueCount
     nodes {
       __typename
-      ... on Issue { ${ISSUE_FIELDS} }
-      ... on PullRequest { ${ISSUE_FIELDS} }
+      ... on Issue { ${ISSUE_FIELDS} ${ASSIGNED} }
+      ... on PullRequest { ${ISSUE_FIELDS} ${ASSIGNED} }
     }
   }
 }

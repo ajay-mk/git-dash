@@ -112,6 +112,30 @@ describe('inboxAlerts', () => {
     ]);
   });
 
+  it('keeps items while a token\'s results are missing', () => {
+    const a = pr({ url: 'https://github.com/o/r/pull/1', updatedAt: FRESH });
+    const seen = new SeenItems();
+    const withA = inbox({ reviewRequests: counted(a) });
+    // A came from a per-owner token whose request failed this time.
+    const partial = inbox({ incomplete: true });
+    seen.remember(withA);
+    seen.remember(partial);
+    expect(inboxAlerts(partial, withA, SINCE, seen)).toEqual([]);
+  });
+
+  it('goes by when the request or assignment happened, not the last update', () => {
+    // Old requests brought into view by a new comment.
+    const review = pr({ url: 'https://github.com/o/r/pull/1', updatedAt: FRESH, requestedAt: OLD });
+    const assigned = issue({ url: 'https://github.com/o/r/issues/2', updatedAt: FRESH, assignedAt: OLD });
+    const next = inbox({ reviewRequests: { total: 9, items: [review] }, assigned: { total: 9, items: [assigned] } });
+    expect(inboxAlerts(inbox(), next, SINCE)).toEqual([]);
+    const fresh = inbox({
+      reviewRequests: counted({ ...review, requestedAt: FRESH }),
+      assigned: counted({ ...assigned, assignedAt: FRESH }),
+    });
+    expect(inboxAlerts(inbox(), fresh, SINCE).map((a) => a.title)).toEqual(['Review requested', 'Issue assigned to you']);
+  });
+
   it('reports a pull request that fails CI and gets changes requested at once', () => {
     const before = pr();
     const after = pr({ ci: 'failure', review: 'changes_requested' });

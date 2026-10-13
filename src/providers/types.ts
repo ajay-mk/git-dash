@@ -33,6 +33,8 @@ export interface PullRequestItem {
   mergeable: boolean | null;
   /** Repository name; set for cross-repo lists such as the inbox. */
   repo?: string;
+  /** When your review was last requested; set for the inbox's review requests. */
+  requestedAt?: string;
 }
 
 export interface IssueItem {
@@ -44,6 +46,8 @@ export interface IssueItem {
   labels: Label[];
   isPullRequest: boolean;
   repo?: string;
+  /** When it was last assigned to you; set for the inbox's assigned items. */
+  assignedAt?: string;
 }
 
 /** One CI check on a pull request's head commit. */
@@ -126,6 +130,8 @@ export interface InboxSnapshot {
   assigned: Counted<IssueItem>;
   /** Some results were withheld because an organization requires SSO the token is not authorized for. */
   ssoRestricted: boolean;
+  /** A token's results are missing (its request failed), so lists may lack items. */
+  incomplete?: boolean;
 }
 
 export interface RateLimit {

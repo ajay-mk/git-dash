@@ -163,13 +163,43 @@ export function mapRateLimit(v: unknown): RateLimit | null {
 
 const EMPTY: Counted<never> = { total: 0, items: [] };
 
+/**
+ * When the latest of `node`'s timeline events (review requests or
+ * assignments) for `viewer` happened. `key` names the event's user field. A
+ * request to a team counts too, since the search found the item through it.
+ */
+function lastEventFor(node: unknown, key: string, viewer: string): string | undefined {
+  let latest: string | undefined;
+  for (const event of arr(obj(obj(node)?.timelineItems)?.nodes)) {
+    const e = obj(event);
+    const who = obj(e?.[key]);
+    const at = str(e?.createdAt);
+    if (!at || !who) continue;
+    const mine = who.__typename === 'Team' || str(who.login)?.toLowerCase() === viewer;
+    if (mine && (!latest || at > latest)) latest = at;
+  }
+  return latest;
+}
+
 export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnapshot {
   const d = obj(data) ?? {};
+  const viewer = str(obj(d.viewer)?.login) ?? '';
+  const me = viewer.toLowerCase();
+  const reviewRequest = (n: unknown): PullRequestItem | null => {
+    const pr = mapPullRequest(n);
+    const at = lastEventFor(n, 'requestedReviewer', me);
+    return pr && at ? { ...pr, requestedAt: at } : pr;
+  };
+  const assignment = (n: unknown): IssueItem | null => {
+    const item = mapIssue(n);
+    const at = lastEventFor(n, 'assignee', me);
+    return item && at ? { ...item, assignedAt: at } : item;
+  };
   return {
-    viewer: str(obj(d.viewer)?.login) ?? '',
-    reviewRequests: d.reviewRequests ? mapConnection(d.reviewRequests, mapPullRequest, 'issueCount') : EMPTY,
+    viewer,
+    reviewRequests: d.reviewRequests ? mapConnection(d.reviewRequests, reviewRequest, 'issueCount') : EMPTY,
     myPullRequests: d.myPullRequests ? mapConnection(d.myPullRequests, mapPullRequest, 'issueCount') : EMPTY,
-    assigned: d.assigned ? mapConnection(d.assigned, mapIssue, 'issueCount') : EMPTY,
+    assigned: d.assigned ? mapConnection(d.assigned, assignment, 'issueCount') : EMPTY,
     // Search results from SSO-protected organizations come back as null
     // nodes, each with a SAML error.
     ssoRestricted: errors.some(isSamlFailure),

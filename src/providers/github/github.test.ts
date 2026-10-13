@@ -123,6 +123,37 @@ describe('mappers', () => {
     expect(inbox.ssoRestricted).toBe(false);
   });
 
+  it('takes when your review was requested or the item assigned to you', () => {
+    const event = (createdAt: string, who: unknown, key: string) => ({ createdAt, [key]: who });
+    const inbox = mapInbox({
+      viewer: { login: 'Me' },
+      reviewRequests: {
+        issueCount: 2,
+        nodes: [
+          {
+            number: 1,
+            timelineItems: {
+              nodes: [
+                event('2026-10-01T00:00:00Z', { __typename: 'User', login: 'me' }, 'requestedReviewer'),
+                event('2026-10-05T00:00:00Z', { __typename: 'User', login: 'someone' }, 'requestedReviewer'),
+              ],
+            },
+          },
+          { number: 2, timelineItems: { nodes: [event('2026-10-03T00:00:00Z', { __typename: 'Team' }, 'requestedReviewer')] } },
+        ],
+      },
+      assigned: {
+        issueCount: 2,
+        nodes: [
+          { number: 3, timelineItems: { nodes: [event('2026-10-02T00:00:00Z', { __typename: 'User', login: 'me' }, 'assignee')] } },
+          { number: 4 },
+        ],
+      },
+    });
+    expect(inbox.reviewRequests.items.map((pr) => pr.requestedAt)).toEqual(['2026-10-01T00:00:00Z', '2026-10-03T00:00:00Z']);
+    expect(inbox.assigned.items.map((item) => item.assignedAt)).toEqual(['2026-10-02T00:00:00Z', undefined]);
+  });
+
   it('flags inbox results hidden by SSO', () => {
     const inbox = mapInbox(
       { viewer: { login: 'me' }, reviewRequests: { issueCount: 2, nodes: [null] } },
@@ -248,6 +279,15 @@ describe('github provider', () => {
     });
     const inbox = await github.fetchInbox({ enabled: true, limit: 5, reviewRequests: false, myPullRequests: false, assigned: true }, []);
     expect(inbox.ssoRestricted).toBe(true);
+  });
+
+  it('marks the inbox incomplete when a per-owner token fails', async () => {
+    const config = { enabled: true, limit: 5, reviewRequests: true, myPullRequests: false, assigned: false };
+    const ok = { data: { viewer: { login: 'me' }, reviewRequests: { issueCount: 0, nodes: [] } } };
+    graphql.mockImplementation((_query, _variables, owner) => (owner ? Promise.reject(new Error('revoked')) : Promise.resolve(ok)));
+    expect((await github.fetchInbox(config, ['corp'])).incomplete).toBe(true);
+    graphql.mockImplementation(() => Promise.resolve(ok));
+    expect((await github.fetchInbox(config, ['corp'])).incomplete).toBeUndefined();
   });
 });
 

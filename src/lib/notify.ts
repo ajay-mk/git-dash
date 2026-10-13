@@ -42,7 +42,8 @@ export class SeenItems {
   remember(snapshot: InboxSnapshot): void {
     for (const [prefix, section] of sections(snapshot)) {
       const present = new Set(section.items.map((item) => `${prefix}${item.url}`));
-      if (section.items.length >= section.total) {
+      // With a token's results missing, absent items may only be hidden.
+      if (!snapshot.incomplete && section.items.length >= section.total) {
         for (const key of this.keys) {
           if (key.startsWith(prefix) && !present.has(key)) this.keys.delete(key);
         }
@@ -81,19 +82,21 @@ export function inboxAlerts(
 ): Alert[] {
   // A different account: everything would look new.
   if (prev.viewer !== next.viewer) return [];
-  const recent = (item: { updatedAt: string }) => Date.parse(item.updatedAt) >= since - CLOCK_SLACK_MS;
+  // An old request can move into view because of an unrelated update (a
+  // comment, a push), so the request's own time counts when it is known.
+  const recent = (at: string) => Date.parse(at) >= since - CLOCK_SLACK_MS;
   const alerts: Alert[] = [];
 
   const seenReviews = new Set(prev.reviewRequests.items.map((pr) => pr.url));
   for (const pr of next.reviewRequests.items) {
-    if (!seenReviews.has(pr.url) && !seen.has(`review ${pr.url}`) && recent(pr)) {
+    if (!seenReviews.has(pr.url) && !seen.has(`review ${pr.url}`) && recent(pr.requestedAt ?? pr.updatedAt)) {
       alerts.push({ title: 'Review requested', body: label(pr) });
     }
   }
 
   const seenAssigned = new Set(prev.assigned.items.map((item) => item.url));
   for (const item of next.assigned.items) {
-    if (!seenAssigned.has(item.url) && !seen.has(`assigned ${item.url}`) && recent(item)) {
+    if (!seenAssigned.has(item.url) && !seen.has(`assigned ${item.url}`) && recent(item.assignedAt ?? item.updatedAt)) {
       alerts.push({ title: item.isPullRequest ? 'Pull request assigned to you' : 'Issue assigned to you', body: label(item) });
     }
   }
