@@ -21,17 +21,22 @@ pub fn client() -> Result<reqwest::Client> {
         .map_err(|_| Error::Internal)
 }
 
-/// Reads a response body, refusing anything larger than 8 MiB.
-pub async fn read_body(response: reqwest::Response) -> Result<Vec<u8>> {
+/// Reads a response body, refusing anything larger than 8 MiB. The body is
+/// read chunk by chunk, so a server that sends more than it announced (or
+/// announces nothing) is cut off at the limit instead of being buffered.
+pub async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>> {
     if response
         .content_length()
-        .is_some_and(|len| len as usize > MAX_RESPONSE_BYTES)
+        .is_some_and(|len| len > MAX_RESPONSE_BYTES as u64)
     {
         return Err(Error::RequestTooLarge);
     }
-    let body = response.bytes().await?;
-    if body.len() > MAX_RESPONSE_BYTES {
-        return Err(Error::RequestTooLarge);
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(Error::RequestTooLarge);
+        }
+        body.extend_from_slice(&chunk);
     }
-    Ok(body.to_vec())
+    Ok(body)
 }
