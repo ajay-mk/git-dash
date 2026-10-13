@@ -10,6 +10,7 @@ use tauri::{
     webview::{NewWindowResponse, WebviewWindowBuilder},
     Url, WebviewUrl,
 };
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 use commands::AppState;
 
@@ -50,6 +51,11 @@ fn on_new_window<R: tauri::Runtime>(url: Url) -> NewWindowResponse<R> {
     NewWindowResponse::Deny
 }
 
+/// What is remembered about the window between launches.
+const WINDOW_STATE: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = AppState {
@@ -59,6 +65,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(WINDOW_STATE)
+                // Restored in `setup` instead, before the window is shown.
+                .skip_initial_state("main")
+                .build(),
+        )
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::token_list,
@@ -67,13 +80,20 @@ pub fn run() {
             commands::github_graphql,
         ])
         .setup(|app| {
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("GitDash")
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(480.0, 400.0)
                 .on_navigation(is_app_url)
                 .on_new_window(|url, _| on_new_window(url))
+                // Hidden until its saved size and position are applied, so it
+                // does not appear at the default size and then jump.
+                .visible(false)
                 .build()?;
+            // A saved position on a monitor that is no longer connected is
+            // ignored, and the OS places the window instead.
+            let _ = window.restore_state(WINDOW_STATE);
+            window.show()?;
             Ok(())
         })
         .run(tauri::generate_context!())
