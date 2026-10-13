@@ -26,9 +26,6 @@ pub struct Bounds {
     pub y: f64,
     pub width: f64,
     pub height: f64,
-    /// The width in desktop coordinates, to check the position against the
-    /// screens. Outside macOS these are physical pixels, unlike `width`.
-    pub desktop_width: f64,
     pub maximized: bool,
 }
 
@@ -39,6 +36,9 @@ pub struct Area {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    /// Points to desktop units: the screen's scale factor outside macOS, 1 on
+    /// macOS, whose desktop is laid out in points.
+    pub scale: f64,
 }
 
 impl Area {
@@ -57,6 +57,11 @@ impl Area {
             y,
             width,
             height,
+            scale: if cfg!(target_os = "macos") {
+                1.0
+            } else {
+                scale
+            },
         }
     }
 }
@@ -110,7 +115,7 @@ const MIN_VISIBLE: f64 = 64.0;
 impl Bounds {
     /// Whether the saved values are usable at all.
     fn is_sane(&self, min_width: f64, min_height: f64) -> bool {
-        let finite = [self.x, self.y, self.width, self.height, self.desktop_width]
+        let finite = [self.x, self.y, self.width, self.height]
             .iter()
             .all(|v| v.is_finite());
         finite
@@ -122,7 +127,8 @@ impl Bounds {
     pub fn is_visible_on(&self, screens: &[Area]) -> bool {
         screens.iter().any(|s| {
             let left = self.x.max(s.x);
-            let right = (self.x + self.desktop_width).min(s.x + s.width);
+            // The window's width in this screen's units, at its current scale.
+            let right = (self.x + self.width * s.scale).min(s.x + s.width);
             let top_on_screen = self.y >= s.y && self.y < s.y + s.height - MIN_VISIBLE / 2.0;
             right - left >= MIN_VISIBLE && top_on_screen
         })
@@ -193,18 +199,12 @@ pub fn track<R: Runtime>(window: &Window<R>) {
         return;
     };
     let (x, y) = desktop_position(position, scale);
-    let desktop_width = if cfg!(target_os = "macos") {
-        size.to_logical::<f64>(scale).width
-    } else {
-        f64::from(size.width)
-    };
     let size = size.to_logical::<f64>(scale);
     *saved = Some(Bounds {
         x,
         y,
         width: size.width,
         height: size.height,
-        desktop_width,
         maximized: false,
     });
 }
@@ -234,12 +234,14 @@ mod tests {
         y: 0.0,
         width: 1440.0,
         height: 900.0,
+        scale: 1.0,
     };
     const RIGHT: Area = Area {
         x: 1440.0,
         y: 0.0,
         width: 1920.0,
         height: 1080.0,
+        scale: 1.0,
     };
 
     fn bounds(x: f64, y: f64) -> Bounds {
@@ -248,7 +250,6 @@ mod tests {
             y,
             width: 1280.0,
             height: 840.0,
-            desktop_width: 1280.0,
             maximized: false,
         }
     }
@@ -275,12 +276,14 @@ mod tests {
     #[test]
     fn checks_the_width_in_desktop_units() {
         // A 1280-point window at 200% is 2560 pixels wide: its right part is
-        // still on screen.
-        let scaled = Bounds {
-            desktop_width: 2560.0,
-            ..bounds(-2400.0, 40.0)
+        // still on screen. At 100% it would be off it.
+        let hidpi = Area {
+            scale: 2.0,
+            width: 2880.0,
+            height: 1800.0,
+            ..SCREEN
         };
-        assert!(scaled.is_visible_on(&[SCREEN]));
+        assert!(bounds(-2400.0, 40.0).is_visible_on(&[hidpi]));
         assert!(!bounds(-2400.0, 40.0).is_visible_on(&[SCREEN]));
     }
 
