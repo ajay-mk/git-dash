@@ -128,9 +128,13 @@ impl Bounds {
             && (min_height..=100_000.0).contains(&self.height)
     }
 
-    /// Centers the window on `screen` unless it is already there.
+    /// Centers the window on `screen` unless its middle is already there.
     pub fn move_onto(&mut self, screen: &Area) {
-        if self.is_visible_on(std::slice::from_ref(screen)) {
+        let middle_x = self.x + self.width * screen.scale / 2.0;
+        let middle_y = self.y + self.height * screen.scale / 2.0;
+        if (screen.x..screen.x + screen.width).contains(&middle_x)
+            && (screen.y..screen.y + screen.height).contains(&middle_y)
+        {
             return;
         }
         self.x = screen.x + ((screen.width - self.width * screen.scale) / 2.0).max(0.0);
@@ -200,9 +204,13 @@ pub fn track<R: Runtime>(window: &Window<R>) {
         return;
     }
     let maximized = window.is_maximized().unwrap_or(false);
-    if maximized || window.is_fullscreen().unwrap_or(false) {
+    let fullscreen = window.is_fullscreen().unwrap_or(false);
+    if maximized || fullscreen {
         if let Some(bounds) = saved.as_mut() {
-            bounds.maximized = maximized;
+            // Fullscreen is not restored; keep the state it replaced.
+            if !fullscreen {
+                bounds.maximized = true;
+            }
             // Moved to another screen while maximized: restore there.
             if let Ok(Some(monitor)) = window.current_monitor() {
                 bounds.move_onto(&Area::of(&monitor));
@@ -317,6 +325,10 @@ mod tests {
         moved.move_onto(&RIGHT);
         assert_eq!((moved.x, moved.y), (1440.0 + 320.0, 120.0));
         assert!(moved.is_visible_on(&[RIGHT]));
+        // Mostly on the left screen, just reaching onto the right one.
+        let mut reaching = bounds(240.0, 40.0);
+        reaching.move_onto(&RIGHT);
+        assert_eq!(reaching.x, 1440.0 + 320.0);
         // Already there: left where it was.
         let mut kept = bounds(80.0, 40.0);
         kept.move_onto(&SCREEN);
