@@ -76,14 +76,10 @@ export default function App() {
   }, [config.theme]);
 
   const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
-  const notify = config.notifications;
-  const onInboxChange = useCallback<InboxChangeHandler>(
-    (prev, next, since) => {
-      if (notify) void showAlerts(inboxAlerts(prev, next, since)).catch(() => undefined);
-    },
-    [notify],
-  );
-  const dash = useDashboard(config, tokenOwners, auth === 'ready', onInboxChange);
+  const onInboxChange = useCallback<InboxChangeHandler>((prev, next, since) => {
+    void showAlerts(inboxAlerts(prev, next, since)).catch(() => undefined);
+  }, []);
+  const dash = useDashboard(config, tokenOwners, auth === 'ready', config.notifications ? onInboxChange : undefined);
   const loadDetails = useCallback((url: string) => providers.github.fetchDetails(url, tokenOwners), [tokenOwners]);
 
   // A revoked or expired token sends the user back to the setup screen.
@@ -174,7 +170,7 @@ export default function App() {
           setAuthReason(null);
           setAuth('ready');
           void reloadTokens().catch(() => undefined);
-          void dash.refresh();
+          void dash.refresh({ tokensChanged: true });
         }}
         {...(auth === 'replacing' ? { onCancel: () => setAuth('ready') } : {})}
       />
@@ -325,7 +321,7 @@ export default function App() {
           void reloadTokens().then(
             (info) => {
               // A changed owner set refetches on its own; a replaced token does not.
-              if (info.owners.map((o) => o.owner).join(',') === before) void dash.refresh();
+              if (info.owners.map((o) => o.owner).join(',') === before) void dash.refresh({ tokensChanged: true });
             },
             () => undefined,
           );

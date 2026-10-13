@@ -1,8 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultConfig, type DashboardConfig } from '../config/schema';
 import { providers } from '../providers';
 import type { InboxSnapshot } from '../providers/types';
+import { pinned } from '../test/fixtures';
 import { useDashboard } from './useDashboard';
 
 function inbox(viewer: string): InboxSnapshot {
@@ -43,5 +44,51 @@ describe('useDashboard inbox changes', () => {
     await act(() => result.current.refresh());
     expect(onChange).toHaveBeenCalledTimes(2);
     expect(fetchInbox).toHaveBeenCalledTimes(4);
+  });
+
+  it('starts over after a token is added or replaced', async () => {
+    vi.spyOn(providers.github, 'fetchInbox').mockResolvedValue(inbox('octocat'));
+    const onChange = vi.fn();
+    const config = defaultConfig();
+    const { result } = renderHook(() => useDashboard(config, [], true, onChange));
+    await waitFor(() => expect(result.current.inbox).not.toBeNull());
+
+    await act(() => result.current.refresh({ tokensChanged: true }));
+    expect(onChange).not.toHaveBeenCalled();
+    await act(() => result.current.refresh());
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  describe('while the window is hidden', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      delete (document as { hidden?: boolean }).hidden;
+    });
+
+    async function hiddenPolls(onChange?: () => void) {
+      vi.useFakeTimers();
+      const fetchInbox = vi.spyOn(providers.github, 'fetchInbox').mockResolvedValue(inbox('octocat'));
+      const fetchRepos = vi.spyOn(providers.github, 'fetchRepos').mockResolvedValue({ repos: new Map(), rateLimit: null });
+      const config = { ...defaultConfig(), repos: [pinned()], refreshMinutes: 5 };
+      renderHook(() => useDashboard(config, [], true, onChange));
+      await act(() => vi.advanceTimersByTimeAsync(1000));
+      expect(fetchRepos).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+      await act(() => vi.advanceTimersByTimeAsync(5 * 60_000));
+      return { fetchInbox, fetchRepos };
+    }
+
+    it('keeps checking "Needs you" when notifications are on', async () => {
+      const { fetchInbox, fetchRepos } = await hiddenPolls(vi.fn());
+      expect(fetchInbox).toHaveBeenCalledTimes(2);
+      expect(fetchRepos).toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses everything when notifications are off', async () => {
+      const { fetchInbox, fetchRepos } = await hiddenPolls();
+      expect(fetchInbox).toHaveBeenCalledTimes(1);
+      expect(fetchRepos).toHaveBeenCalledTimes(1);
+    });
   });
 });

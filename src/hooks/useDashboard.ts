@@ -42,8 +42,16 @@ function asAppError(err: unknown): AppError {
 /**
  * Loads dashboard data and keeps it fresh. Refreshes when the config changes,
  * on the configured interval, and when the window regains focus after the
- * data went stale. Polling pauses while the window is hidden.
+ * data went stale. Polling pauses while the window is hidden, except for
+ * "Needs you" while `onInboxChange` is set.
  */
+export interface RefreshOptions {
+  /** Only fetch "Needs you", leaving the cards as they are. */
+  inboxOnly?: boolean;
+  /** A token was added or replaced, so the next inbox starts a new baseline. */
+  tokensChanged?: boolean;
+}
+
 /**
  * Called after a refresh with the previous and new "Needs you" snapshots,
  * when both were fetched with the same settings and tokens. `since` is when
@@ -74,6 +82,7 @@ export function useDashboard(
   const ownersRef = useRef(tokenOwners);
   const onInboxChangeRef = useRef(onInboxChange);
   // The last inbox fetched, with its settings and time, to compare the next one against.
+  const busy = useRef(false);
   const lastInbox = useRef<{ key: string; at: number; snapshot: InboxSnapshot } | null>(null);
   // Declared before the fetch effect so it runs first in the same commit.
   useEffect(() => {
@@ -82,10 +91,14 @@ export function useDashboard(
     onInboxChangeRef.current = onInboxChange;
   }, [config, tokenOwners, onInboxChange]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options: RefreshOptions = {}) => {
+    const { inboxOnly = false, tokensChanged = false } = options;
+    // Data fetched with other tokens is no baseline for notifications.
+    if (tokensChanged) lastInbox.current = null;
     const id = ++requestId.current;
+    busy.current = true;
     const startedAt = Date.now();
-    lastFetch.current = startedAt;
+    if (!inboxOnly) lastFetch.current = startedAt;
     // Drop auth errors right away so a freshly saved token leaves the setup
     // screen immediately; other errors stay visible until the reload finishes.
     setState((s) => ({ ...s, loading: true, error: s.error && isAuthError(s.error) ? null : s.error }));
@@ -95,10 +108,15 @@ export function useDashboard(
     const provider = providers.github;
 
     const [repoRes, inboxRes] = await Promise.allSettled([
-      repos.length > 0 ? provider.fetchRepos(repos, owners) : Promise.resolve({ repos: new Map(), rateLimit: null }),
+      inboxOnly
+        ? Promise.resolve(null)
+        : repos.length > 0
+          ? provider.fetchRepos(repos, owners)
+          : Promise.resolve({ repos: new Map(), rateLimit: null }),
       inbox.enabled ? provider.fetchInbox(inbox, owners) : Promise.resolve(null),
     ]);
     if (id !== requestId.current) return; // a newer refresh superseded this one
+    busy.current = false;
 
     if (inboxRes.status === 'fulfilled' && inboxRes.value) {
       const prev = lastInbox.current;
@@ -107,14 +125,17 @@ export function useDashboard(
     }
 
     setState((s) => {
-      const next: DashboardState = { ...s, loading: false, error: null };
+      // An inbox-only refresh leaves the cards, and any error about them, as they are.
+      const next: DashboardState = { ...s, loading: false, error: inboxOnly ? s.error : null };
       if (repoRes.status === 'fulfilled') {
+        if (repoRes.value) {
         // Only fresh repository data counts as an update; after a failure the
         // cards still show the previous data and must not look current.
-        next.lastUpdated = new Date();
-        next.repos = repoRes.value.repos;
-        next.rateLimit = repoRes.value.rateLimit ?? s.rateLimit;
-        shownKeys.current.repos = keys.repos;
+          next.lastUpdated = new Date();
+          next.repos = repoRes.value.repos;
+          next.rateLimit = repoRes.value.rateLimit ?? s.rateLimit;
+          shownKeys.current.repos = keys.repos;
+        }
       } else {
         next.error = asAppError(repoRes.reason);
         if (shownKeys.current.repos !== keys.repos) next.repos = new Map();
@@ -141,11 +162,14 @@ export function useDashboard(
     return () => window.clearTimeout(timer);
   }, [enabled, fetchKey, refresh]);
 
+  const watchInbox = onInboxChange !== undefined;
   useEffect(() => {
     if (!enabled || config.refreshMinutes <= 0) return;
     const intervalMs = config.refreshMinutes * 60_000;
     const timer = window.setInterval(() => {
       if (!document.hidden) void refresh();
+      // While hidden, only "Needs you" keeps updating, and only to notify.
+      else if (watchInbox && !busy.current) void refresh({ inboxOnly: true });
     }, intervalMs);
     const onVisible = () => {
       if (!document.hidden && Date.now() - lastFetch.current > intervalMs) void refresh();
@@ -155,7 +179,7 @@ export function useDashboard(
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [enabled, config.refreshMinutes, refresh]);
+  }, [enabled, config.refreshMinutes, refresh, watchInbox]);
 
   return { ...state, refresh };
 }
