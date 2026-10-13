@@ -78,7 +78,7 @@ export function useDashboard(
   const lastFetch = useRef(0);
   // Settings that produced the data on screen, so a failed refresh after a
   // settings change does not leave data fetched for the old settings.
-  const shownKeys = useRef({ repos: '', inbox: '' });
+  const shownKeys = useRef<{ repos: Partial<Record<ProviderId, string>>; inbox: string }>({ repos: {}, inbox: '' });
 
   // Only refetch when data-affecting settings change (not theme, card order
   // etc.).
@@ -106,12 +106,14 @@ export function useDashboard(
     const owners = ownersRef.current;
     const live = PROVIDER_IDS.filter((p) => connectedRef.current.includes(p));
     const several = live.length > 1;
-    const keys = {
-      repos: JSON.stringify([byId(repos), owners, live]),
-      inbox: JSON.stringify([inbox, owners, live]),
-    };
     const ownersOf = (p: ProviderId) => (providers[p].ownerTokens ? owners : []);
     const pinnedTo = (p: ProviderId) => repos.filter((r) => r.provider === p);
+    const keys = {
+      // Per provider: one service's settings changing must not let another's
+      // failure keep showing data fetched for its old settings.
+      repos: (p: ProviderId) => JSON.stringify([byId(pinnedTo(p)), ownersOf(p)]),
+      inbox: JSON.stringify([inbox, owners, live]),
+    };
 
     const [repoRes, inboxRes] = await Promise.all([
       settleEach<RepoBatch>(
@@ -129,29 +131,29 @@ export function useDashboard(
       };
 
       const fetched = repoRes.filter((r) => r.result.status === 'fulfilled');
-      if (repoRes.length === 0 || fetched.length > 0) {
-        // Only fresh repository data counts as an update; after a failure the
-        // cards still show the previous data and must not look current.
-        next.lastUpdated = new Date();
-        next.repos = new Map();
-        shownKeys.current.repos = keys.repos;
-      } else {
-        // Nothing loaded: keep the cards as they were, unless they show other settings.
-        next.repos = shownKeys.current.repos === keys.repos ? new Map(s.repos) : new Map();
-      }
+      // Only fresh repository data counts as an update; after a failure the
+      // cards still show the previous data and must not look current.
+      if (repoRes.length === 0 || fetched.length > 0) next.lastUpdated = new Date();
+      next.repos = new Map();
       for (const { provider, result } of repoRes) {
+        const key = keys.repos(provider);
         if (result.status === 'fulfilled') {
           for (const [id, repo] of result.value.repos) next.repos.set(id, repo);
           if (result.value.rateLimit) next.rateLimit = result.value.rateLimit;
+          shownKeys.current.repos[provider] = key;
         } else {
           const err = labelled(asAppError(result.reason), provider, several);
           next.error ??= err;
           reject(provider, err);
-          // Keep showing this provider's previous data next to the others' fresh data.
-          if (fetched.length > 0) {
-            for (const repo of pinnedTo(provider)) {
-              const shown = s.repos.get(repoId(repo));
-              next.repos.set(repoId(repo), shown ?? { ok: false, error: { kind: 'unknown', message: err.message } });
+          // Keep showing this provider's previous data, unless it was fetched
+          // for other settings. Next to other services' fresh data, a card
+          // with nothing to show says why; alone, the error is shown instead.
+          const current = shownKeys.current.repos[provider] === key;
+          for (const repo of pinnedTo(provider)) {
+            const shown = current ? s.repos.get(repoId(repo)) : undefined;
+            if (shown) next.repos.set(repoId(repo), shown);
+            else if (fetched.length > 0) {
+              next.repos.set(repoId(repo), { ok: false, error: { kind: 'unknown', message: err.message } });
             }
           }
         }
