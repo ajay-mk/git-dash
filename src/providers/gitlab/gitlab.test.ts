@@ -281,6 +281,7 @@ describe('mappers', () => {
             nodes: [
               { name: 'test', status: 'FAILED', webPath: '/acme/api/-/jobs/1' },
               { name: 'lint', status: 'SKIPPED', webPath: '//evil.example/x' },
+              { name: 'audit', status: 'FAILED', allowFailure: true },
             ],
           },
         },
@@ -308,6 +309,7 @@ describe('mappers', () => {
         checks: [
           { name: 'test', state: 'failure', url: web('acme/api/-/jobs/1') },
           { name: 'lint', state: 'success', url: null },
+          { name: 'audit', state: 'none', url: null },
         ],
         reviewers: [
           { login: 'sam', state: 'changes_requested' },

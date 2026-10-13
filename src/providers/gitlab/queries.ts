@@ -181,7 +181,7 @@ query GitDashDetails($path: ID!, $iid: String!, $n: Int!, $mr: Boolean!) {
       sourceBranch targetBranch
       diffStatsSummary { additions deletions fileCount }
       diffStats { additions deletions }
-      headPipeline { jobs(first: $n, retried: false) { count nodes { name status webPath } } }
+      headPipeline { jobs(first: $n, retried: false) { count nodes { name status allowFailure webPath } } }
       reviewers(first: $n) { nodes { username mergeRequestInteraction { reviewState } } }
       approvedBy(first: $n) { nodes { username } }
     }

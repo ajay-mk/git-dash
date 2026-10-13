@@ -327,7 +327,9 @@ function mapJob(v: unknown): CheckItem | null {
   const path = str(n.webPath);
   const host = connectedGitLabHost();
   const url = path && host && path.startsWith('/') && !path.startsWith('//') ? safeUrl(`https://${host}${path}`) : '';
-  const state = n.status === 'SKIPPED' ? 'success' : mapPipelineStatus(n.status);
+  let state = n.status === 'SKIPPED' ? 'success' : mapPipelineStatus(n.status);
+  // A job allowed to fail does not fail its pipeline, so it is not shown as failing.
+  if (state === 'failure' && n.allowFailure === true) state = 'none';
   return { name, state, url: url || null };
 }
 
