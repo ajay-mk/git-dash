@@ -344,7 +344,31 @@ impl TokenStore {
                 return Err(Error::TooManyTokens);
             }
         }
-        entry(&slot.account(provider))?.set_password(token)?;
+        // The stored host decides where the default token is sent, so a new
+        // token must never be paired with an old host, even if a keychain
+        // write fails halfway. Unbind the host first and bind it again only
+        // once the token is stored: an interrupted change leaves no host,
+        // which fails closed (nothing is sent) until the token is entered again.
+        let previous = inner.index(provider)?.clone();
+        let unbind = matches!(slot, Slot::Default) && previous.host.is_some();
+        if unbind {
+            let index = inner.index(provider)?;
+            index.host = None;
+            index.default_login = None;
+            if let Err(err) = inner.save_index(provider) {
+                *inner.index(provider)? = previous;
+                return Err(err);
+            }
+        }
+        let stored = entry(&slot.account(provider)).and_then(|e| Ok(e.set_password(token)?));
+        if let Err(err) = stored {
+            if unbind {
+                // The old token is still in place, so its host can be restored.
+                *inner.index(provider)? = previous;
+                let _ = inner.save_index(provider);
+            }
+            return Err(err);
+        }
         inner
             .cache
             .insert((provider, slot.clone()), token.to_owned());
