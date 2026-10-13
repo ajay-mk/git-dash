@@ -32,7 +32,18 @@ the first time you open them:
 - **Linux** packages are not signed (there is no repository or GPG signature);
   rely on the checksums.
 
-There is no auto-updater yet: install new versions from the
-[Releases](https://github.com/ajay-mk/git-dash/releases) page.
+## Updates
+
+GitDash looks for a new release when it starts and every six hours. When one
+is out, a banner offers *Restart to update*; GitDash downloads it, checks its
+signature against the key built into the app, installs it and restarts. On
+Windows the installer runs with a progress bar and reopens GitDash. Turn
+automatic checks off, or check by hand, under *Settings → Updates*.
+
+An update replaces the app the same way it was installed (the `.app`, the
+Windows installer you used, the AppImage, or the `.deb`/`.rpm` package, which
+asks for your password). Versions released before the updater was added
+cannot update themselves: install the latest one from the
+[Releases](https://github.com/ajay-mk/git-dash/releases) page once.
 
 Next, [create an access token](tokens.md).

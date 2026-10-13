@@ -84,6 +84,14 @@ describe('parseConfig', () => {
     }
   });
 
+  it('checks for updates unless that was turned off', () => {
+    const older: Record<string, unknown> = { ...valid };
+    delete older.updates;
+    expect(parseConfig(older).updates).toBe(true);
+    expect(parseConfig({ ...valid, updates: false }).updates).toBe(false);
+    expect(parseConfig({ ...valid, updates: 'no' }).updates).toBe(true);
+  });
+
   it('turns notifications on unless they were turned off', () => {
     const older: Record<string, unknown> = { ...valid };
     delete older.notifications;

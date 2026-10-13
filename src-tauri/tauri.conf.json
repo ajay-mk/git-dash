@@ -32,6 +32,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
     "shortDescription": "Glanceable GitHub dashboard",
     "longDescription": "A customizable desktop dashboard that shows the state of your pinned GitHub repositories at a glance.",
@@ -42,5 +43,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1MkFFQzhERDFCMTZCNEMKUldSTWE3SFJqZXdxaFR5N0J5Mm52NytpWUZZR2FHc1FjdDlXVW5KUnZoNGxQUldvNHlsQ3VzU2QK",
+      "endpoints": ["https://github.com/ajay-mk/git-dash/releases/latest/download/latest.json"],
+      "requireSignedVersion": true,
+      "windows": { "installMode": "passive" }
+    }
   }
 }

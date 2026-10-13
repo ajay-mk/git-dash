@@ -24,6 +24,7 @@ import {
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
+import type { Updates } from '../hooks/useUpdates';
 import { canNotify } from '../lib/notify';
 import { matchRepos } from '../lib/suggest';
 import { tokens, type OwnerToken, type TokenSummary } from '../lib/transport';
@@ -616,6 +617,62 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
   );
 }
 
+function updateStatus(state: Updates['state']): string | null {
+  switch (state.kind) {
+    case 'checking':
+      return 'Checking…';
+    case 'current':
+      return 'GitDash is up to date.';
+    case 'available':
+      return `GitDash ${state.version} is available.`;
+    case 'downloading':
+      return `Downloading GitDash ${state.version}…`;
+    case 'restarting':
+      return 'Restarting…';
+    case 'error':
+      return state.message;
+    default:
+      return null;
+  }
+}
+
+function UpdateSettings({ config, update, updates }: { config: DashboardConfig; update: Update; updates: Updates }) {
+  const { state } = updates;
+  const status = updateStatus(state);
+  const busy = state.kind === 'checking' || state.kind === 'downloading' || state.kind === 'restarting';
+  return (
+    <section className="settings-section">
+      <h3>Updates</h3>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={config.updates}
+          onChange={(e) => {
+            const updatesOn = e.target.checked;
+            update((c) => ({ ...c, updates: updatesOn }));
+          }}
+        />
+        Check for updates automatically
+      </label>
+      <div className="update-row">
+        <button type="button" className="btn" disabled={busy} onClick={updates.checkNow}>
+          Check now
+        </button>
+        {state.kind === 'available' && (
+          <button type="button" className="btn btn-primary" onClick={updates.install}>
+            Restart to update
+          </button>
+        )}
+        {status && (
+          <span className={state.kind === 'error' ? 'error-text' : 'hint'} role="status">
+            {status}
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function SettingsPanel({
   open,
   onClose,
@@ -627,6 +684,7 @@ export function SettingsPanel({
   onChangeToken,
   onSignOut,
   onOwnerTokensChanged,
+  updates,
 }: {
   open: boolean;
   onClose: () => void;
@@ -641,6 +699,7 @@ export function SettingsPanel({
   onChangeToken: (provider: ProviderId) => void;
   onSignOut: (provider: ProviderId) => void;
   onOwnerTokensChanged: () => void;
+  updates?: Updates;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const tokenOwners = useMemo(() => ownerTokens.map((o) => o.owner), [ownerTokens]);
@@ -778,6 +837,8 @@ export function SettingsPanel({
             </select>
           </label>
         </section>
+
+        {updates && <UpdateSettings config={config} update={update} updates={updates} />}
 
         <section className="settings-section">
           <h3>Access tokens</h3>

@@ -4,6 +4,7 @@ import { InboxPanel } from './components/InboxPanel';
 import { RepoCard } from './components/RepoCard';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TokenSetup } from './components/TokenSetup';
+import { UpdateBanner } from './components/UpdateBanner';
 import {
   pruneLayout,
   repoId,
@@ -20,6 +21,7 @@ import { isAuthError, useDashboard, type InboxChangeHandler } from './hooks/useD
 import { useCardResize } from './hooks/useCardResize';
 import { useMasonry } from './hooks/useMasonry';
 import { useReorder } from './hooks/useReorder';
+import { useUpdates } from './hooks/useUpdates';
 import { repoHealth } from './lib/health';
 import { inboxAlerts, SeenItems, showAlerts } from './lib/notify';
 import { shortAgo } from './lib/time';
@@ -71,6 +73,8 @@ export default function App() {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  const updates = useUpdates(config.updates);
 
   const update = useCallback((fn: (c: DashboardConfig) => DashboardConfig) => {
     setConfig((prev) => {
@@ -285,6 +289,7 @@ export default function App() {
       )}
 
       <main className="content">
+        <UpdateBanner updates={updates} />
         {signOutError && <p className="banner error-text">{signOutError}</p>}
         {PROVIDER_IDS.flatMap((p) => {
           const message = accountErrors[p];
@@ -395,6 +400,7 @@ export default function App() {
             () => undefined,
           );
         }}
+        updates={updates}
         onChangeToken={(provider) => {
           setSettingsOpen(false);
           setSetupFor(provider);

@@ -19,6 +19,15 @@ vi.mock('@tauri-apps/plugin-notification', () => ({
   sendNotification: vi.fn(),
 }));
 
+// No update is ever found unless a test says otherwise.
+vi.mock('@tauri-apps/plugin-updater', () => ({
+  check: vi.fn(() => Promise.resolve(null)),
+}));
+
+vi.mock('@tauri-apps/plugin-process', () => ({
+  relaunch: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock('../lib/transport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/transport')>();
   const notMocked = () => Promise.reject(new actual.AppError('internal', 'not mocked in this test'));

@@ -25,7 +25,7 @@ export default defineConfig({
     projects: [
       {
         extends: true,
-        test: { name: 'unit', environment: 'node', include: ['src/**/*.test.ts'] },
+        test: { name: 'unit', environment: 'node', include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'] },
       },
       {
         extends: true,

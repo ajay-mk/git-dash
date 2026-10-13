@@ -147,6 +147,8 @@ export interface DashboardConfig {
   theme: Theme;
   /** Desktop notifications when something new needs you. */
   notifications: boolean;
+  /** Look for new releases at launch and every few hours. */
+  updates: boolean;
 }
 
 // GitHub's rules: owners are 1-39 alphanumerics/hyphens, repo names are up to
@@ -204,6 +206,7 @@ export function defaultConfig(): DashboardConfig {
     refreshMinutes: 5,
     theme: 'system',
     notifications: true,
+    updates: true,
   };
 }
 
@@ -414,5 +417,6 @@ export function parseConfig(raw: unknown): DashboardConfig {
     refreshMinutes: refresh,
     theme,
     notifications: bool(raw.notifications, defaults.notifications),
+    updates: bool(raw.updates, defaults.updates),
   };
 }

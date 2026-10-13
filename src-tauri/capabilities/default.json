@@ -12,6 +12,9 @@
     "allow-open-external",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:allow-restart"
   ]
 }
