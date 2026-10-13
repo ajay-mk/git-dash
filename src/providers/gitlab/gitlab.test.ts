@@ -377,7 +377,11 @@ describe('gitlab provider', () => {
       [],
     );
     expect(inbox.viewer).toBe('jane.doe');
+    // Reviews the viewer already gave are not asked of them again.
+    expect(graphql.mock.calls[0]![0]).toContain('reviewStates: [UNREVIEWED, REVIEW_STARTED, UNAPPROVED]');
     expect(graphql.mock.calls[1]![1]).toEqual({ me: 'jane.doe', n: 5 });
+    // Reviews the viewer already gave are not asked of them again.
+    expect(graphql.mock.calls[0]![0]).toContain('reviewStates: [UNREVIEWED, REVIEW_STARTED, UNAPPROVED]');
   });
 
   it('treats an anonymous answer as a rejected token', async () => {

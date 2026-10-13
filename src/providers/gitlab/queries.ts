@@ -101,12 +101,19 @@ export function buildProjectsQuery(repos: PinnedRepo[]): BuiltQuery {
   return { query: `query GitDashProjects${defs} { ${viewer} ${selections.join(' ')} }`, variables };
 }
 
-/** Merge requests that need the viewer; assigned issues follow in `ASSIGNED_ISSUES_QUERY`. */
+/**
+ * Merge requests that need the viewer; assigned issues follow in
+ * `ASSIGNED_ISSUES_QUERY`. Review requests the viewer already answered
+ * (approved, reviewed, requested changes) are left out, as on GitLab's own
+ * merge request dashboard; one whose approval was reset counts again.
+ */
 export const INBOX_QUERY = `
 query GitDashInbox($n: Int!, $withReview: Boolean!, $withMine: Boolean!, $withAssigned: Boolean!) {
   currentUser {
     username
-    reviewRequestedMergeRequests(state: opened, first: $n, sort: UPDATED_DESC) @include(if: $withReview) {
+    reviewRequestedMergeRequests(
+      state: opened, reviewStates: [UNREVIEWED, REVIEW_STARTED, UNAPPROVED], first: $n, sort: UPDATED_DESC
+    ) @include(if: $withReview) {
       count nodes { ${MR_FIELDS} }
     }
     authoredMergeRequests(state: opened, first: $n, sort: UPDATED_DESC) @include(if: $withMine) {
@@ -132,7 +139,7 @@ export const PROJECT_SUGGESTIONS_FETCHED = 100;
 
 /**
  * Projects the viewer is a member of, most recently active first. Archived
- * ones are dropped when mapping: GitLab 16 lacks the `archived` argument.
+ * ones are dropped when mapping.
  */
 export const PROJECTS_QUERY = `
 query GitDashProjectList($n: Int!) {
