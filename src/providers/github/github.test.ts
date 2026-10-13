@@ -4,7 +4,7 @@ import { githubGraphql } from '../../lib/transport';
 import { github } from './index';
 import { DETAILS_BODY_CHARS } from '../raw';
 import { describeRepoError, mapDetails, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
-import { buildReposQuery, DETAILS_QUERY, OPEN_PRS_FETCHED } from './queries';
+import { buildReposQuery, DETAILS_QUERY, EVENTS_FETCHED, OPEN_PRS_FETCHED } from './queries';
 
 vi.mock('../../lib/transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/transport')>()),
@@ -124,6 +124,46 @@ describe('mappers', () => {
     expect(inbox.ssoRestricted).toBe(false);
   });
 
+  describe('when your review was requested or the item assigned to you', () => {
+    const me = { __typename: 'User', login: 'me' };
+    const someone = { __typename: 'User', login: 'someone' };
+    const teamA = { __typename: 'Team', id: 'A' };
+    const teamB = { __typename: 'Team', id: 'B' };
+    const events = (key: string, ...list: [string, unknown][]) => ({
+      timelineItems: { nodes: list.map(([day, who]) => ({ createdAt: `2026-10-${day}T00:00:00Z`, [key]: who })) },
+    });
+    const pending = (...who: unknown[]) => ({ reviewRequests: { nodes: who.map((w) => ({ requestedReviewer: w })) } });
+    const requestedAt = (node: Record<string, unknown>) =>
+      mapInbox({ viewer: { login: 'Me' }, reviewRequests: { issueCount: 1, nodes: [{ number: 1, ...node }] } }).reviewRequests.items[0]
+        ?.requestedAt;
+
+    it('takes the request to you while it is pending', () => {
+      expect(requestedAt({ ...pending(me, teamB), ...events('requestedReviewer', ['01', me], ['05', someone], ['06', teamB]) })).toBe(
+        '2026-10-01T00:00:00Z',
+      );
+    });
+
+    it('takes the pending team request when yours was done', () => {
+      expect(requestedAt({ ...pending(teamA), ...events('requestedReviewer', ['01', me], ['03', teamA], ['04', teamB]) })).toBe(
+        '2026-10-03T00:00:00Z',
+      );
+    });
+
+    it('takes a request older than every event fetched as long ago', () => {
+      const days = Array.from({ length: EVENTS_FETCHED }, (_, i): [string, unknown] => [String(10 + i), someone]);
+      expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days) })).toBe('1970-01-01T00:00:00.000Z');
+      expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days.slice(1)) })).toBeUndefined();
+    });
+
+    it('takes the latest assignment to you', () => {
+      const inbox = mapInbox({
+        viewer: { login: 'me' },
+        assigned: { issueCount: 2, nodes: [{ number: 3, ...events('assignee', ['02', me], ['05', someone]) }, { number: 4 }] },
+      });
+      expect(inbox.assigned.items.map((item) => item.assignedAt)).toEqual(['2026-10-02T00:00:00Z', undefined]);
+    });
+  });
+
   it('flags inbox results hidden by SSO', () => {
     const inbox = mapInbox(
       { viewer: { login: 'me' }, reviewRequests: { issueCount: 2, nodes: [null] } },
@@ -131,6 +171,30 @@ describe('mappers', () => {
     );
     expect(inbox.ssoRestricted).toBe(true);
     expect(inbox.reviewRequests.items).toEqual([]);
+    // Withheld every time, so not a gap in this fetch.
+    expect(inbox.incomplete).toBeUndefined();
+  });
+
+  it('flags pull requests whose fields were lost to an error', () => {
+    const inbox = mapInbox(
+      { viewer: { login: 'me' }, myPullRequests: { issueCount: 2, nodes: [{ number: 1 }, { number: 2 }] } },
+      [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['myPullRequests', 'nodes', 1, 'commits'] }],
+    );
+    expect(inbox.myPullRequests.items.map((pr) => pr.partial)).toEqual([undefined, true]);
+    const timeline = mapInbox(
+      { viewer: { login: 'me' }, reviewRequests: { issueCount: 1, nodes: [{ number: 1, timelineItems: null }] } },
+      [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['reviewRequests', 'nodes', 0, 'timelineItems'] }],
+    );
+    expect(timeline.reviewRequests.items[0]).toMatchObject({ partial: true });
+    expect(timeline.reviewRequests.items[0]?.requestedAt).toBeUndefined();
+  });
+
+  it('marks inbox results cut short by other errors incomplete', () => {
+    const inbox = mapInbox(
+      { viewer: { login: 'me' }, myPullRequests: null },
+      [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['myPullRequests'] }],
+    );
+    expect(inbox.incomplete).toBe(true);
   });
 });
 
@@ -249,6 +313,15 @@ describe('github provider', () => {
     });
     const inbox = await github.fetchInbox({ enabled: true, limit: 5, reviewRequests: false, myPullRequests: false, assigned: true }, []);
     expect(inbox.ssoRestricted).toBe(true);
+  });
+
+  it('marks the inbox incomplete when a per-owner token fails', async () => {
+    const config = { enabled: true, limit: 5, reviewRequests: true, myPullRequests: false, assigned: false };
+    const ok = { data: { viewer: { login: 'me' }, reviewRequests: { issueCount: 0, nodes: [] } } };
+    graphql.mockImplementation((_query, _variables, owner) => (owner ? Promise.reject(new Error('revoked')) : Promise.resolve(ok)));
+    expect((await github.fetchInbox(config, ['corp'])).incomplete).toBe(true);
+    graphql.mockImplementation(() => Promise.resolve(ok));
+    expect((await github.fetchInbox(config, ['corp'])).incomplete).toBeUndefined();
   });
 });
 

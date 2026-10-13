@@ -24,6 +24,7 @@ import {
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
+import { canNotify } from '../lib/notify';
 import { matchRepos } from '../lib/suggest';
 import { tokens, type OwnerToken, type TokenSummary } from '../lib/transport';
 import { connectedGitLabHost } from '../lib/url';
@@ -724,6 +725,20 @@ export function SettingsPanel({
               Assigned to you
             </label>
             <NumberField label="Items per group" value={inbox.limit} onChange={(limit) => setInbox({ limit })} />
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={config.notifications}
+                onChange={(e) => {
+                  const notifications = e.target.checked;
+                  update((c) => ({ ...c, notifications }));
+                  // Ask the OS now, while the user is looking, rather than when
+                  // the first notification arrives.
+                  if (notifications) void canNotify().catch(() => undefined);
+                }}
+              />
+              Desktop notifications for new items
+            </label>
           </fieldset>
           <p className="hint">
             Fetched from every connected service. On GitHub, that is the default token plus any per-owner tokens

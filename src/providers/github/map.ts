@@ -9,6 +9,7 @@ import { parseRepoInput, type PinnedRepo } from '../../config/schema';
 import { prNeedsAttention } from '../../lib/health';
 import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
+import { EVENTS_FETCHED } from './queries';
 import { PERMISSION_LABELS } from './tokenTemplate';
 import { arr, num, obj, str, trimBody, type Raw } from '../raw';
 import type {
@@ -27,6 +28,8 @@ import type {
   ReviewerState,
   ReviewState,
 } from '../types';
+
+const LONG_AGO = new Date(0).toISOString();
 
 function safeUrl(v: unknown): string {
   const s = str(v);
@@ -106,7 +109,7 @@ export function mapIssue(v: unknown): IssueItem | null {
   };
 }
 
-function mapConnection<T>(v: unknown, mapper: (n: unknown) => T | null, totalKey = 'totalCount'): Counted<T> {
+function mapConnection<T>(v: unknown, mapper: (n: unknown, index: number) => T | null, totalKey = 'totalCount'): Counted<T> {
   const c = obj(v);
   const items = arr(c?.nodes)
     .map(mapper)
@@ -150,16 +153,93 @@ export function mapRateLimit(v: unknown): RateLimit | null {
 
 const EMPTY: Counted<never> = { total: 0, items: [] };
 
+/**
+ * When the latest of `node`'s timeline events (review requests or
+ * assignments) that `matches` happened. `key` names the event's user field.
+ * When none matches but older events were cut off, the one sought is older
+ * than every event fetched; it is then given as long ago.
+ */
+function lastEvent(node: unknown, key: string, matches: (who: Raw) => boolean): string | undefined {
+  const events = arr(obj(obj(node)?.timelineItems)?.nodes).flatMap((event) => {
+    const e = obj(event);
+    const who = obj(e?.[key]);
+    const at = str(e?.createdAt);
+    return at && who ? [{ at, who }] : [];
+  });
+  let latest: string | undefined;
+  for (const { at, who } of events) {
+    if (matches(who) && (!latest || at > latest)) latest = at;
+  }
+  if (latest || events.length < EVENTS_FETCHED) return latest;
+  return LONG_AGO;
+}
+
+/**
+ * Which review-request events are the viewer's: the request to them if it is
+ * still pending, otherwise those to a team that is. Team members are not
+ * fetched; the search found the pull request through one of those teams.
+ */
+function reviewRequestMatcher(node: unknown, viewer: string): (who: Raw) => boolean {
+  const isViewer = (who: Raw) => who.__typename === 'User' && str(who.login)?.toLowerCase() === viewer;
+  const pending = obj(obj(node)?.reviewRequests)?.nodes;
+  if (!Array.isArray(pending)) return (who) => isViewer(who) || who.__typename === 'Team';
+  const reviewers = pending.flatMap((r) => {
+    const who = obj(obj(r)?.requestedReviewer);
+    return who ? [who] : [];
+  });
+  if (reviewers.some(isViewer)) return isViewer;
+  const teams = new Set(
+    reviewers.flatMap((who) => {
+      const id = str(who.id);
+      return who.__typename === 'Team' && id ? [id] : [];
+    }),
+  );
+  return (who) => who.__typename === 'Team' && teams.has(str(who.id) ?? '');
+}
+
 export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnapshot {
   const d = obj(data) ?? {};
+  const viewer = str(obj(d.viewer)?.login) ?? '';
+  const me = viewer.toLowerCase();
+  // Items whose fields (a check rollup, the timeline) were lost to an error.
+  const lost = (section: string) =>
+    new Set(
+      errors.flatMap((e) =>
+        e.path?.[0] === section && e.path[1] === 'nodes' && typeof e.path[2] === 'number' && e.path.length > 3
+          ? [e.path[2]]
+          : [],
+      ),
+    );
+  const lostReviews = lost('reviewRequests');
+  const lostMine = lost('myPullRequests');
+  const lostAssigned = lost('assigned');
+  const reviewRequest = (n: unknown, index: number): PullRequestItem | null => {
+    const pr = mapPullRequest(n);
+    if (!pr) return null;
+    const at = lastEvent(n, 'requestedReviewer', reviewRequestMatcher(n, me));
+    return { ...pr, ...(at ? { requestedAt: at } : {}), ...(lostReviews.has(index) ? { partial: true } : {}) };
+  };
+  const mine = (n: unknown, index: number): PullRequestItem | null => {
+    const pr = mapPullRequest(n);
+    return pr && lostMine.has(index) ? { ...pr, partial: true } : pr;
+  };
+  const assignment = (n: unknown, index: number): IssueItem | null => {
+    const item = mapIssue(n);
+    if (!item) return null;
+    const at = lastEvent(n, 'assignee', (who) => str(who.login)?.toLowerCase() === me);
+    return { ...item, ...(at ? { assignedAt: at } : {}), ...(lostAssigned.has(index) ? { partial: true } : {}) };
+  };
   return {
-    viewer: str(obj(d.viewer)?.login) ?? '',
-    reviewRequests: d.reviewRequests ? mapConnection(d.reviewRequests, mapPullRequest, 'issueCount') : EMPTY,
-    myPullRequests: d.myPullRequests ? mapConnection(d.myPullRequests, mapPullRequest, 'issueCount') : EMPTY,
-    assigned: d.assigned ? mapConnection(d.assigned, mapIssue, 'issueCount') : EMPTY,
+    viewer,
+    reviewRequests: d.reviewRequests ? mapConnection(d.reviewRequests, reviewRequest, 'issueCount') : EMPTY,
+    myPullRequests: d.myPullRequests ? mapConnection(d.myPullRequests, mine, 'issueCount') : EMPTY,
+    assigned: d.assigned ? mapConnection(d.assigned, assignment, 'issueCount') : EMPTY,
     // Search results from SSO-protected organizations come back as null
     // nodes, each with a SAML error.
     ssoRestricted: errors.some(isSamlFailure),
+    // Other errors null out results that are normally there. SSO ones are
+    // left out: they hide the same results every time.
+    ...(errors.some((e) => !isSamlFailure(e)) ? { incomplete: true } : {}),
   };
 }
 

@@ -16,11 +16,12 @@ import {
 } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { providers } from './providers';
-import { isAuthError, useDashboard } from './hooks/useDashboard';
+import { isAuthError, useDashboard, type InboxChangeHandler } from './hooks/useDashboard';
 import { useCardResize } from './hooks/useCardResize';
 import { useMasonry } from './hooks/useMasonry';
 import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
+import { inboxAlerts, SeenItems, showAlerts } from './lib/notify';
 import { shortAgo } from './lib/time';
 import { AppError, tokens, type TokenSummary } from './lib/transport';
 import { providerOfUrl, setGitLabHost } from './lib/url';
@@ -105,7 +106,19 @@ export default function App() {
   const tokenInfo = accounts.github;
   const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
   const connected = useMemo(() => connectedTo(accounts), [accounts]);
-  const dash = useDashboard(config, tokenOwners, connected, auth === 'ready');
+  const [seenItems] = useState(() => new SeenItems());
+  const onInboxChange = useCallback<InboxChangeHandler>(
+    (prev, next, since) => {
+      seenItems.remember(prev);
+      const alerts = inboxAlerts(prev, next, since, seenItems);
+      seenItems.remember(next);
+      void showAlerts(alerts).catch(() => undefined);
+    },
+    [seenItems],
+  );
+  // Notifications come from the "Needs you" lists, so they need the sidebar on.
+  const notify = config.notifications && config.inbox.enabled;
+  const dash = useDashboard(config, tokenOwners, connected, auth === 'ready', notify ? onInboxChange : undefined);
   const loadDetails = useCallback((url: string) => {
     // A link from a service that is no longer connected (its rows can stay
     // on screen until the next refresh) must not be sent to another one.

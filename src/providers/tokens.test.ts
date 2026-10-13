@@ -85,6 +85,11 @@ describe('mergeInbox', () => {
     const merged = mergeInbox(primary, [snapshot('me', { total: 1, items: [b] })], 10);
     expect(merged.ssoRestricted).toBe(true);
   });
+
+  it('is incomplete when any token\'s results were', () => {
+    const partial = { ...snapshot('me', { total: 1, items: [b] }), incomplete: true };
+    expect(mergeInbox(snapshot('me', { total: 1, items: [a] }), [partial], 10).incomplete).toBe(true);
+  });
 });
 
 describe('combineInboxes', () => {

@@ -89,6 +89,21 @@ export function buildReposQuery(repos: PinnedRepo[]): BuiltQuery {
   return { query, variables };
 }
 
+/**
+ * The latest review requests or assignments, to tell when yours happened.
+ * Exported so the mapper knows when older events were cut off.
+ */
+export const EVENTS_FETCHED = 10;
+const REVIEWER = '__typename ... on User { login } ... on Team { id }';
+/** Pending requests tell whether yours is direct or through a team. */
+const REVIEW_REQUESTED = `reviewRequests(first: 20) { nodes { requestedReviewer { ${REVIEWER} } } }
+timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: ${EVENTS_FETCHED}) {
+  nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ${REVIEWER} } } }
+}`;
+const ASSIGNED = `timelineItems(itemTypes: [ASSIGNED_EVENT], last: ${EVENTS_FETCHED}) {
+  nodes { ... on AssignedEvent { createdAt assignee { __typename ... on User { login } } } }
+}`;
+
 export const INBOX_QUERY = `
 query GitDashInbox(
   $n: Int!
@@ -97,7 +112,7 @@ query GitDashInbox(
 ) {
   viewer { login }
   reviewRequests: search(query: $reviewQ, type: ISSUE, first: $n) @include(if: $withReview) {
-    issueCount nodes { ... on PullRequest { ${PR_FIELDS} } }
+    issueCount nodes { ... on PullRequest { ${PR_FIELDS} ${REVIEW_REQUESTED} } }
   }
   myPullRequests: search(query: $mineQ, type: ISSUE, first: $n) @include(if: $withMine) {
     issueCount nodes { ... on PullRequest { ${PR_FIELDS} } }
@@ -106,8 +121,8 @@ query GitDashInbox(
     issueCount
     nodes {
       __typename
-      ... on Issue { ${ISSUE_FIELDS} }
-      ... on PullRequest { ${ISSUE_FIELDS} }
+      ... on Issue { ${ISSUE_FIELDS} ${ASSIGNED} }
+      ... on PullRequest { ${ISSUE_FIELDS} ${ASSIGNED} }
     }
   }
 }

@@ -71,6 +71,7 @@ export function mergeInbox(primary: InboxSnapshot, others: readonly InboxSnapsho
     // A SAML error can't be tied to the org it came from, so keep the notice
     // if any token reported one rather than risk hiding missing results.
     ssoRestricted: all.some((s) => s.ssoRestricted),
+    ...(all.some((s) => s.incomplete) ? { incomplete: true } : {}),
   };
 }
 
@@ -103,5 +104,6 @@ export function combineInboxes(snapshots: readonly InboxSnapshot[], limit: numbe
     myPullRequests: combineCounted(snapshots.map((s) => s.myPullRequests), limit),
     assigned: combineCounted(snapshots.map((s) => s.assigned), limit),
     ssoRestricted: snapshots.some((s) => s.ssoRestricted),
+    ...(snapshots.some((s) => s.incomplete) ? { incomplete: true } : {}),
   };
 }

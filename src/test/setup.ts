@@ -13,6 +13,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(() => Promise.reject(new Error('invoke must not be called in tests'))),
 }));
 
+vi.mock('@tauri-apps/plugin-notification', () => ({
+  isPermissionGranted: vi.fn(() => Promise.resolve(false)),
+  requestPermission: vi.fn(() => Promise.resolve('denied')),
+  sendNotification: vi.fn(),
+}));
+
 vi.mock('../lib/transport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/transport')>();
   const notMocked = () => Promise.reject(new actual.AppError('internal', 'not mocked in this test'));

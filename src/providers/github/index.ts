@@ -110,7 +110,8 @@ export const github: Provider = {
     ]);
     if (primary!.status === 'rejected') throw primary!.reason;
     const extra = others.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
-    return mergeInbox(primary!.value, extra, config.limit);
+    const inbox = mergeInbox(primary!.value, extra, config.limit);
+    return extra.length < others.length ? { ...inbox, incomplete: true } : inbox;
   },
 
   async listRepos(tokenOwners) {

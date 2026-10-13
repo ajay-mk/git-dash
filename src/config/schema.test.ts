@@ -84,6 +84,13 @@ describe('parseConfig', () => {
     }
   });
 
+  it('turns notifications on unless they were turned off', () => {
+    const older: Record<string, unknown> = { ...valid };
+    delete older.notifications;
+    expect(parseConfig(older).notifications).toBe(true);
+    expect(parseConfig({ ...valid, notifications: false }).notifications).toBe(false);
+  });
+
   it('rejects malformed input', () => {
     expect(() => parseConfig(null)).toThrow(ConfigError);
     expect(() => parseConfig({ ...valid, version: 2 })).toThrow(ConfigError);
@@ -129,6 +136,7 @@ describe('parseConfig', () => {
       ...valid,
       refreshMinutes: 0.001,
       theme: 'hacker',
+      notifications: 'off',
       inbox: { enabled: 'yes', limit: 9999 },
       repos: [
         {
@@ -147,6 +155,7 @@ describe('parseConfig', () => {
     });
     expect(parsed.refreshMinutes).toBe(5);
     expect(parsed.theme).toBe('system');
+    expect(parsed.notifications).toBe(true);
     expect(parsed.inbox.enabled).toBe(true);
     expect(parsed.inbox.limit).toBe(20);
     expect(parsed.layout).toEqual(defaultConfig().layout);

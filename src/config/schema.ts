@@ -145,6 +145,8 @@ export interface DashboardConfig {
   /** Auto-refresh interval in minutes; 0 disables it. */
   refreshMinutes: number;
   theme: Theme;
+  /** Desktop notifications when something new needs you. */
+  notifications: boolean;
 }
 
 // GitHub's rules: owners are 1-39 alphanumerics/hyphens, repo names are up to
@@ -201,6 +203,7 @@ export function defaultConfig(): DashboardConfig {
     layout: { collapsedInbox: [], groupMyPullRequests: 'none', collapsedWidgets: [], cardSpans: {}, cardRows: {} },
     refreshMinutes: 5,
     theme: 'system',
+    notifications: true,
   };
 }
 
@@ -403,5 +406,13 @@ export function parseConfig(raw: unknown): DashboardConfig {
 
   const theme = (THEMES as readonly unknown[]).includes(raw.theme) ? (raw.theme as Theme) : defaults.theme;
 
-  return { version: CONFIG_VERSION, repos, inbox, layout, refreshMinutes: refresh, theme };
+  return {
+    version: CONFIG_VERSION,
+    repos,
+    inbox,
+    layout,
+    refreshMinutes: refresh,
+    theme,
+    notifications: bool(raw.notifications, defaults.notifications),
+  };
 }
