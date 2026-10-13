@@ -104,8 +104,9 @@ export function inboxAlerts(
   const before = new Map(prev.myPullRequests.items.map((pr) => [pr.url, pr]));
   for (const pr of next.myPullRequests.items) {
     const old = before.get(pr.url);
-    // A pull request with fields lost to an error is compared once they load.
-    if (!old || pr.isDraft || pr.partial) continue;
+    // A pull request with fields lost to an error, on either side, is
+    // compared once both have loaded.
+    if (!old || pr.isDraft || pr.partial || old.partial) continue;
     // Each change is reported, since the next fetch compares with this one.
     if (pr.ci === 'failure' && old.ci !== 'failure') {
       alerts.push({ title: 'CI failing', body: label(pr) });

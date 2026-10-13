@@ -189,6 +189,13 @@ describe('inboxBaseline', () => {
     expect(inboxBaseline(prev, partial).myPullRequests.items).toEqual([pending]);
   });
 
+  it('takes a pull request whose fields first failed to load as new once they do', () => {
+    const lost = { ...a, ci: 'none' as const, partial: true };
+    const prev = inbox({ myPullRequests: counted(lost), incomplete: true });
+    const loaded = inbox({ myPullRequests: counted({ ...a, ci: 'failure' }) });
+    expect(inboxAlerts(inboxBaseline(undefined, prev), loaded, SINCE)).toEqual([]);
+  });
+
   it('still reports pull requests the working tokens returned', () => {
     const prev = inbox({ myPullRequests: counted(a, b) });
     // B's token failed; A came back complete.
