@@ -54,6 +54,9 @@ describe('GitLab paths', () => {
     expect(providerOfInput('https://gitlab.com/a/b', 'gitlab.com')).toBe('gitlab');
     expect(providerOfInput('https://gitlab.com/a/b', null)).toBeNull();
     expect(providerOfInput('a/b', 'gitlab.com')).toBeNull();
+    expect(providerOfInput('https://www.github.com/a/b', 'gitlab.com')).toBe('github');
+    expect(providerOfInput('https://www.gitlab.example.com/a/b', 'www.gitlab.example.com')).toBe('gitlab');
+    expect(providerOfInput('https://www.gitlab.com/a/b', 'gitlab.com')).toBeNull();
   });
 });
 

@@ -246,8 +246,8 @@ export function parseGitLabInput(input: string, host: string): { owner: string; 
  * instance. `null` for plain paths and other hosts.
  */
 export function providerOfInput(input: string, gitlabHost: string | null): ProviderId | null {
-  const host = /^(?:https?:\/\/)?(?:www\.)?([^/\s]+)\//i.exec(input.trim())?.[1]?.toLowerCase();
-  if (host === 'github.com') return 'github';
+  const host = /^(?:https?:\/\/)?([^/\s]+)\//i.exec(input.trim())?.[1]?.toLowerCase();
+  if (host === 'github.com' || host === 'www.github.com') return 'github';
   if (gitlabHost && host === gitlabHost.toLowerCase()) return 'gitlab';
   return null;
 }
