@@ -103,6 +103,11 @@ pub fn position_window<R: Runtime>(
             bounds.x.round() as i32,
             bounds.y.round() as i32,
         ));
+        // Moving a window un-maximizes it, so maximize it again afterwards:
+        // it then un-maximizes back to this position.
+        if bounds.maximized {
+            window.maximize()?;
+        }
         window.show()?;
     }
     Ok(())
@@ -123,7 +128,8 @@ impl Bounds {
             && (min_height..=100_000.0).contains(&self.height)
     }
 
-    /// Whether enough of the window's top edge is on one of `screens`.
+    /// Whether enough of the window's top edge is on one of `screens`. On macOS
+    /// the position is the content area's, just below the title bar.
     pub fn is_visible_on(&self, screens: &[Area]) -> bool {
         screens.iter().any(|s| {
             let left = self.x.max(s.x);
@@ -191,11 +197,16 @@ pub fn track<R: Runtime>(window: &Window<R>) {
         }
         return;
     }
-    let (Ok(scale), Ok(position), Ok(size)) = (
-        window.scale_factor(),
-        window.outer_position(),
-        window.inner_size(),
-    ) else {
+    // macOS places a new window by its content area, with the title bar above
+    // it; elsewhere a window is moved by its outer frame.
+    let position = if cfg!(target_os = "macos") {
+        window.inner_position()
+    } else {
+        window.outer_position()
+    };
+    let (Ok(scale), Ok(position), Ok(size)) =
+        (window.scale_factor(), position, window.inner_size())
+    else {
         return;
     };
     let (x, y) = desktop_position(position, scale);
