@@ -67,10 +67,22 @@ describe('useDashboard', () => {
 
     gh.mockRejectedValue(new AppError('network', 'Could not reach GitHub.'));
     vi.mocked(providers.github.fetchInbox).mockRejectedValue(new AppError('network', 'Could not reach GitHub.'));
-    await result.current.refresh({ tokenChanged: true });
+    await result.current.refresh({ tokenChanged: 'github' });
     await waitFor(() => expect(result.current.error?.message).toBe('Could not reach GitHub.'));
     expect(result.current.repos.get(repoId(github))).toBeUndefined();
     expect(result.current.inbox).toBeNull();
+  });
+
+  it("keeps another service's data when one service's token is replaced", async () => {
+    const gh = vi.spyOn(providers.github, 'fetchRepos').mockImplementation(([r]) => Promise.resolve(batch(r!, 'gh')));
+    vi.spyOn(providers.gitlab, 'fetchRepos').mockImplementation(([r]) => Promise.resolve(batch(r!, 'gl')));
+    const { result } = renderHook(() => useDashboard(config('bug'), [], ['github', 'gitlab'], true));
+    await waitFor(() => expect(result.current.repos.get(repoId(github))).toMatchObject({ ok: true }));
+
+    gh.mockRejectedValue(new AppError('network', 'Could not reach GitHub.'));
+    await result.current.refresh({ tokenChanged: 'gitlab' });
+    await waitFor(() => expect(result.current.error?.message).toContain('Could not reach GitHub.'));
+    expect(result.current.repos.get(repoId(github))).toMatchObject({ ok: true, data: { fullName: 'gh' } });
   });
 
   it('keeps a rejected token rejected while a background refresh runs', async () => {
@@ -86,7 +98,7 @@ describe('useDashboard', () => {
     expect(result.current.rejected).toEqual(['github']);
 
     // A newly saved token clears it straight away.
-    void result.current.refresh({ tokenChanged: true });
+    void result.current.refresh({ tokenChanged: 'github' });
     await waitFor(() => expect(result.current.rejected).toEqual([]));
   });
 

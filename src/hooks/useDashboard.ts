@@ -98,17 +98,20 @@ export function useDashboard(
   }, [config, tokenOwners, connected]);
 
   /**
-   * `tokenChanged`: a token was just saved, so earlier rejections no longer
-   * apply. Otherwise they stay until the provider answers again: the setup
+   * `tokenChanged`: the service whose token was just saved, so earlier
+   * rejections no longer apply. Otherwise they stay until the provider answers again: the setup
    * screen they bring up must not flicker away (losing what was typed into
    * it) on every background refresh.
    */
-  const refresh = useCallback(async ({ tokenChanged = false }: { tokenChanged?: boolean } = {}) => {
+  const refresh = useCallback(async ({ tokenChanged }: { tokenChanged?: ProviderId } = {}) => {
     const id = ++requestId.current;
     lastFetch.current = Date.now();
     // Data read with the previous token (perhaps another account's) must not
-    // come back if the new one fails.
-    if (tokenChanged) shownKeys.current = { repos: {}, inbox: '' };
+    // come back if the new one fails. The inbox mixes every service's items.
+    if (tokenChanged) {
+      delete shownKeys.current.repos[tokenChanged];
+      shownKeys.current.inbox = '';
+    }
     // Drop auth errors right away after a token change so a freshly saved
     // token leaves the setup screen immediately; other errors stay visible
     // until the reload finishes.

@@ -207,7 +207,7 @@ export default function App() {
         provider={auth === 'replacing' ? setupFor : (dash.rejected[0] ?? setupFor)}
         reason={auth === 'replacing' ? null : reason}
         gitlabHost={accounts.gitlab?.host ?? null}
-        onDone={() => {
+        onDone={(_login, provider) => {
           // Stay on this screen until the new GitLab instance is registered,
           // so rows from the old one are never treated as its links.
           void reloadAccounts()
@@ -215,7 +215,7 @@ export default function App() {
             .then(() => {
               setAuthReason(null);
               setAuth('ready');
-              void dash.refresh({ tokenChanged: true });
+              void dash.refresh({ tokenChanged: provider });
             });
         }}
         {...(canCancel ? { onCancel: () => setAuth('ready') } : {})}
@@ -377,7 +377,7 @@ export default function App() {
           void reloadAccounts().then(
             (next) => {
               // A changed owner set refetches on its own; a replaced token does not.
-              if ((next.github?.owners ?? []).map((o) => o.owner).join(',') === before) void dash.refresh({ tokenChanged: true });
+              if ((next.github?.owners ?? []).map((o) => o.owner).join(',') === before) void dash.refresh({ tokenChanged: 'github' });
             },
             () => undefined,
           );
