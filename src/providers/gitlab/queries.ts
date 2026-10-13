@@ -102,6 +102,18 @@ export function buildProjectsQuery(repos: PinnedRepo[]): BuiltQuery {
 }
 
 /**
+ * The default branch's own pipelines on its head commit, for when the
+ * project query's unfiltered page held none of them.
+ */
+export const BRANCH_PIPELINE_QUERY = `
+query GitDashBranchPipeline($path: ID!, $ref: String!, $n: Int!) {
+  project(fullPath: $path) {
+    repository { tree { lastCommit { pipelines(ref: $ref, first: $n) { nodes { status ref source } } } } }
+  }
+}
+`;
+
+/**
  * Merge requests that need the viewer; assigned issues follow in
  * `ASSIGNED_ISSUES_QUERY`. Review requests the viewer already answered
  * (approved, reviewed, requested changes) are left out, as on GitLab's own

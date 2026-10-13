@@ -60,6 +60,28 @@ const DANGLING_SOURCES = new Set([
   'dependency_management_security_update',
 ]);
 
+function headPipelines(project: unknown): unknown[] {
+  const repository = obj(obj(project)?.repository);
+  return arr(obj(obj(obj(repository?.tree)?.lastCommit)?.pipelines)?.nodes);
+}
+
+/**
+ * The default branch to look up separately when every pipeline fetched with
+ * the project belonged to something else: a full page of them may have
+ * pushed the branch's own pipeline out.
+ */
+export function branchPipelineToRefetch(project: unknown, fetched: number): string | null {
+  const nodes = headPipelines(project);
+  const branch = str(obj(obj(project)?.repository)?.rootRef);
+  if (!branch || nodes.length < fetched || pickBranchPipeline(nodes, branch)) return null;
+  return branch;
+}
+
+/** CI state of the default branch from a follow-up `BRANCH_PIPELINE_QUERY`. */
+export function mapBranchPipeline(data: unknown, branch: string): CiState {
+  return mapPipelineStatus(pickBranchPipeline(headPipelines(obj(data)?.project), branch)?.status);
+}
+
 /**
  * The newest pipeline that ran for `branch` itself, out of the pipelines of
  * its head commit (newest first). Others can share the commit: merge request
@@ -90,6 +112,7 @@ export function mapPipelineStatus(status: unknown): CiState {
     case 'PENDING':
     case 'RUNNING':
     case 'SCHEDULED':
+    case 'CANCELING':
       return 'pending';
     default:
       return 'none';
@@ -107,6 +130,20 @@ export function mapMergeRequestReview(n: Raw): ReviewState {
   if (status === 'NOT_APPROVED') return 'review_required';
   if (n.approved === true && arr(obj(n.approvedBy)?.nodes).length > 0) return 'approved';
   return 'none';
+}
+
+/** Merge statuses for which GitLab has not finished checking mergeability. */
+const MERGE_CHECK_PENDING = new Set(['UNCHECKED', 'CHECKING', 'PREPARING', 'APPROVALS_SYNCING']);
+
+/**
+ * GitLab checks for conflicts in the background and reports `conflicts:
+ * false` until it has, so the merge status decides when that is final.
+ */
+function mapMergeable(n: Raw): boolean | null {
+  const status = str(n.detailedMergeStatus);
+  if (n.conflicts === true || status === 'CONFLICT' || status === 'NEED_REBASE') return false;
+  if (status === null || MERGE_CHECK_PENDING.has(status)) return null;
+  return n.conflicts === false ? true : null;
 }
 
 function mapLabels(v: unknown): Label[] {
@@ -133,7 +170,7 @@ export function mapMergeRequest(v: unknown): PullRequestItem | null {
     isDraft: n.draft === true,
     review: mapMergeRequestReview(n),
     ci: mapPipelineStatus(obj(n.headPipeline)?.status),
-    mergeable: n.conflicts === true ? false : n.conflicts === false ? true : null,
+    mergeable: mapMergeable(n),
     ...(repo ? { repo } : {}),
   };
 }
@@ -179,8 +216,7 @@ export function mapProject(raw: unknown, config: PinnedRepo): RepoSnapshot {
     prsNeedingAttention = all.items.filter(prNeedsAttention).length;
   }
 
-  const pipelines = arr(obj(obj(obj(repository?.tree)?.lastCommit)?.pipelines)?.nodes);
-  const pipeline = pickBranchPipeline(pipelines, str(repository?.rootRef));
+  const pipeline = pickBranchPipeline(headPipelines(p), str(repository?.rootRef));
   return {
     fullName: str(p.fullPath) ?? `${config.owner}/${config.name}`,
     url: safeUrl(p.webUrl),

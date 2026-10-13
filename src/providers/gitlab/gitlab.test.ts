@@ -121,6 +121,7 @@ describe('mappers', () => {
     expect(mapPipelineStatus('FAILED')).toBe('failure');
     expect(mapPipelineStatus('RUNNING')).toBe('pending');
     expect(mapPipelineStatus('WAITING_FOR_RESOURCE')).toBe('pending');
+    expect(mapPipelineStatus('CANCELING')).toBe('pending');
     expect(mapPipelineStatus('CANCELED')).toBe('none');
     expect(mapPipelineStatus('MANUAL')).toBe('none');
     expect(mapPipelineStatus(undefined)).toBe('none');
@@ -155,6 +156,10 @@ describe('mappers', () => {
     });
     expect(mapMergeRequest(mr({ conflicts: true, headPipeline: null }))).toMatchObject({ mergeable: false, ci: 'none' });
     expect(mapMergeRequest(mr({ conflicts: null }))?.mergeable).toBeNull();
+    // GitLab reports no conflicts until its background check has run.
+    expect(mapMergeRequest(mr({ detailedMergeStatus: 'CHECKING' }))?.mergeable).toBeNull();
+    expect(mapMergeRequest(mr({ detailedMergeStatus: 'NEED_REBASE' }))?.mergeable).toBe(false);
+    expect(mapMergeRequest(mr({ detailedMergeStatus: 'NOT_APPROVED' }))?.mergeable).toBe(true);
   });
 
   it('maps review state from the merge status and real approvals', () => {
@@ -347,6 +352,23 @@ describe('gitlab provider', () => {
     });
     const { repos } = await gitlab.fetchRepos(pins(1), []);
     expect(repos.get('gitlab:acme/platform/p0')).toMatchObject({ ok: false, error: { kind: 'unknown' } });
+  });
+
+  it("looks up the default branch's pipeline when other refs filled the page", async () => {
+    const others = Array.from({ length: 10 }, () => ({ status: 'SUCCESS', ref: 'refs/workloads/x', source: 'duo_workflow' }));
+    graphql
+      .mockResolvedValueOnce({
+        data: {
+          viewer: { username: 'jane.doe' },
+          p0: { fullPath: 'acme/platform/p0', repository: { rootRef: 'main', tree: { lastCommit: { pipelines: { nodes: others } } } } },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { project: { repository: { tree: { lastCommit: { pipelines: { nodes: [{ status: 'FAILED', ref: 'main', source: 'push' }] } } } } } },
+      });
+    const { repos } = await gitlab.fetchRepos(pins(1), []);
+    expect(graphql.mock.calls[1]![1]).toEqual({ path: 'acme/platform/p0', ref: 'main', n: 10 });
+    expect(repos.get('gitlab:acme/platform/p0')).toMatchObject({ ok: true, data: { ci: 'failure' } });
   });
 
   it('treats projects loaded without a signed-in user as a rejected token', async () => {

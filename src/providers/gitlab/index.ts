@@ -1,7 +1,9 @@
 import { repoId, type PinnedRepo } from '../../config/schema';
 import { AppError, gitlabGraphql, type GraphQLError, type GraphQLResponse } from '../../lib/transport';
-import type { InboxSnapshot, Provider, RepoResult } from '../types';
+import type { CiState, InboxSnapshot, Provider, RepoResult } from '../types';
 import {
+  branchPipelineToRefetch,
+  mapBranchPipeline,
   mapDetails,
   mapInbox,
   mapProject,
@@ -12,10 +14,12 @@ import {
 } from './map';
 import {
   ASSIGNED_ISSUES_QUERY,
+  BRANCH_PIPELINE_QUERY,
   buildProjectsQuery,
   DETAILS_LIST_FETCHED,
   DETAILS_QUERY,
   INBOX_QUERY,
+  PIPELINES_FETCHED,
   PROJECT_SUGGESTIONS_FETCHED,
   projectAlias,
   PROJECTS_PER_REQUEST,
@@ -65,6 +69,7 @@ export const gitlab: Provider = {
 
   async fetchRepos(repos: PinnedRepo[]) {
     const results = new Map<string, RepoResult>();
+    const refetch: { repo: PinnedRepo; branch: string; apply: (ci: CiState) => void }[] = [];
     // Small batches keep each request under GitLab's complexity limit, so
     // they run side by side.
     await Promise.all(
@@ -79,11 +84,26 @@ export const gitlab: Provider = {
           if (errorUnder(res.errors, alias)) {
             results.set(repoId(repo), { ok: false, error: projectError() });
           } else if (raw) {
-            results.set(repoId(repo), { ok: true, data: mapProject(raw, repo) });
+            const data = mapProject(raw, repo);
+            results.set(repoId(repo), { ok: true, data });
+            const branch = data.ci === null ? null : branchPipelineToRefetch(raw, PIPELINES_FETCHED);
+            if (branch) refetch.push({ repo, branch, apply: (ci) => (data.ci = ci) });
           } else {
             results.set(repoId(repo), { ok: false, error: projectNotFound() });
           }
         });
+      }),
+    );
+    // Rare: the head commit had a full page of pipelines for other refs.
+    await Promise.all(
+      refetch.map(async ({ repo, branch, apply }) => {
+        const res = await gitlabGraphql<{ project?: unknown }>(BRANCH_PIPELINE_QUERY, {
+          path: `${repo.owner}/${repo.name}`,
+          ref: branch,
+          n: PIPELINES_FETCHED,
+        });
+        if (res.data && !res.errors?.length) apply(mapBranchPipeline(res.data, branch));
+        else results.set(repoId(repo), { ok: false, error: projectError() });
       }),
     );
     // GitLab reports its rate limit in HTTP headers, which the bridge does not pass on.
