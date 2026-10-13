@@ -111,13 +111,14 @@ fn index_account(provider: Provider) -> String {
 ///
 /// GitHub tokens (classic `ghp_`, fine-grained `github_pat_`, OAuth `gho_`, ...)
 /// only contain ASCII letters, digits and underscores. GitLab tokens
-/// (`glpat-...`, newer ones with `.`-separated parts) also use `-` and `.`.
+/// (`glpat-...`, newer ones with `.`-separated parts) also use `-` and `.`,
+/// and a self-hosted instance's custom token prefix may add `+=/@:`.
 pub fn validate_format(provider: Provider, token: &str) -> Result<()> {
     let len = token.len();
     let charset_ok = token.bytes().all(|b| {
         b.is_ascii_alphanumeric()
             || b == b'_'
-            || (provider == Provider::GitLab && (b == b'-' || b == b'.'))
+            || (provider == Provider::GitLab && b"-.+=/@:".contains(&b))
     });
     if (MIN_TOKEN_LEN..=MAX_TOKEN_LEN).contains(&len) && charset_ok {
         Ok(())
@@ -448,7 +449,9 @@ mod tests {
         assert!(validate_format(gl, "glpat-0123456789abcdefghij").is_ok());
         assert!(validate_format(gl, "glpat-AbCdEf0123456789_xYz.01.0w1a2b3c4").is_ok());
         assert!(validate_format(gl, "glpat-0123456789 abcdefghij").is_err());
-        assert!(validate_format(gl, "glpat-0123456789/abcdefghij").is_err());
+        assert!(validate_format(gl, "corp+pat=/@:-0123456789abcdefghij").is_ok());
+        assert!(validate_format(gl, "glpat-0123456789\nabcdefghij").is_err());
+        assert!(validate_format(gl, "glpat-0123456789%abcdefghij").is_err());
     }
 
     #[test]
