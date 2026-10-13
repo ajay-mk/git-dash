@@ -1,8 +1,8 @@
 # Access tokens
 
-GitDash reads GitHub with a personal access token that you create. It is
-stored in your operating system's keychain and never shown again after you
-save it. All requests are read-only; see [SECURITY.md](../SECURITY.md).
+GitDash reads GitHub, currently its only supported provider, with a personal
+access token that you create. It is stored in your operating system's keychain
+and never shown again after you save it. All requests are read-only; see [SECURITY.md](../SECURITY.md).
 
 ## Fine-grained token (recommended)
 

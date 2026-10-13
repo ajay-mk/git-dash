@@ -5,11 +5,15 @@
 <h1 align="center">GitDash</h1>
 
 <p align="center">
-  A glanceable, customizable desktop dashboard for your GitHub repositories.
+  A glanceable, customizable desktop dashboard for your git repositories.
 </p>
 
 Pin the repos you care about, choose what each card shows, and see at a glance
 what is failing, what needs your review, and what is waiting on you.
+
+GitDash currently supports GitHub. Support for GitLab and other hosting
+providers is planned; the app is built around a provider-agnostic model so new
+ones can be added (see [Adding a provider](docs/development.md#adding-a-provider)).
 
 - **Repo cards** with a colour-coded status dot: CI failing on the default
   branch (red), pull requests needing attention (amber), CI running (yellow),
@@ -30,7 +34,7 @@ what is failing, what needs your review, and what is waiting on you.
    [Releases](https://github.com/ajay-mk/git-dash/releases) page. The builds
    are not code-signed yet; [docs/installing.md](docs/installing.md) explains
    the first-launch warnings and how to verify the download.
-2. Create a read-only fine-grained token with
+2. Create a read-only GitHub fine-grained token with
    [this link](https://github.com/settings/personal-access-tokens/new?name=GitDash&description=Read-only+access+for+the+GitDash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read),
    pick the repositories it can see, and paste it into GitDash.
    [docs/tokens.md](docs/tokens.md) covers classic tokens, SSO and using
