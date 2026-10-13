@@ -10,6 +10,7 @@ fn main() {
             "github_graphql",
             "gitlab_graphql",
             "open_external",
+            "save_window_state",
         ]),
     ))
     .expect("failed to run tauri-build");

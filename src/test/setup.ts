@@ -41,6 +41,7 @@ vi.mock('../lib/transport', async (importOriginal) => {
     githubGraphql: vi.fn(notMocked),
     gitlabGraphql: vi.fn(notMocked),
     openExternalUrl: vi.fn(() => Promise.resolve()),
+    saveWindowState: vi.fn(() => Promise.resolve()),
   };
 });
 

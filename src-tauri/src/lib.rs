@@ -82,6 +82,7 @@ pub fn run() {
             commands::github_graphql,
             commands::gitlab_graphql,
             commands::open_external,
+            window_state::save_window_state,
         ])
         .setup(|app| {
             let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())

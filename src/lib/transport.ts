@@ -115,6 +115,11 @@ export function gitlabGraphql<T>(query: string, variables: Record<string, unknow
   return call<GraphQLResponse<T>>('gitlab_graphql', { query, variables });
 }
 
+/** Saves the window's size and position, which normally happens on exit. */
+export function saveWindowState(): Promise<void> {
+  return call<void>('save_window_state', {});
+}
+
 /** Opens a GitHub or connected-GitLab page in the system browser. */
 export function openExternalUrl(url: string): Promise<void> {
   return call<void>('open_external', { url });

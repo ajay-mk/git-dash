@@ -38,6 +38,11 @@ with a minisign key, and the app refuses any file whose signature does not
 match the public key in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`),
 or that was signed for a different version than `latest.json` announces.
 
+The app downloads `latest.json` and the update files from this repository's
+releases without signing in, so updates only work while the repository is
+public. To host them elsewhere, change `plugins.updater.endpoints` and the
+download URLs that `scripts/updater.mjs` writes.
+
 The private key lives in two repository secrets, which the build uses:
 
 - `TAURI_SIGNING_PRIVATE_KEY`: the contents of the private key file.

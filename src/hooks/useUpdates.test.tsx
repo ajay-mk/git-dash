@@ -2,7 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater';
 import { describe, expect, it, vi } from 'vitest';
-import { CHECK_INTERVAL_MS, useUpdates } from './useUpdates';
+import { saveWindowState } from '../lib/transport';
+import { CHECK_INTERVAL_MS, CHECK_TIMEOUT_MS, DOWNLOAD_TIMEOUT_MS, useUpdates } from './useUpdates';
 
 function fakeUpdate(version: string, install?: (onEvent: (e: DownloadEvent) => void) => Promise<void>) {
   return {
@@ -18,6 +19,23 @@ describe('useUpdates', () => {
     const { result } = renderHook(() => useUpdates(true));
     await waitFor(() => expect(result.current.state).toEqual({ kind: 'available', version: '1.2.0' }));
     expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up on a stalled check', async () => {
+    renderHook(() => useUpdates(true));
+    await waitFor(() => expect(check).toHaveBeenCalledWith({ timeout: CHECK_TIMEOUT_MS }));
+  });
+
+  it('reports the outcome of a manual check made while an automatic one runs', async () => {
+    let finish: (u: Update | null) => void = () => undefined;
+    vi.mocked(check).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const { result } = renderHook(() => useUpdates(true));
+    await waitFor(() => expect(check).toHaveBeenCalledTimes(1));
+    act(() => result.current.checkNow());
+    expect(result.current.state).toEqual({ kind: 'checking' });
+    await act(async () => finish(null));
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toEqual({ kind: 'current' });
   });
 
   it('does not check on its own when automatic checks are off', async () => {
@@ -91,6 +109,12 @@ describe('useUpdates', () => {
     await waitFor(() => expect(result.current.state.kind).toBe('available'));
     act(() => result.current.install());
     expect(result.current.state).toEqual({ kind: 'downloading', version: '1.2.0', percent: null });
+    await waitFor(() => expect(found.downloadAndInstall).toHaveBeenCalled());
+    // The window is saved first: on Windows the installer ends the app.
+    expect(vi.mocked(saveWindowState).mock.invocationCallOrder[0]).toBeLessThan(
+      found.downloadAndInstall.mock.invocationCallOrder[0]!,
+    );
+    expect(found.downloadAndInstall).toHaveBeenCalledWith(expect.any(Function), { timeout: DOWNLOAD_TIMEOUT_MS });
     act(() => {
       emit({ event: 'Started', data: { contentLength: 200 } });
       emit({ event: 'Progress', data: { chunkLength: 50 } });
@@ -117,7 +141,7 @@ describe('useUpdates', () => {
     );
     expect(relaunch).not.toHaveBeenCalled();
     act(() => result.current.install());
-    expect(found.downloadAndInstall).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(found.downloadAndInstall).toHaveBeenCalledTimes(2));
   });
 
   it('hides a dismissed update until a newer one turns up', async () => {
