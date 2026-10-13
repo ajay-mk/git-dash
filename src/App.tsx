@@ -23,8 +23,33 @@ import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
 import { tokens, type TokenSummary } from './lib/transport';
+import { providerOfUrl, setGitLabHost } from './lib/url';
+import { PROVIDER_IDS, type ProviderId } from './providers/types';
 
 type AuthState = 'checking' | 'missing' | 'ready' | 'replacing';
+type Accounts = Record<ProviderId, TokenSummary | null>;
+
+const NO_ACCOUNTS: Accounts = { github: null, gitlab: null };
+
+/**
+ * Reads which tokens are stored for every provider. Also registers the GitLab
+ * instance, so its links are allowed before any of its data is shown.
+ */
+async function loadAccounts(): Promise<{ accounts: Accounts; error: string | null }> {
+  const results = await Promise.allSettled(PROVIDER_IDS.map((p) => tokens.list(p)));
+  const accounts: Accounts = { ...NO_ACCOUNTS };
+  let error: string | null = null;
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') accounts[PROVIDER_IDS[i]!] = r.value;
+    else error ??= r.reason instanceof Error ? r.reason.message : 'Could not read the keychain';
+  });
+  setGitLabHost(accounts.gitlab?.hasDefault ? (accounts.gitlab.host ?? null) : null);
+  return { accounts, error };
+}
+
+function connectedTo(accounts: Accounts): ProviderId[] {
+  return PROVIDER_IDS.filter((p) => accounts[p]?.hasDefault);
+}
 
 export default function App() {
   const [config, setConfig] = useState<DashboardConfig>(loadConfig);
@@ -32,7 +57,9 @@ export default function App() {
   const [authReason, setAuthReason] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tokenInfo, setTokenInfo] = useState<TokenSummary | null>(null);
+  const [accounts, setAccounts] = useState<Accounts>(NO_ACCOUNTS);
+  /** The service the token setup screen opens on. */
+  const [setupFor, setSetupFor] = useState<ProviderId>('github');
   // Re-renders relative times such as "Updated 5m" as they age.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -49,23 +76,18 @@ export default function App() {
     });
   }, []);
 
-  const reloadTokens = useCallback(async () => {
-    const info = await tokens.list('github');
-    setTokenInfo(info);
-    return info;
+  const reloadAccounts = useCallback(async () => {
+    const { accounts: next } = await loadAccounts();
+    setAccounts(next);
+    return next;
   }, []);
 
   useEffect(() => {
-    tokens.list('github').then(
-      (info) => {
-        setTokenInfo(info);
-        setAuth(info.hasDefault ? 'ready' : 'missing');
-      },
-      (err: Error) => {
-        setAuthReason(err.message);
-        setAuth('missing');
-      },
-    );
+    void loadAccounts().then(({ accounts: loaded, error }) => {
+      setAccounts(loaded);
+      if (error) setAuthReason(error);
+      setAuth(connectedTo(loaded).length > 0 ? 'ready' : 'missing');
+    });
   }, []);
 
   useEffect(() => {
@@ -74,12 +96,21 @@ export default function App() {
     else root.dataset.theme = config.theme;
   }, [config.theme]);
 
+  const tokenInfo = accounts.github;
   const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
-  const dash = useDashboard(config, tokenOwners, auth === 'ready');
-  const loadDetails = useCallback((url: string) => providers.github.fetchDetails(url, tokenOwners), [tokenOwners]);
+  const connected = useMemo(() => connectedTo(accounts), [accounts]);
+  const dash = useDashboard(config, tokenOwners, connected, auth === 'ready');
+  const loadDetails = useCallback((url: string) => {
+    const provider = providerOfUrl(url) ?? 'github';
+    return providers[provider].fetchDetails(url, provider === 'github' ? tokenOwners : []);
+  }, [tokenOwners]);
 
-  // A revoked or expired token sends the user back to the setup screen.
-  const tokenRejected = isAuthError(dash.error);
+  // A revoked or expired token sends the user back to the setup screen once
+  // no connected service is left working; otherwise a banner says which.
+  const tokenRejected = connected.length > 0 && connected.every((p) => dash.rejected.includes(p));
+  const rejectedNotice = tokenRejected
+    ? []
+    : dash.rejected.map((p) => `Your ${providers[p].label} token was rejected or has expired. Replace it in Settings.`);
 
   const repoIds = useMemo(() => config.repos.map(repoId), [config.repos]);
   const reposById = useMemo(() => new Map(config.repos.map((r) => [repoId(r), r])), [config.repos]);
@@ -159,16 +190,21 @@ export default function App() {
   if (auth === 'checking') return <main className="setup"><p className="empty">Loading…</p></main>;
   if (auth === 'missing' || auth === 'replacing' || tokenRejected) {
     const reason = tokenRejected ? 'Your token was rejected or is missing. Please add a new one.' : authReason;
+    // Cancelling only makes sense while some other service still works.
+    const canCancel = auth === 'replacing' && connected.length > 0;
     return (
       <TokenSetup
+        key={auth === 'replacing' ? `replace-${setupFor}` : 'setup'}
+        provider={auth === 'replacing' ? setupFor : (dash.rejected[0] ?? setupFor)}
         reason={auth === 'replacing' ? null : reason}
         onDone={() => {
           setAuthReason(null);
           setAuth('ready');
-          void reloadTokens().catch(() => undefined);
-          void dash.refresh();
+          void reloadAccounts()
+            .catch(() => undefined)
+            .then(() => dash.refresh());
         }}
-        {...(auth === 'replacing' ? { onCancel: () => setAuth('ready') } : {})}
+        {...(canCancel ? { onCancel: () => setAuth('ready') } : {})}
       />
     );
   }
@@ -223,7 +259,10 @@ export default function App() {
 
       <main className="content">
         {signOutError && <p className="banner error-text">{signOutError}</p>}
-        {dash.error && <p className="banner error-text">{dash.error.message}</p>}
+        {rejectedNotice.map((text) => (
+          <p key={text} className="banner error-text">{text}</p>
+        ))}
+        {dash.error && !isAuthError(dash.error) && <p className="banner error-text">{dash.error.message}</p>}
         {config.repos.length === 0 ? (
           <div className="empty-state">
             <h2>Pin your first repository</h2>
@@ -310,32 +349,37 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         config={config}
         update={update}
-        viewer={tokenInfo?.defaultLogin ?? (dash.inbox?.viewer || null)}
+        accounts={accounts}
         ownerTokens={tokenInfo?.owners ?? []}
         onOwnerTokensChanged={() => {
           const before = tokenOwners.join(',');
-          void reloadTokens().then(
-            (info) => {
+          void reloadAccounts().then(
+            (next) => {
               // A changed owner set refetches on its own; a replaced token does not.
-              if (info.owners.map((o) => o.owner).join(',') === before) void dash.refresh();
+              if ((next.github?.owners ?? []).map((o) => o.owner).join(',') === before) void dash.refresh();
             },
             () => undefined,
           );
         }}
-        onChangeToken={() => {
+        onChangeToken={(provider) => {
           setSettingsOpen(false);
+          setSetupFor(provider);
           setAuth('replacing');
         }}
-        onSignOut={() => {
+        onSignOut={(provider) => {
           setSettingsOpen(false);
           setSignOutError(null);
-          // Only leave the dashboard once the keychain entry is really gone;
-          // otherwise the token would quietly come back on the next launch.
-          tokens.clear('github').then(
+          // Only drop the token once the keychain entry is really gone;
+          // otherwise it would quietly come back on the next launch.
+          tokens.clear(provider).then(
             () => {
               setAuthReason(null);
-              setAuth('missing');
-              void reloadTokens().catch(() => undefined);
+              const left = connected.filter((p) => p !== provider);
+              if (left.length === 0) {
+                setSetupFor(provider);
+                setAuth('missing');
+              }
+              void reloadAccounts().catch(() => undefined);
             },
             (err: Error) => setSignOutError(`Could not remove the token: ${err.message}`),
           );

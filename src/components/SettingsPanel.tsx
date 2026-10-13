@@ -8,7 +8,9 @@ import {
   MAX_REPOS,
   MIN_ITEMS,
   parseConfig,
+  parseGitLabInput,
   parseRepoInput,
+  providerOfInput,
   PR_GROUPING_LABELS,
   PR_GROUPINGS,
   REFRESH_CHOICES,
@@ -23,8 +25,10 @@ import {
   type WidgetType,
 } from '../config/schema';
 import { matchRepos } from '../lib/suggest';
-import { tokens, type OwnerToken } from '../lib/transport';
+import { tokens, type OwnerToken, type TokenSummary } from '../lib/transport';
+import { connectedGitLabHost } from '../lib/url';
 import { providers } from '../providers';
+import { PROVIDER_IDS, type ProviderId } from '../providers/types';
 import { ExternalLink } from './ExternalLink';
 import { PermissionList } from './PermissionList';
 
@@ -131,6 +135,7 @@ function WidgetEditor({ repo, onChange }: { repo: PinnedRepo; onChange: (widgets
 }
 
 const MAX_SUGGESTIONS = 8;
+const NO_OWNERS: readonly string[] = [];
 
 /**
  * Text field for the repository to pin, suggesting repositories the stored
@@ -138,12 +143,14 @@ const MAX_SUGGESTIONS = 8;
  * after the stored tokens change.
  */
 function RepoInput({
+  provider,
   value,
   onChange,
   onPick,
   pinned,
   tokenOwners,
 }: {
+  provider: ProviderId;
   value: string;
   onChange: (value: string) => void;
   onPick: (name: string) => void;
@@ -154,16 +161,17 @@ function RepoInput({
   const [repos, setRepos] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const loadedFor = useRef<readonly string[] | null>(null);
+  const loadedFor = useRef<{ provider: ProviderId; owners: readonly string[] } | null>(null);
 
   function load() {
     // The token list is reloaded whenever a token is added, replaced or
     // removed, so a new array means the suggestions may be stale.
-    const key = tokenOwners;
-    if (loadedFor.current === key) return;
+    const key = { provider, owners: tokenOwners };
+    const last = loadedFor.current;
+    if (last?.provider === provider && last.owners === tokenOwners) return;
     loadedFor.current = key;
     setRepos([]);
-    providers.github.listRepos(tokenOwners).then(
+    providers[provider].listRepos(tokenOwners).then(
       ({ repos: names, complete }) => {
         if (loadedFor.current !== key) return;
         setRepos(names);
@@ -213,7 +221,7 @@ function RepoInput({
         aria-expanded={expanded}
         aria-controls={listId}
         aria-activedescendant={current >= 0 ? `${listId}-${current}` : undefined}
-        placeholder="owner/name or GitHub URL"
+        placeholder={provider === 'gitlab' ? 'group/project or GitLab URL' : 'owner/name or GitHub URL'}
         spellCheck={false}
         autoComplete="off"
         value={value}
@@ -259,20 +267,38 @@ function RepoList({
   config,
   update,
   tokenOwners,
+  connected,
 }: {
   config: DashboardConfig;
   update: Update;
   tokenOwners: readonly string[];
+  connected: readonly ProviderId[];
 }) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const pinned = useMemo(() => new Set(config.repos.map((r) => `${r.owner}/${r.name}`.toLowerCase())), [config.repos]);
+  const [chosen, setChosen] = useState<ProviderId | null>(null);
+  const gitlabHost = connectedGitLabHost();
+  // A pasted URL picks its own service; otherwise the chosen one is used.
+  const fallback = chosen && connected.includes(chosen) ? chosen : (connected[0] ?? 'github');
+  const provider = providerOfInput(input, gitlabHost) ?? fallback;
+  const pinned = useMemo(
+    () => new Set(config.repos.filter((r) => r.provider === provider).map((r) => `${r.owner}/${r.name}`.toLowerCase())),
+    [config.repos, provider],
+  );
 
   function pin(text: string) {
-    const parsed = parseRepoInput(text);
-    if (!parsed) return setError('Enter a repository as owner/name or a github.com URL.');
-    const repo: PinnedRepo = { provider: 'github', ...parsed, widgets: defaultWidgets() };
+    const target = providerOfInput(text, gitlabHost) ?? fallback;
+    const parsed = target === 'gitlab' ? parseGitLabInput(text, gitlabHost ?? '') : parseRepoInput(text);
+    if (!parsed) {
+      return setError(
+        target === 'gitlab'
+          ? 'Enter a project as group/project or a link to it.'
+          : 'Enter a repository as owner/name or a github.com URL.',
+      );
+    }
+    if (!connected.includes(target)) return setError(`Connect ${providers[target].label} first, under Access tokens.`);
+    const repo: PinnedRepo = { provider: target, ...parsed, widgets: defaultWidgets() };
     if (config.repos.some((r) => repoId(r) === repoId(repo))) return setError('Already pinned.');
     if (config.repos.length >= MAX_REPOS) return setError(`You can pin up to ${MAX_REPOS} repositories.`);
     update((c) => ({ ...c, repos: [...c.repos, repo] }));
@@ -302,7 +328,27 @@ function RepoList({
   return (
     <>
       <form className="add-repo" onSubmit={add}>
-        <RepoInput value={input} onChange={setInput} onPick={pin} pinned={pinned} tokenOwners={tokenOwners} />
+        {connected.length > 1 && (
+          <select
+            aria-label="Service"
+            value={provider}
+            onChange={(e) => setChosen(PROVIDER_IDS.find((p) => p === e.target.value) ?? null)}
+          >
+            {connected.map((p) => (
+              <option key={p} value={p}>
+                {providers[p].label}
+              </option>
+            ))}
+          </select>
+        )}
+        <RepoInput
+          provider={provider}
+          value={input}
+          onChange={setInput}
+          onPick={pin}
+          pinned={pinned}
+          tokenOwners={provider === 'github' ? tokenOwners : NO_OWNERS}
+        />
         <button type="submit" className="btn btn-primary">
           Pin
         </button>
@@ -323,6 +369,7 @@ function RepoList({
                   onClick={() => setExpanded(open ? null : id)}
                 >
                   {open ? '▾' : '▸'} {repo.owner}/{repo.name}
+                  {repo.provider !== 'github' && <span className="badge badge-muted">{providers[repo.provider].label}</span>}
                 </button>
                 <button type="button" className="icon-btn" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
                   ↑
@@ -399,6 +446,36 @@ function Backup({ config, update }: { config: DashboardConfig; update: Update })
       </div>
       {message && <p className={message.ok ? 'ok-text' : 'error-text'}>{message.text}</p>}
     </>
+  );
+}
+
+function TokenActions({ provider, onChangeToken, onSignOut }: {
+  provider: ProviderId;
+  onChangeToken: (provider: ProviderId) => void;
+  onSignOut: (provider: ProviderId) => void;
+}) {
+  const label = providers[provider].label;
+  return (
+    <div className="actions">
+      <button type="button" className="btn" onClick={() => onChangeToken(provider)}>
+        Replace {label} token
+      </button>
+      <button type="button" className="btn btn-danger" onClick={() => onSignOut(provider)}>
+        Remove {label} token
+      </button>
+    </div>
+  );
+}
+
+function NotConnected({ provider, onConnect }: { provider: ProviderId; onConnect: (provider: ProviderId) => void }) {
+  const label = providers[provider].label;
+  return (
+    <div className="token-item">
+      <span className="token-item-name muted">Not connected</span>
+      <button type="button" className="btn" onClick={() => onConnect(provider)}>
+        Connect {label}
+      </button>
+    </div>
   );
 }
 
@@ -530,7 +607,7 @@ export function SettingsPanel({
   onClose,
   config,
   update,
-  viewer,
+  accounts,
   ownerTokens,
   onChangeToken,
   onSignOut,
@@ -540,14 +617,17 @@ export function SettingsPanel({
   onClose: () => void;
   config: DashboardConfig;
   update: Update;
-  viewer: string | null;
+  /** What is stored for each service; `null` when it could not be read. */
+  accounts: Record<ProviderId, TokenSummary | null>;
   ownerTokens: OwnerToken[];
-  onChangeToken: () => void;
-  onSignOut: () => void;
+  /** Connects a service, or replaces its token. */
+  onChangeToken: (provider: ProviderId) => void;
+  onSignOut: (provider: ProviderId) => void;
   onOwnerTokensChanged: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const tokenOwners = useMemo(() => ownerTokens.map((o) => o.owner), [ownerTokens]);
+  const connected = useMemo(() => PROVIDER_IDS.filter((p) => accounts[p]?.hasDefault), [accounts]);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -580,7 +660,7 @@ export function SettingsPanel({
 
         <section className="settings-section">
           <h3>Pinned repositories</h3>
-          <RepoList config={config} update={update} tokenOwners={tokenOwners} />
+          <RepoList config={config} update={update} tokenOwners={tokenOwners} connected={connected} />
         </section>
 
         <section className="settings-section">
@@ -630,8 +710,8 @@ export function SettingsPanel({
             <NumberField label="Items per group" value={inbox.limit} onChange={(limit) => setInbox({ limit })} />
           </fieldset>
           <p className="hint">
-            Fetched with the default token, plus any per-owner tokens that belong to the same GitHub account.
-            Items only visible to a token for another account are not shown.
+            Fetched from every connected service. On GitHub, that is the default token plus any per-owner tokens
+            that belong to the same account; items only visible to a token for another account are not shown.
           </p>
         </section>
 
@@ -670,20 +750,37 @@ export function SettingsPanel({
 
         <section className="settings-section">
           <h3>Access tokens</h3>
-          <p>
-            {viewer ? <>Default token: GitHub account <strong>{viewer}</strong>.</> : 'Default token is set.'}
-          </p>
-          <p className="hint">Used for the &ldquo;Needs you&rdquo; sidebar and any owner without its own token.</p>
-          <div className="actions">
-            <button type="button" className="btn" onClick={onChangeToken}>
-              Replace token
-            </button>
-            <button type="button" className="btn btn-danger" onClick={onSignOut}>
-              Remove token
-            </button>
-          </div>
-          <h3>Per-owner tokens</h3>
-          <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
+          <h4>GitHub</h4>
+          {accounts.github?.hasDefault ? (
+            <>
+              <p>
+                {accounts.github.defaultLogin ? (
+                  <>Default token: GitHub account <strong>{accounts.github.defaultLogin}</strong>.</>
+                ) : (
+                  'Default token is set.'
+                )}
+              </p>
+              <p className="hint">Used for the &ldquo;Needs you&rdquo; sidebar and any owner without its own token.</p>
+              <TokenActions provider="github" onChangeToken={onChangeToken} onSignOut={onSignOut} />
+              <h4>Per-owner tokens</h4>
+              <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
+            </>
+          ) : (
+            <NotConnected provider="github" onConnect={onChangeToken} />
+          )}
+          <h4>GitLab</h4>
+          {accounts.gitlab?.hasDefault ? (
+            <>
+              <p>
+                Connected to <strong>{accounts.gitlab.host ?? 'GitLab'}</strong>
+                {accounts.gitlab.defaultLogin && <> as <strong>{accounts.gitlab.defaultLogin}</strong></>}.
+              </p>
+              <p className="hint">One token covers every group and project your GitLab account can see.</p>
+              <TokenActions provider="gitlab" onChangeToken={onChangeToken} onSignOut={onSignOut} />
+            </>
+          ) : (
+            <NotConnected provider="gitlab" onConnect={onChangeToken} />
+          )}
         </section>
 
         <section className="settings-section">

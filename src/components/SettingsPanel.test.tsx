@@ -3,12 +3,26 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig, MAX_REPOS, type DashboardConfig } from '../config/schema';
-import { githubGraphql } from '../lib/transport';
+import { githubGraphql, gitlabGraphql, type TokenSummary } from '../lib/transport';
+import { setGitLabHost } from '../lib/url';
+import type { ProviderId } from '../providers/types';
 import { pinned } from '../test/fixtures';
 import { SettingsPanel } from './SettingsPanel';
 
+type Accounts = Record<ProviderId, TokenSummary | null>;
+
+const NOT_CONNECTED: TokenSummary = { hasDefault: false, defaultLogin: null, owners: [], host: null };
+const GITHUB_ONLY: Accounts = {
+  github: { hasDefault: true, defaultLogin: 'octocat', owners: [], host: null },
+  gitlab: NOT_CONNECTED,
+};
+const BOTH: Accounts = {
+  ...GITHUB_ONLY,
+  gitlab: { hasDefault: true, defaultLogin: 'jane.doe', owners: [], host: 'gitlab.example.com' },
+};
+
 /** Renders the panel with real state so updates flow back into it. */
-function setup(initial: Partial<DashboardConfig> = {}) {
+function setup(initial: Partial<DashboardConfig> = {}, accounts: Accounts = GITHUB_ONLY) {
   let current: DashboardConfig = { ...defaultConfig(), ...initial };
   const onChangeToken = vi.fn();
   const onSignOut = vi.fn();
@@ -23,7 +37,7 @@ function setup(initial: Partial<DashboardConfig> = {}) {
         onClose={onClose}
         config={config}
         update={(fn) => setConfig((c) => (current = fn(c)))}
-        viewer="octocat"
+        accounts={accounts}
         ownerTokens={[]}
         onOwnerTokensChanged={vi.fn()}
         onChangeToken={onChangeToken}
@@ -149,7 +163,7 @@ describe('SettingsPanel', () => {
         onClose: vi.fn(),
         config: defaultConfig(),
         update: vi.fn(),
-        viewer: 'octocat',
+        accounts: GITHUB_ONLY,
         onOwnerTokensChanged: vi.fn(),
         onChangeToken: vi.fn(),
         onSignOut: vi.fn(),
@@ -198,7 +212,7 @@ describe('SettingsPanel', () => {
           onClose={vi.fn()}
           config={defaultConfig()}
           update={vi.fn()}
-          viewer="octocat"
+          accounts={GITHUB_ONLY}
           ownerTokens={[{ owner: 'acme', login: 'octocat' }]}
           onOwnerTokensChanged={vi.fn()}
           onChangeToken={vi.fn()}
@@ -324,10 +338,72 @@ describe('SettingsPanel', () => {
   it('wires the token buttons', async () => {
     const { onChangeToken, onSignOut } = setup();
     expect(screen.getByText('octocat')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Replace token' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Remove token' }));
-    expect(onChangeToken).toHaveBeenCalledOnce();
-    expect(onSignOut).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole('button', { name: 'Replace GitHub token' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove GitHub token' }));
+    expect(onChangeToken).toHaveBeenCalledExactlyOnceWith('github');
+    expect(onSignOut).toHaveBeenCalledExactlyOnceWith('github');
+
+    // GitLab is offered but not connected.
+    await userEvent.click(screen.getByRole('button', { name: 'Connect GitLab' }));
+    expect(onChangeToken).toHaveBeenLastCalledWith('gitlab');
+  });
+
+  describe('with GitLab connected', () => {
+    function setupBoth(initial: Partial<DashboardConfig> = {}) {
+      setGitLabHost('gitlab.example.com');
+      return setup(initial, BOTH);
+    }
+
+    it('shows the instance and account, and wires its buttons', async () => {
+      const { onChangeToken, onSignOut } = setupBoth();
+      expect(screen.getByText('gitlab.example.com')).toBeTruthy();
+      expect(screen.getByText('jane.doe')).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Replace GitLab token' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Remove GitLab token' }));
+      expect(onChangeToken).toHaveBeenCalledExactlyOnceWith('gitlab');
+      expect(onSignOut).toHaveBeenCalledExactlyOnceWith('gitlab');
+    });
+
+    it('pins nested GitLab projects by path or link', async () => {
+      const { config } = setupBoth();
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Service' }), 'GitLab');
+      await pin('group/sub/project');
+      // A link picks its service, whatever is selected.
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Service' }), 'GitHub');
+      await pin('https://gitlab.example.com/acme/api/-/merge_requests/3');
+      await pin('octo/repo');
+      expect(config().repos.map((r) => [r.provider, r.owner, r.name])).toEqual([
+        ['gitlab', 'group/sub', 'project'],
+        ['gitlab', 'acme', 'api'],
+        ['github', 'octo', 'repo'],
+      ]);
+      expect(screen.getByRole('button', { name: /^▸ group\/sub\/project/ }).textContent).toContain('GitLab');
+    });
+
+    it('suggests projects from GitLab when it is selected', async () => {
+      vi.mocked(gitlabGraphql).mockResolvedValue({
+        data: { projects: { nodes: [{ fullPath: 'group/sub/web', archived: false }] } },
+      });
+      setupBoth();
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Service' }), 'GitLab');
+      await userEvent.click(screen.getByRole('combobox', { name: 'Repository to pin' }));
+      expect(await screen.findByRole('option', { name: 'group/sub/web' })).toBeTruthy();
+      expect(githubGraphql).not.toHaveBeenCalled();
+    });
+
+    it('rejects a GitHub-style path that is not a GitLab project', async () => {
+      setupBoth();
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Service' }), 'GitLab');
+      await pin('group/-bad');
+      expect(screen.getByRole('alert').textContent).toBe('Enter a project as group/project or a link to it.');
+    });
+  });
+
+  it('does not pin GitLab links while GitLab is not connected', async () => {
+    const { config } = setup();
+    await pin('https://gitlab.com/group/project');
+    expect(config().repos).toEqual([]);
+    expect(screen.getByRole('alert')).toBeTruthy();
   });
 
   it('links to a token form for the owner being added', async () => {
@@ -384,7 +460,7 @@ describe('SettingsPanel', () => {
     it.each([
       ['not JSON', '{nope'],
       ['a wrong version', JSON.stringify({ version: 2, repos: [] })],
-      ['an unknown provider', JSON.stringify({ version: 1, repos: [{ provider: 'gitlab', owner: 'a', name: 'b' }] })],
+      ['an unknown provider', JSON.stringify({ version: 1, repos: [{ provider: 'gitea', owner: 'a', name: 'b' }] })],
       ['too many repositories', JSON.stringify({ version: 1, repos: Array(MAX_REPOS + 1).fill({}) })],
     ])('rejects %s', async (_, text) => {
       const { config } = setup({ repos: [pinned()] });
