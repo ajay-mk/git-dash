@@ -51,6 +51,28 @@ describe('useDashboard', () => {
     expect(result.current.repos.get(repoId(github))).toMatchObject({ ok: true });
   });
 
+  it("does not bring back data read with a replaced token when the new one fails", async () => {
+    const gh = vi.spyOn(providers.github, 'fetchRepos').mockImplementation(([r]) => Promise.resolve(batch(r!, 'gh')));
+    vi.spyOn(providers.github, 'fetchInbox').mockResolvedValue({
+      viewer: 'octocat',
+      reviewRequests: { total: 1, items: [] },
+      myPullRequests: { total: 0, items: [] },
+      assigned: { total: 0, items: [] },
+      ssoRestricted: false,
+    });
+    const cfg = { ...defaultConfig(), repos: [github] };
+    const { result } = renderHook(() => useDashboard(cfg, [], ['github'], true));
+    await waitFor(() => expect(result.current.repos.get(repoId(github))).toMatchObject({ ok: true }));
+    await waitFor(() => expect(result.current.inbox).not.toBeNull());
+
+    gh.mockRejectedValue(new AppError('network', 'Could not reach GitHub.'));
+    vi.mocked(providers.github.fetchInbox).mockRejectedValue(new AppError('network', 'Could not reach GitHub.'));
+    await result.current.refresh({ tokenChanged: true });
+    await waitFor(() => expect(result.current.error?.message).toBe('Could not reach GitHub.'));
+    expect(result.current.repos.get(repoId(github))).toBeUndefined();
+    expect(result.current.inbox).toBeNull();
+  });
+
   it('keeps a rejected token rejected while a background refresh runs', async () => {
     const gh = vi.spyOn(providers.github, 'fetchRepos').mockRejectedValue(new AppError('unauthorized', 'Bad credentials'));
     const cfg = { ...defaultConfig(), repos: [github], inbox: { ...defaultConfig().inbox, enabled: false } };

@@ -106,6 +106,9 @@ export function useDashboard(
   const refresh = useCallback(async ({ tokenChanged = false }: { tokenChanged?: boolean } = {}) => {
     const id = ++requestId.current;
     lastFetch.current = Date.now();
+    // Data read with the previous token (perhaps another account's) must not
+    // come back if the new one fails.
+    if (tokenChanged) shownKeys.current = { repos: {}, inbox: '' };
     // Drop auth errors right away after a token change so a freshly saved
     // token leaves the setup screen immediately; other errors stay visible
     // until the reload finishes.
