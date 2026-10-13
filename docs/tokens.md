@@ -1,8 +1,10 @@
 # Access tokens
 
-GitDash reads GitHub, currently its only supported provider, with a personal
-access token that you create. It is stored in your operating system's keychain
-and never shown again after you save it. All requests are read-only; see [SECURITY.md](../SECURITY.md).
+GitDash reads GitHub and GitLab with personal access tokens that you create.
+They are stored in your operating system's keychain and never shown again
+after you save them. All requests are read-only; see
+[SECURITY.md](../SECURITY.md). You can connect either service or both; the
+rest of this page covers GitHub first, then [GitLab](#gitlab).
 
 ## Fine-grained token (recommended)
 
@@ -56,3 +58,35 @@ results from per-owner tokens that belong to the same GitHub user,
 de-duplicated. Items visible only to a token that belongs to a *different*
 user are not shown, and per-owner tokens that fail are skipped there (their
 repository cards show the error instead).
+
+## GitLab
+
+GitDash works with gitlab.com and with self-hosted GitLab 16 or newer that is
+reachable over HTTPS. Choose **GitLab** on the setup screen, or **Settings →
+Access tokens → Connect GitLab** once GitHub is connected.
+
+1. Enter your instance, such as `gitlab.com` or `gitlab.example.com` (add the
+   port if it is not 443).
+2. Create a personal access token with only the **`read_api`** scope. On
+   gitlab.com the setup screen links to the token form with the name and
+   scope filled in; on a self-hosted instance it shows the address of that
+   form (*User settings → Access tokens*).
+3. Paste the token. GitDash checks it with that instance and shows the
+   username it belongs to.
+
+The instance is saved with the token, and the token is only ever sent to that
+instance. One token covers every group and project your account can see, so
+GitLab has no per-owner tokens. One GitLab instance can be connected at a
+time; connecting another replaces it.
+
+Pin a project in Settings with `group/project`, `group/subgroup/project` or a
+link to any page of it; when both services are connected, pick the service
+next to the field (a pasted link picks it for you). Merge requests fill the
+pull request lists, the card's CI shows the latest pipeline on the default
+branch, and the **"Needs you"** sidebar adds merge requests waiting on your
+review, your own merge requests, and issues and merge requests assigned to
+you.
+
+Approval rules beyond what GitLab Free reports are not shown: a merge request
+counts as approved once someone has approved it and GitLab reports no
+missing approvals.
