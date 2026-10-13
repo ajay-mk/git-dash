@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig, MAX_REPOS, type DashboardConfig } from '../config/schema';
-import { githubGraphql, gitlabGraphql, type TokenSummary } from '../lib/transport';
+import { githubGraphql, gitlabGraphql, type OwnerToken, type TokenSummary } from '../lib/transport';
 import { setGitLabHost } from '../lib/url';
 import type { ProviderId } from '../providers/types';
 import { pinned } from '../test/fixtures';
@@ -22,7 +22,7 @@ const BOTH: Accounts = {
 };
 
 /** Renders the panel with real state so updates flow back into it. */
-function setup(initial: Partial<DashboardConfig> = {}, accounts: Accounts = GITHUB_ONLY) {
+function setup(initial: Partial<DashboardConfig> = {}, accounts: Accounts = GITHUB_ONLY, ownerTokens: OwnerToken[] = []) {
   let current: DashboardConfig = { ...defaultConfig(), ...initial };
   const onChangeToken = vi.fn();
   const onSignOut = vi.fn();
@@ -38,7 +38,7 @@ function setup(initial: Partial<DashboardConfig> = {}, accounts: Accounts = GITH
         config={config}
         update={(fn) => setConfig((c) => (current = fn(c)))}
         accounts={accounts}
-        ownerTokens={[]}
+        ownerTokens={ownerTokens}
         onOwnerTokensChanged={vi.fn()}
         onChangeToken={onChangeToken}
         onSignOut={onSignOut}
@@ -404,6 +404,13 @@ describe('SettingsPanel', () => {
     await pin('https://gitlab.com/group/project');
     expect(config().repos).toEqual([]);
     expect(screen.getByRole('alert')).toBeTruthy();
+  });
+
+  it('keeps per-owner GitHub tokens removable without a default token', () => {
+    const owners = [{ owner: 'acme', login: 'octocat' }];
+    setup({}, { github: { ...NOT_CONNECTED, owners }, gitlab: BOTH.gitlab }, owners);
+    expect(screen.getByRole('heading', { name: 'Per-owner tokens' })).toBeTruthy();
+    expect(screen.getByText('acme')).toBeTruthy();
   });
 
   it('links to a token form for the owner being added', async () => {

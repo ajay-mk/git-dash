@@ -782,7 +782,16 @@ export function SettingsPanel({
               <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
             </>
           ) : (
-            <NotConnected provider="github" error={accountErrors.github} onConnect={onChangeToken} />
+            <>
+              <NotConnected provider="github" error={accountErrors.github} onConnect={onChangeToken} />
+              {/* Removing the default token keeps per-owner ones; they must stay removable. */}
+              {ownerTokens.length > 0 && (
+                <>
+                  <h4>Per-owner tokens</h4>
+                  <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
+                </>
+              )}
+            </>
           )}
           <h4>GitLab</h4>
           {accounts.gitlab?.hasDefault ? (
