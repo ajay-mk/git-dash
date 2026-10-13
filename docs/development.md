@@ -36,4 +36,18 @@ src-tauri/              Rust backend
 3. Add a backend client and token slot in `src-tauri/src/` with a
    read-only command, and grant it in `src-tauri/capabilities/default.json`.
 
+## App icons
+
+`src/assets/logo.svg` is the logo. macOS expects app icons to sit on a grid
+with a margin around the tile, so `src-tauri/icons/icon.icns` is built from
+`src-tauri/icons/icon-macos.svg`, the same logo inset on that grid. The other
+platforms use the logo edge to edge. After changing the logo, update both SVGs,
+then regenerate the icons and keep the macOS one:
+
+```sh
+npx tauri icon src/assets/logo.svg        # every platform
+npx tauri icon src-tauri/icons/icon-macos.svg -o /tmp/mac-icons
+cp /tmp/mac-icons/icon.icns src-tauri/icons/icon.icns
+```
+
 Releases are covered in [releasing.md](releasing.md).
