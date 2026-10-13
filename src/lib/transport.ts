@@ -12,6 +12,10 @@ export type AppErrorKind =
   | 'unauthorized'
   | 'invalid_token_format'
   | 'invalid_owner'
+  | 'invalid_host'
+  | 'owner_tokens_unsupported'
+  | 'insufficient_scope'
+  | 'forbidden_url'
   | 'too_many_tokens'
   | 'forbidden_operation'
   | 'request_too_large'
@@ -63,16 +67,19 @@ export interface TokenSummary {
   hasDefault: boolean;
   defaultLogin: string | null;
   owners: OwnerToken[];
+  /** GitLab only: the instance the default token is for, as `URL.host`. */
+  host?: string | null;
 }
 
 export const tokens = {
   list: (provider: ProviderId) => call<TokenSummary>('token_list', { provider }),
   /**
    * Verifies and stores a token; resolves to the login it belongs to. Without
-   * `owner` it replaces the default token.
+   * `owner` it replaces the default token. For GitLab, `host` is the instance
+   * (gitlab.com when left out); the token is only ever sent there.
    */
-  set: (provider: ProviderId, token: string, owner: string | null = null) =>
-    call<string>('token_set', { provider, token, owner }),
+  set: (provider: ProviderId, token: string, owner: string | null = null, host: string | null = null) =>
+    call<string>('token_set', { provider, token, owner, host }),
   clear: (provider: ProviderId, owner: string | null = null) => call<void>('token_clear', { provider, owner }),
 };
 
@@ -98,4 +105,17 @@ export function githubGraphql<T>(
   owner: string | null = null,
 ): Promise<GraphQLResponse<T>> {
   return call<GraphQLResponse<T>>('github_graphql', { query, variables, owner });
+}
+
+/**
+ * Runs a read-only GraphQL query against the connected GitLab instance. The
+ * backend picks the host the stored token belongs to.
+ */
+export function gitlabGraphql<T>(query: string, variables: Record<string, unknown>): Promise<GraphQLResponse<T>> {
+  return call<GraphQLResponse<T>>('gitlab_graphql', { query, variables });
+}
+
+/** Opens a GitHub or connected-GitLab page in the system browser. */
+export function openExternalUrl(url: string): Promise<void> {
+  return call<void>('open_external', { url });
 }

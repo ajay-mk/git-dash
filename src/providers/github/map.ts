@@ -11,6 +11,7 @@ import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
 import { EVENTS_FETCHED } from './queries';
 import { PERMISSION_LABELS } from './tokenTemplate';
+import { arr, num, obj, str, trimBody, type Raw } from '../raw';
 import type {
   CheckItem,
   CiState,
@@ -28,22 +29,8 @@ import type {
   ReviewState,
 } from '../types';
 
-type Raw = Record<string, unknown>;
-
 const LONG_AGO = new Date(0).toISOString();
 
-function obj(v: unknown): Raw | null {
-  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Raw) : null;
-}
-function str(v: unknown): string | null {
-  return typeof v === 'string' ? v : null;
-}
-function num(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
-}
-function arr(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
 function safeUrl(v: unknown): string {
   const s = str(v);
   return s && isSafeExternalUrl(s) ? s : '';
@@ -331,6 +318,7 @@ export function describeRepoError(err: GraphQLError | undefined, owner: string):
       };
     case 'rate_limited':
       return { kind, message: 'GitHub rate limit reached. This will retry on the next refresh.' };
+    case 'not_connected':
     case 'unknown':
       return { kind, message: 'Could not load this repository.' };
   }
@@ -357,9 +345,6 @@ export function mapRepoSuggestions(connection: unknown): RepoSuggestion[] {
     return parsed ? [{ name: `${parsed.owner}/${parsed.name}`, pushedAt: str(node.pushedAt) }] : [];
   });
 }
-
-/** Longest description kept for the details view. */
-export const DETAILS_BODY_CHARS = 400;
 
 function mapCheckRun(n: Raw): CheckItem | null {
   const name = str(n.name);
@@ -417,11 +402,6 @@ function mapReviewers(reviews: unknown, requests: unknown): { login: string; sta
     if (login && state && !out.has(login)) out.set(login, state);
   }
   return [...out].map(([login, state]) => ({ login, state }));
-}
-
-function trimBody(v: unknown): string {
-  const text = (str(v) ?? '').replace(/\s+/g, ' ').trim();
-  return text.length > DETAILS_BODY_CHARS ? `${text.slice(0, DETAILS_BODY_CHARS - 1).trimEnd()}…` : text;
 }
 
 /** Maps `resource(url:)`; `null` when it is not a pull request or issue. */

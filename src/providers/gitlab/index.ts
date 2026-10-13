@@ -1,0 +1,164 @@
+import { repoId, type PinnedRepo } from '../../config/schema';
+import { AppError, gitlabGraphql, type GraphQLError, type GraphQLResponse } from '../../lib/transport';
+import type { CiState, InboxSnapshot, Provider, RepoResult } from '../types';
+import {
+  branchPipelineToRefetch,
+  mapBranchPipeline,
+  mapDetails,
+  mapInbox,
+  mapProject,
+  mapProjectSuggestions,
+  parseItemUrl,
+  projectError,
+  projectNotFound,
+} from './map';
+import {
+  ASSIGNED_ISSUES_QUERY,
+  BRANCH_PIPELINE_QUERY,
+  buildProjectsQuery,
+  DETAILS_LIST_FETCHED,
+  DETAILS_QUERY,
+  INBOX_QUERY,
+  PIPELINES_FETCHED,
+  PROJECT_SUGGESTIONS_FETCHED,
+  projectAlias,
+  PROJECTS_PER_REQUEST,
+  PROJECTS_QUERY,
+  VIEWER_ALIAS,
+} from './queries';
+import { gitlabTokenUrl, SCOPE_LABELS } from './tokenTemplate';
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Fails when GitLab answered with errors and no data at all. */
+function dataOrThrow<T>(res: GraphQLResponse<T>, what: string): T {
+  if (!res.data) {
+    if (res.errors?.length) throw new AppError('http', `GitLab could not load ${what}.`);
+    throw new AppError('http', `GitLab returned no ${what}.`);
+  }
+  return res.data;
+}
+
+function signedIn(viewer: unknown): boolean {
+  return typeof viewer === 'object' && viewer !== null && typeof (viewer as { username?: unknown }).username === 'string';
+}
+
+/**
+ * Fails unless the viewer came back. GitLab answers a rejected token as an
+ * anonymous request, so a missing viewer with no errors means the token was
+ * not accepted; with errors, it says nothing about the token.
+ */
+function requireViewer(viewer: unknown, errors: GraphQLError[] | undefined): void {
+  if (signedIn(viewer)) return;
+  if (errors?.length) throw new AppError('http', 'GitLab could not verify the token right now.');
+  throw new AppError('unauthorized', 'GitLab did not accept the token.');
+}
+
+function errorUnder(errors: GraphQLError[] | undefined, alias: string): GraphQLError | undefined {
+  return errors?.find((e) => e.path?.[0] === alias);
+}
+
+/**
+ * GitLab, on gitlab.com or a self-hosted instance. One personal access token
+ * with the `read_api` scope covers every group the account can see, so
+ * there are no per-owner tokens.
+ */
+export const gitlab: Provider = {
+  id: 'gitlab',
+  label: 'GitLab',
+  ownerTokens: false,
+  newTokenUrl: gitlabTokenUrl,
+  tokenPermissions: SCOPE_LABELS,
+
+  async fetchRepos(repos: PinnedRepo[]) {
+    const results = new Map<string, RepoResult>();
+    const refetch: { repo: PinnedRepo; branch: string; apply: (ci: CiState) => void }[] = [];
+    // Small batches keep each request under GitLab's complexity limit, so
+    // they run side by side.
+    await Promise.all(
+      chunk(repos, PROJECTS_PER_REQUEST).map(async (batch) => {
+        const { query, variables } = buildProjectsQuery(batch);
+        const res = await gitlabGraphql<Record<string, unknown>>(query, variables);
+        const data = dataOrThrow(res, 'your projects');
+        requireViewer(data[VIEWER_ALIAS], res.errors);
+        batch.forEach((repo, i) => {
+          const alias = projectAlias(i);
+          const raw = data[alias];
+          if (errorUnder(res.errors, alias)) {
+            results.set(repoId(repo), { ok: false, error: projectError() });
+          } else if (raw) {
+            const data = mapProject(raw, repo);
+            results.set(repoId(repo), { ok: true, data });
+            const branch = data.ci === null ? null : branchPipelineToRefetch(raw, PIPELINES_FETCHED);
+            if (branch) refetch.push({ repo, branch, apply: (ci) => (data.ci = ci) });
+          } else {
+            results.set(repoId(repo), { ok: false, error: projectNotFound() });
+          }
+        });
+      }),
+    );
+    // Rare: the head commit had a full page of pipelines for other refs.
+    await Promise.all(
+      refetch.map(async ({ repo, branch, apply }) => {
+        const res = await gitlabGraphql<{ project?: unknown }>(BRANCH_PIPELINE_QUERY, {
+          path: `${repo.owner}/${repo.name}`,
+          ref: branch,
+          n: PIPELINES_FETCHED,
+        });
+        if (res.data && !res.errors?.length) apply(mapBranchPipeline(res.data, branch));
+        else results.set(repoId(repo), { ok: false, error: projectError() });
+      }),
+    );
+    // GitLab reports its rate limit in HTTP headers, which the bridge does not pass on.
+    return { repos: results, rateLimit: null };
+  },
+
+  async fetchInbox(config): Promise<InboxSnapshot> {
+    const res = await gitlabGraphql<{ currentUser?: { username?: unknown } | null }>(INBOX_QUERY, {
+      n: config.limit,
+      withReview: config.reviewRequests,
+      withMine: config.myPullRequests,
+      withAssigned: config.assigned,
+    });
+    const user = dataOrThrow(res, 'your inbox').currentUser;
+    requireViewer(user, res.errors);
+    const me = user!.username as string;
+    // A list that failed comes back empty next to the others; showing it as
+    // "nothing needs you" would be wrong.
+    if (res.errors?.length) throw new AppError('http', 'GitLab could not load all of your inbox.');
+    let issues: unknown = null;
+    if (config.assigned) {
+      const assigned = await gitlabGraphql<{ issues?: unknown }>(ASSIGNED_ISSUES_QUERY, { me, n: config.limit });
+      issues = dataOrThrow(assigned, 'your assigned issues').issues;
+      if (assigned.errors?.length) throw new AppError('http', 'GitLab could not load your assigned issues.');
+    }
+    return mapInbox(user, issues, config.limit);
+  },
+
+  async listRepos() {
+    const res = await gitlabGraphql<Record<string, unknown>>(PROJECTS_QUERY, { n: PROJECT_SUGGESTIONS_FETCHED });
+    const data = dataOrThrow(res, 'your projects');
+    requireViewer(data[VIEWER_ALIAS], res.errors);
+    const projects = data.projects;
+    if (projects == null) throw new AppError('http', 'Could not list projects.');
+    return { repos: mapProjectSuggestions(projects).map((p) => p.name), complete: true };
+  },
+
+  async fetchDetails(url) {
+    const ref = parseItemUrl(url);
+    if (!ref) throw new AppError('http', 'Not a GitLab merge request or issue link.');
+    const res = await gitlabGraphql<{ project?: unknown }>(DETAILS_QUERY, {
+      path: ref.path,
+      iid: ref.iid,
+      n: DETAILS_LIST_FETCHED,
+      mr: ref.isMergeRequest,
+    });
+    const details = mapDetails(res.data?.project);
+    if (!details) throw new AppError('http', 'Could not load details from GitLab.');
+    return { ...details, incomplete: res.errors?.some((e) => e.path?.[0] === 'project') ?? false };
+  },
+};

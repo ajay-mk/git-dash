@@ -29,6 +29,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 export const github: Provider = {
   id: 'github',
   label: 'GitHub',
+  ownerTokens: true,
   newTokenUrl: fineGrainedTokenUrl,
   tokenPermissions: PERMISSION_LABELS,
 

@@ -7,13 +7,10 @@
 
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import { setGitLabHost } from '../lib/url';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(() => Promise.reject(new Error('invoke must not be called in tests'))),
-}));
-
-vi.mock('@tauri-apps/plugin-opener', () => ({
-  openUrl: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@tauri-apps/plugin-notification', () => ({
@@ -28,17 +25,20 @@ vi.mock('../lib/transport', async (importOriginal) => {
   return {
     ...actual,
     tokens: {
-      list: vi.fn(() => Promise.resolve({ hasDefault: false, defaultLogin: null, owners: [] })),
+      list: vi.fn(() => Promise.resolve({ hasDefault: false, defaultLogin: null, owners: [], host: null })),
       set: vi.fn(notMocked),
       clear: vi.fn(() => Promise.resolve()),
     },
     githubGraphql: vi.fn(notMocked),
+    gitlabGraphql: vi.fn(notMocked),
+    openExternalUrl: vi.fn(() => Promise.resolve()),
   };
 });
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  setGitLabHost(null);
   delete document.documentElement.dataset.theme;
   // Restores each mock to the default implementation given above.
   vi.resetAllMocks();

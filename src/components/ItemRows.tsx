@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type ReactNode, type RefObject } from 'r
 import { shortAgo } from '../lib/time';
 import type { IssueItem, PullRequestItem } from '../providers/types';
 import { ExternalLink } from './ExternalLink';
+import { refSigil } from '../lib/url';
 import { DetailsCard, type Item, type LoadDetails } from './ItemDetails';
 import { CiIcon, ReviewBadge } from './StatusIcons';
 
@@ -30,7 +31,8 @@ function useDetailsCard(item: Item, load: LoadDetails | undefined, anchor: RefOb
 }
 
 function repoShort(repo: string | undefined): string {
-  return repo ? repo.split('/')[1] ?? repo : '';
+  // The project's own name; GitLab paths can have several groups before it.
+  return repo ? repo.split('/').at(-1) ?? repo : '';
 }
 
 export function PullRequestRow({ pr, showRepo = false, action = null, details }: {
@@ -48,7 +50,7 @@ export function PullRequestRow({ pr, showRepo = false, action = null, details }:
     <li className={cls} ref={anchor}>
       <CiIcon state={pr.ci} />
       <RowTitle url={pr.url} title={pr.title} open={p.open} onToggle={p.toggle}>
-        <span className="row-num">{showRepo ? `${repoShort(pr.repo)}#${pr.number}` : `#${pr.number}`}</span>{' '}
+        <span className="row-num">{showRepo ? repoShort(pr.repo) : ''}{refSigil(pr.url, true)}{pr.number}</span>{' '}
         {pr.title}
       </RowTitle>
       {pr.isDraft ? <span className="badge badge-muted">draft</span> : <ReviewBadge state={pr.review} />}
@@ -74,7 +76,7 @@ export function IssueRow({ issue, showRepo = false, details }: {
         {issue.isPullRequest ? '⇄' : '○'}
       </span>
       <RowTitle url={issue.url} title={issue.title} open={p.open} onToggle={p.toggle}>
-        <span className="row-num">{showRepo ? `${repoShort(issue.repo)}#${issue.number}` : `#${issue.number}`}</span>{' '}
+        <span className="row-num">{showRepo ? repoShort(issue.repo) : ''}{refSigil(issue.url, issue.isPullRequest)}{issue.number}</span>{' '}
         {issue.title}
       </RowTitle>
       {issue.labels.slice(0, 2).map((label) => (

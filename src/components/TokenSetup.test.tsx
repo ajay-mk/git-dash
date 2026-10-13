@@ -25,7 +25,7 @@ describe('TokenSetup', () => {
     await userEvent.click(submit);
 
     expect(tokens.set).toHaveBeenCalledExactlyOnceWith('github', TOKEN);
-    await waitFor(() => expect(onDone).toHaveBeenCalledWith('octocat'));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith('octocat', 'github'));
     expect(input.value).toBe('');
     expect(container.innerHTML).not.toContain(TOKEN);
   });
@@ -87,5 +87,85 @@ describe('TokenSetup', () => {
     expect(url.pathname).toBe('/settings/personal-access-tokens/new');
     expect(url.searchParams.get('pull_requests')).toBe('read');
     expect(link.closest('li')?.textContent).toContain('Metadata, Contents, Pull requests, Issues, Commit statuses and Actions');
+  });
+
+  describe('GitLab', () => {
+    const GL_TOKEN = 'glpat-SECRET0123456789';
+
+    async function chooseGitLab() {
+      const view = setup();
+      await userEvent.click(screen.getByRole('button', { name: 'GitLab' }));
+      expect(screen.getByRole('heading', { name: 'Connect GitLab' })).toBeTruthy();
+      return view;
+    }
+
+    it('stores a gitlab.com token by default', async () => {
+      vi.mocked(tokens.set).mockResolvedValue('jane.doe');
+      const { input, submit, onDone, container } = await chooseGitLab();
+      expect(screen.getByRole('button', { name: 'GitLab' }).getAttribute('aria-pressed')).toBe('true');
+      await userEvent.type(input, GL_TOKEN);
+      await userEvent.click(submit);
+      expect(tokens.set).toHaveBeenCalledExactlyOnceWith('gitlab', GL_TOKEN, null, 'gitlab.com');
+      await waitFor(() => expect(onDone).toHaveBeenCalledWith('jane.doe', 'gitlab'));
+      expect(container.innerHTML).not.toContain('SECRET');
+    });
+
+    it('sends a self-hosted instance in its normalized form', async () => {
+      vi.mocked(tokens.set).mockResolvedValue('jane.doe');
+      const { input, submit } = await chooseGitLab();
+      const host = screen.getByRole('textbox', { name: 'GitLab instance' });
+      await userEvent.clear(host);
+      await userEvent.type(host, 'https://GitLab.Example.com:8443/');
+      // The token page is shown as text: only connected instances can be opened.
+      expect(screen.getByText(/gitlab\.example\.com:8443\/-\/user_settings\/personal_access_tokens/)).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'Create a personal access token' })).toBeNull();
+      await userEvent.type(input, GL_TOKEN);
+      await userEvent.click(submit);
+      expect(tokens.set).toHaveBeenCalledExactlyOnceWith('gitlab', GL_TOKEN, null, 'gitlab.example.com:8443');
+    });
+
+    it('refuses an instance address it cannot use', async () => {
+      const { input, submit, onDone } = await chooseGitLab();
+      const host = screen.getByRole('textbox', { name: 'GitLab instance' });
+      await userEvent.clear(host);
+      await userEvent.type(host, 'http://gitlab.example.com');
+      await userEvent.type(input, GL_TOKEN);
+      await userEvent.click(submit);
+      expect(screen.getByRole('alert').textContent).toContain('Enter the address of your GitLab instance');
+      expect(tokens.set).not.toHaveBeenCalled();
+      expect(onDone).not.toHaveBeenCalled();
+    });
+
+    it('links to the prefilled token form on gitlab.com', async () => {
+      await chooseGitLab();
+      const link = screen.getByRole('link', { name: 'Create a personal access token' });
+      const url = new URL(link.getAttribute('href')!);
+      expect(url.host).toBe('gitlab.com');
+      expect(url.searchParams.get('scopes')).toBe('read_api');
+    });
+
+    it('can open on GitLab', () => {
+      render(<TokenSetup provider="gitlab" onDone={vi.fn()} />);
+      expect(screen.getByRole('heading', { name: 'Connect GitLab' })).toBeTruthy();
+    });
+
+    it('keeps the connected instance when replacing its token', async () => {
+      vi.mocked(tokens.set).mockResolvedValue('jane.doe');
+      const { input, submit } = setup({ provider: 'gitlab', gitlabHost: 'gitlab.example.com' });
+      expect((screen.getByRole('textbox', { name: 'GitLab instance' }) as HTMLInputElement).value).toBe(
+        'gitlab.example.com',
+      );
+      await userEvent.type(input, GL_TOKEN);
+      await userEvent.click(submit);
+      expect(tokens.set).toHaveBeenCalledExactlyOnceWith('gitlab', GL_TOKEN, null, 'gitlab.example.com');
+    });
+
+    it('clears a typed token when switching service', async () => {
+      const { input, submit } = setup();
+      await userEvent.type(input, TOKEN);
+      await userEvent.click(screen.getByRole('button', { name: 'GitLab' }));
+      expect(input.value).toBe('');
+      expect(submit.hasAttribute('disabled')).toBe(true);
+    });
   });
 });

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-gitlab-graphql"
+description = "Enables the gitlab_graphql command without any pre-configured scope."
+commands.allow = ["gitlab_graphql"]
+
+[[permission]]
+identifier = "deny-gitlab-graphql"
+description = "Denies the gitlab_graphql command without any pre-configured scope."
+commands.deny = ["gitlab_graphql"]

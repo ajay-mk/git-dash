@@ -8,6 +8,8 @@ fn main() {
             "token_set",
             "token_clear",
             "github_graphql",
+            "gitlab_graphql",
+            "open_external",
         ]),
     ))
     .expect("failed to run tauri-build");

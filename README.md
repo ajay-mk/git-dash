@@ -11,9 +11,9 @@
 Pin the repos you care about, choose what each card shows, and see at a glance
 what is failing, what needs your review, and what is waiting on you.
 
-GitDash currently supports GitHub. Support for GitLab and other hosting
-providers is planned; the app is built around a provider-agnostic model so new
-ones can be added (see [Adding a provider](docs/development.md#adding-a-provider)).
+GitDash supports GitHub and GitLab (gitlab.com or a self-hosted instance),
+side by side. It is built around a provider-agnostic model so other hosting
+providers can be added (see [Adding a provider](docs/development.md#adding-a-provider)).
 
 - **Repo cards** with a colour-coded status dot: CI failing on the default
   branch (red), pull requests needing attention (amber), CI running (yellow),
@@ -41,22 +41,24 @@ ones can be added (see [Adding a provider](docs/development.md#adding-a-provider
    the first-launch warnings and how to verify the download.
 2. Create a read-only GitHub fine-grained token with
    [this link](https://github.com/settings/personal-access-tokens/new?name=GitDash&description=Read-only+access+for+the+GitDash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read),
-   pick the repositories it can see, and paste it into GitDash.
-   [docs/tokens.md](docs/tokens.md) covers classic tokens, SSO and using
-   several accounts or organizations.
+   pick the repositories it can see, and paste it into GitDash. For GitLab
+   (gitlab.com or self-hosted), use a personal access token with the
+   `read_api` scope instead. [docs/tokens.md](docs/tokens.md) covers both,
+   plus classic tokens, SSO and using several accounts or organizations.
 3. Pin a repository and choose what its card shows.
 
 ## Security
 
 Your tokens are stored in the operating system's keychain and are never
-exposed to the app's UI layer. All GitHub calls are made by the Rust backend,
-which only allows read-only GraphQL queries to `api.github.com`. See
+exposed to the app's UI layer. All API calls are made by the Rust backend,
+which only allows read-only GraphQL queries, to `api.github.com` and to the
+GitLab instance each GitLab token was saved for. See
 [SECURITY.md](SECURITY.md) for the full model and how to report issues.
 
 ## Documentation
 
 - [Installing](docs/installing.md): downloads, checksums, unsigned builds
-- [Access tokens](docs/tokens.md): permissions, SSO, per-owner tokens
+- [Access tokens](docs/tokens.md): permissions, SSO, per-owner tokens, GitLab
 - [Development](docs/development.md): building, testing, project layout, adding a provider
 - [Releasing](docs/releasing.md): cutting a release
 

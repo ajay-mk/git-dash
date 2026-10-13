@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PinnedRepo } from '../../config/schema';
 import { githubGraphql } from '../../lib/transport';
 import { github } from './index';
-import { DETAILS_BODY_CHARS, describeRepoError, mapDetails, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
+import { DETAILS_BODY_CHARS } from '../raw';
+import { describeRepoError, mapDetails, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
 import { buildReposQuery, DETAILS_QUERY, EVENTS_FETCHED, OPEN_PRS_FETCHED } from './queries';
 
 vi.mock('../../lib/transport', async (importOriginal) => ({

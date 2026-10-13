@@ -1,6 +1,7 @@
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import type { Counted, InboxSnapshot, IssueItem, PullRequestItem } from '../providers/types';
 import { myPrAction } from './health';
+import { refSigil } from './url';
 
 /** One desktop notification. */
 export interface Alert {
@@ -19,7 +20,8 @@ export const MAX_ALERTS = 3;
 const CLOCK_SLACK_MS = 5 * 60_000;
 
 function label(item: PullRequestItem | IssueItem): string {
-  return `${item.repo ? `${item.repo}#${item.number}` : `#${item.number}`} ${item.title}`;
+  const ref = `${refSigil(item.url, !('isPullRequest' in item) || item.isPullRequest)}${item.number}`;
+  return `${item.repo ?? ''}${ref} ${item.title}`;
 }
 
 /**

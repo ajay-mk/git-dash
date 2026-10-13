@@ -74,3 +74,36 @@ export function mergeInbox(primary: InboxSnapshot, others: readonly InboxSnapsho
     ...(all.some((s) => s.incomplete) ? { incomplete: true } : {}),
   };
 }
+
+const NO_INBOX: InboxSnapshot = {
+  viewer: '',
+  reviewRequests: { total: 0, items: [] },
+  myPullRequests: { total: 0, items: [] },
+  assigned: { total: 0, items: [] },
+  ssoRestricted: false,
+};
+
+function combineCounted<T extends { updatedAt: string }>(lists: Counted<T>[], limit: number): Counted<T> {
+  const items = lists
+    .flatMap((l) => l.items)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, limit);
+  return { total: lists.reduce((sum, l) => sum + l.total, 0), items };
+}
+
+/**
+ * Combines the inboxes of different providers (GitHub and GitLab) into one,
+ * newest first. Unlike `mergeInbox`, nothing overlaps, so totals add up. The
+ * first snapshot's viewer is kept.
+ */
+export function combineInboxes(snapshots: readonly InboxSnapshot[], limit: number): InboxSnapshot {
+  if (snapshots.length <= 1) return snapshots[0] ?? NO_INBOX;
+  return {
+    viewer: snapshots[0]!.viewer,
+    reviewRequests: combineCounted(snapshots.map((s) => s.reviewRequests), limit),
+    myPullRequests: combineCounted(snapshots.map((s) => s.myPullRequests), limit),
+    assigned: combineCounted(snapshots.map((s) => s.assigned), limit),
+    ssoRestricted: snapshots.some((s) => s.ssoRestricted),
+    ...(snapshots.some((s) => s.incomplete) ? { incomplete: true } : {}),
+  };
+}

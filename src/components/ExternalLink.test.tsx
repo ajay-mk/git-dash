@@ -1,7 +1,7 @@
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { openExternalUrl } from '../lib/transport';
 import { SCRIPT_URL } from '../test/fixtures';
 import { ExternalLink } from './ExternalLink';
 
@@ -13,7 +13,7 @@ describe('ExternalLink', () => {
     expect(link.getAttribute('rel')).toBe('noreferrer noopener');
 
     await userEvent.click(link);
-    expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://github.com/octo/repo/pull/1');
+    expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith('https://github.com/octo/repo/pull/1');
     // The webview itself must not navigate.
     expect(window.location.href).not.toContain('github.com');
   });
@@ -31,6 +31,6 @@ describe('ExternalLink', () => {
     expect(container.querySelector('a')).toBeNull();
 
     await userEvent.click(screen.getByText('text'));
-    expect(openUrl).not.toHaveBeenCalled();
+    expect(openExternalUrl).not.toHaveBeenCalled();
   });
 });
