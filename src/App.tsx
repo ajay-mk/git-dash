@@ -22,7 +22,7 @@ import { useMasonry } from './hooks/useMasonry';
 import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
 import { shortAgo } from './lib/time';
-import { tokens, type TokenSummary } from './lib/transport';
+import { AppError, tokens, type TokenSummary } from './lib/transport';
 import { providerOfUrl, setGitLabHost } from './lib/url';
 import { PROVIDER_IDS, type ProviderId } from './providers/types';
 
@@ -107,7 +107,10 @@ export default function App() {
   const connected = useMemo(() => connectedTo(accounts), [accounts]);
   const dash = useDashboard(config, tokenOwners, connected, auth === 'ready');
   const loadDetails = useCallback((url: string) => {
-    const provider = providerOfUrl(url) ?? 'github';
+    // A link from a service that is no longer connected (its rows can stay
+    // on screen until the next refresh) must not be sent to another one.
+    const provider = providerOfUrl(url);
+    if (!provider) return Promise.reject(new AppError('http', 'This item belongs to a service that is no longer connected.'));
     return providers[provider].fetchDetails(url, provider === 'github' ? tokenOwners : []);
   }, [tokenOwners]);
 
