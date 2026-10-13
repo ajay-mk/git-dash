@@ -124,10 +124,13 @@ query GitDashAssignedIssues($me: String!, $n: Int!) {
 /** Projects offered as suggestions when pinning. */
 export const PROJECT_SUGGESTIONS_FETCHED = 100;
 
-/** Projects the viewer is a member of, most recently active first. */
+/**
+ * Projects the viewer is a member of, most recently active first. Archived
+ * ones are dropped when mapping: GitLab 16 lacks the `archived` argument.
+ */
 export const PROJECTS_QUERY = `
 query GitDashProjectList($n: Int!) {
-  projects(membership: true, archived: EXCLUDE, first: $n, sort: "latest_activity_desc") {
+  projects(membership: true, first: $n, sort: "latest_activity_desc") {
     nodes { fullPath archived lastActivityAt }
   }
 }
