@@ -236,6 +236,7 @@ export default function App() {
             });
         }}
         {...(canCancel ? { onCancel: () => setAuth('ready') } : {})}
+        notice={<UpdateBanner updates={updates} />}
       />
     );
   }

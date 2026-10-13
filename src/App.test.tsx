@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { defaultConfig } from './config/schema';
@@ -29,6 +30,14 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
     expect(tokens.list).toHaveBeenCalledWith('github');
     expect(githubGraphql).not.toHaveBeenCalled();
+  });
+
+  it('offers an update on the setup screen too', async () => {
+    storedTokens(stored(false));
+    vi.mocked(check).mockResolvedValue({ version: '9.9.9', close: () => Promise.resolve() } as unknown as Update);
+    render(<App />);
+    expect(await screen.findByText('GitDash 9.9.9 is available.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
   });
 
   it('shows the keychain error on the setup screen', async () => {

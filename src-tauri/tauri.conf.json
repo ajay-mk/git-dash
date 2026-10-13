@@ -32,7 +32,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
     "shortDescription": "Glanceable GitHub dashboard",
     "longDescription": "A customizable desktop dashboard that shows the state of your pinned GitHub repositories at a glance.",

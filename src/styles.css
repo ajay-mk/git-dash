@@ -388,7 +388,8 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .empty-state p { color: var(--muted); }
 
 /* ---------- Token setup ---------- */
-.setup { display: grid; place-items: center; min-height: 100%; padding: 24px; }
+.setup { display: grid; place-items: center; align-content: center; gap: 16px; min-height: 100%; padding: 24px; }
+.setup > .banner { width: min(520px, 100%); margin: 0; }
 .setup-card {
   width: min(520px, 100%);
   background: var(--surface);

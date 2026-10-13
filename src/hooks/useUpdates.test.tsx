@@ -5,12 +5,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { saveWindowState } from '../lib/transport';
 import { CHECK_INTERVAL_MS, CHECK_TIMEOUT_MS, DOWNLOAD_TIMEOUT_MS, useUpdates } from './useUpdates';
 
-function fakeUpdate(version: string, install?: (onEvent: (e: DownloadEvent) => void) => Promise<void>) {
+type Mock = ReturnType<typeof vi.fn>;
+
+function fakeUpdate(version: string, download?: (onEvent: (e: DownloadEvent) => void) => Promise<void>) {
   return {
     version,
     close: vi.fn(() => Promise.resolve()),
-    downloadAndInstall: vi.fn(install ?? (() => Promise.resolve())),
-  } as unknown as Update & { close: ReturnType<typeof vi.fn>; downloadAndInstall: ReturnType<typeof vi.fn> };
+    download: vi.fn(download ?? (() => Promise.resolve())),
+    install: vi.fn(() => Promise.resolve()),
+  } as unknown as Update & { close: Mock; download: Mock; install: Mock };
 }
 
 describe('useUpdates', () => {
@@ -109,18 +112,19 @@ describe('useUpdates', () => {
     await waitFor(() => expect(result.current.state.kind).toBe('available'));
     act(() => result.current.install());
     expect(result.current.state).toEqual({ kind: 'downloading', version: '1.2.0', percent: null });
-    await waitFor(() => expect(found.downloadAndInstall).toHaveBeenCalled());
-    // The window is saved first: on Windows the installer ends the app.
-    expect(vi.mocked(saveWindowState).mock.invocationCallOrder[0]).toBeLessThan(
-      found.downloadAndInstall.mock.invocationCallOrder[0]!,
-    );
-    expect(found.downloadAndInstall).toHaveBeenCalledWith(expect.any(Function), { timeout: DOWNLOAD_TIMEOUT_MS });
+    expect(found.download).toHaveBeenCalledWith(expect.any(Function), { timeout: DOWNLOAD_TIMEOUT_MS });
     act(() => {
       emit({ event: 'Started', data: { contentLength: 200 } });
       emit({ event: 'Progress', data: { chunkLength: 50 } });
     });
     expect(result.current.state).toEqual({ kind: 'downloading', version: '1.2.0', percent: 25 });
+    expect(saveWindowState).not.toHaveBeenCalled();
     await act(async () => finish());
+    // The window is saved after the download, right before installing: on
+    // Windows the installer ends the app.
+    expect(vi.mocked(saveWindowState).mock.invocationCallOrder[0]).toBeLessThan(
+      found.install.mock.invocationCallOrder[0]!,
+    );
     expect(result.current.state).toEqual({ kind: 'restarting', version: '1.2.0' });
     expect(relaunch).toHaveBeenCalledTimes(1);
     expect(found.close).not.toHaveBeenCalled();
@@ -141,7 +145,17 @@ describe('useUpdates', () => {
     );
     expect(relaunch).not.toHaveBeenCalled();
     act(() => result.current.install());
-    await waitFor(() => expect(found.downloadAndInstall).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(found.download).toHaveBeenCalledTimes(2));
+    expect(found.install).not.toHaveBeenCalled();
+  });
+
+  it('keeps offering a known update when a later manual check fails', async () => {
+    vi.mocked(check).mockResolvedValueOnce(fakeUpdate('1.2.0')).mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useUpdates(true));
+    await waitFor(() => expect(result.current.state.kind).toBe('available'));
+    act(() => result.current.checkNow());
+    await waitFor(() => expect(check).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.state).toEqual({ kind: 'available', version: '1.2.0' }));
   });
 
   it('hides a dismissed update until a newer one turns up', async () => {

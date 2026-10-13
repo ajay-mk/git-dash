@@ -61,6 +61,11 @@ npx tauri signer generate -w ~/.tauri/gitdash.key
 Put the contents of `~/.tauri/gitdash.key.pub` in `plugins.updater.pubkey`
 and update both secrets.
 
+Only release builds make update files: `src-tauri/tauri.release.conf.json`
+turns on `createUpdaterArtifacts`, so a local `npm run tauri build` needs no
+key. To try a signed build locally, set the two variables and add
+`--config src-tauri/tauri.release.conf.json`.
+
 `scripts/updater.mjs` writes `latest.json`. Each build records the files the
 bundler signed (the macOS `.app.tar.gz`, the Windows `.msi` and `-setup.exe`,
 and the Linux packages), and the release job lists them by platform and

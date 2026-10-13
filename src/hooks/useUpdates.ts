@@ -86,7 +86,13 @@ export function useUpdates(auto: boolean): Updates {
         // An automatic check fails quietly (offline, no release yet) and
         // keeps showing an update it found earlier.
         if (manual && !installing.current) {
-          setState({ kind: 'error', message: `Could not check for updates: ${message(err)}` });
+          // An update found earlier can still be installed.
+          const known = update.current;
+          setState(
+            known
+              ? { kind: 'available', version: known.version }
+              : { kind: 'error', message: `Could not check for updates: ${message(err)}` },
+          );
         }
       }
     },
@@ -118,9 +124,7 @@ export function useUpdates(auto: boolean): Updates {
     setState({ kind: 'downloading', version, percent: null });
     void (async () => {
       try {
-        // Windows ends the app without the usual exit, which saves the window.
-        await saveWindowState().catch(() => undefined);
-        await found.downloadAndInstall(
+        await found.download(
           (event) => {
             if (event.event === 'Started') total = event.data.contentLength || null;
             else if (event.event === 'Progress') {
@@ -131,6 +135,10 @@ export function useUpdates(auto: boolean): Updates {
           },
           { timeout: DOWNLOAD_TIMEOUT_MS },
         );
+        // Installing on Windows ends the app without the usual exit, which
+        // is where the window is normally saved.
+        await saveWindowState().catch(() => undefined);
+        await found.install();
         // Windows exits into the installer above; macOS and Linux restart here.
         setState({ kind: 'restarting', version });
         await relaunch();
