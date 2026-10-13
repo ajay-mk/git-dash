@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { repoId, type DashboardConfig, type PinnedRepo } from '../config/schema';
 import { AppError } from '../lib/transport';
+import { connectedGitLabHost } from '../lib/url';
 import { providers } from '../providers';
 import { combineInboxes } from '../providers/tokens';
 import { PROVIDER_IDS, type InboxSnapshot, type ProviderId, type RateLimit, type RepoBatch, type RepoResult } from '../providers/types';
@@ -96,23 +97,36 @@ export function useDashboard(
     connectedRef.current = connected;
   }, [config, tokenOwners, connected]);
 
-  const refresh = useCallback(async () => {
+  /**
+   * `tokenChanged`: a token was just saved, so earlier rejections no longer
+   * apply. Otherwise they stay until the provider answers again: the setup
+   * screen they bring up must not flicker away (losing what was typed into
+   * it) on every background refresh.
+   */
+  const refresh = useCallback(async ({ tokenChanged = false }: { tokenChanged?: boolean } = {}) => {
     const id = ++requestId.current;
     lastFetch.current = Date.now();
-    // Drop auth errors right away so a freshly saved token leaves the setup
-    // screen immediately; other errors stay visible until the reload finishes.
-    setState((s) => ({ ...s, loading: true, rejected: [], error: s.error && isAuthError(s.error) ? null : s.error }));
+    // Drop auth errors right away after a token change so a freshly saved
+    // token leaves the setup screen immediately; other errors stay visible
+    // until the reload finishes.
+    setState((s) =>
+      tokenChanged
+        ? { ...s, loading: true, rejected: [], error: s.error && isAuthError(s.error) ? null : s.error }
+        : { ...s, loading: true },
+    );
     const { repos, inbox } = configRef.current;
     const owners = ownersRef.current;
     const live = PROVIDER_IDS.filter((p) => connectedRef.current.includes(p));
     const several = live.length > 1;
     const ownersOf = (p: ProviderId) => (providers[p].ownerTokens ? owners : []);
     const pinnedTo = (p: ProviderId) => repos.filter((r) => r.provider === p);
+    // Data from one GitLab instance must not survive a switch to another.
+    const instanceOf = (p: ProviderId) => (p === 'gitlab' ? connectedGitLabHost() : null);
     const keys = {
       // Per provider: one service's settings changing must not let another's
       // failure keep showing data fetched for its old settings.
-      repos: (p: ProviderId) => JSON.stringify([byId(pinnedTo(p)), ownersOf(p)]),
-      inbox: JSON.stringify([inbox, owners, live]),
+      repos: (p: ProviderId) => JSON.stringify([byId(pinnedTo(p)), ownersOf(p), instanceOf(p)]),
+      inbox: JSON.stringify([inbox, owners, live, live.map(instanceOf)]),
     };
 
     const [repoRes, inboxRes] = await Promise.all([
@@ -130,6 +144,9 @@ export function useDashboard(
         if (isAuthError(err) && !next.rejected.includes(p)) next.rejected.push(p);
       };
 
+      // The rate limit is GitHub's: keep it only while GitHub is still
+      // fetched, and replace it with whatever this refresh reported.
+      if (!repoRes.some((r) => r.provider === 'github')) next.rateLimit = null;
       const fetched = repoRes.filter((r) => r.result.status === 'fulfilled');
       // Only fresh repository data counts as an update; after a failure the
       // cards still show the previous data and must not look current.

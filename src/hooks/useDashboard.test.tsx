@@ -50,4 +50,36 @@ describe('useDashboard', () => {
     await waitFor(() => expect(result.current.repos.get(glId)).toMatchObject({ ok: false }));
     expect(result.current.repos.get(repoId(github))).toMatchObject({ ok: true });
   });
+
+  it('keeps a rejected token rejected while a background refresh runs', async () => {
+    const gh = vi.spyOn(providers.github, 'fetchRepos').mockRejectedValue(new AppError('unauthorized', 'Bad credentials'));
+    const cfg = { ...defaultConfig(), repos: [github], inbox: { ...defaultConfig().inbox, enabled: false } };
+    const { result } = renderHook(() => useDashboard(cfg, [], ['github'], true));
+    await waitFor(() => expect(result.current.rejected).toEqual(['github']));
+
+    // The setup screen depends on this: it must not disappear mid-refresh.
+    gh.mockReturnValue(new Promise(() => {}));
+    void result.current.refresh();
+    await waitFor(() => expect(result.current.loading).toBe(true));
+    expect(result.current.rejected).toEqual(['github']);
+
+    // A newly saved token clears it straight away.
+    void result.current.refresh({ tokenChanged: true });
+    await waitFor(() => expect(result.current.rejected).toEqual([]));
+  });
+
+  it('drops the GitHub rate limit once GitHub is no longer fetched', async () => {
+    vi.spyOn(providers.github, 'fetchRepos').mockResolvedValue({
+      repos: new Map([[repoId(github), { ok: true, data: snapshot() }]]),
+      rateLimit: { remaining: 10, limit: 5000, resetAt: '2026-10-13T18:00:00Z' },
+    });
+    vi.spyOn(providers.gitlab, 'fetchRepos').mockImplementation(([r]) => Promise.resolve(batch(r!, 'gl')));
+    const { result, rerender } = renderHook(
+      ({ cfg }: { cfg: DashboardConfig }) => useDashboard(cfg, [], ['github', 'gitlab'], true),
+      { initialProps: { cfg: config('bug') } },
+    );
+    await waitFor(() => expect(result.current.rateLimit?.remaining).toBe(10));
+    rerender({ cfg: { ...config('bug'), repos: [project('bug')] } });
+    await waitFor(() => expect(result.current.rateLimit).toBeNull());
+  });
 });

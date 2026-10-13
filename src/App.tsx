@@ -28,6 +28,7 @@ import { PROVIDER_IDS, type ProviderId } from './providers/types';
 
 type AuthState = 'checking' | 'missing' | 'ready' | 'replacing';
 type Accounts = Record<ProviderId, TokenSummary | null>;
+type AccountErrors = Partial<Record<ProviderId, string>>;
 
 const NO_ACCOUNTS: Accounts = { github: null, gitlab: null };
 
@@ -35,16 +36,17 @@ const NO_ACCOUNTS: Accounts = { github: null, gitlab: null };
  * Reads which tokens are stored for every provider. Also registers the GitLab
  * instance, so its links are allowed before any of its data is shown.
  */
-async function loadAccounts(): Promise<{ accounts: Accounts; error: string | null }> {
+async function loadAccounts(): Promise<{ accounts: Accounts; errors: AccountErrors; error: string | null }> {
   const results = await Promise.allSettled(PROVIDER_IDS.map((p) => tokens.list(p)));
   const accounts: Accounts = { ...NO_ACCOUNTS };
-  let error: string | null = null;
+  const errors: AccountErrors = {};
   results.forEach((r, i) => {
-    if (r.status === 'fulfilled') accounts[PROVIDER_IDS[i]!] = r.value;
-    else error ??= r.reason instanceof Error ? r.reason.message : 'Could not read the keychain';
+    const provider = PROVIDER_IDS[i]!;
+    if (r.status === 'fulfilled') accounts[provider] = r.value;
+    else errors[provider] = r.reason instanceof Error ? r.reason.message : 'Could not read the keychain';
   });
   setGitLabHost(accounts.gitlab?.hasDefault ? (accounts.gitlab.host ?? null) : null);
-  return { accounts, error };
+  return { accounts, errors, error: Object.values(errors)[0] ?? null };
 }
 
 function connectedTo(accounts: Accounts): ProviderId[] {
@@ -58,6 +60,8 @@ export default function App() {
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accounts, setAccounts] = useState<Accounts>(NO_ACCOUNTS);
+  // A service whose keychain entry could not be read must not look disconnected.
+  const [accountErrors, setAccountErrors] = useState<AccountErrors>({});
   /** The service the token setup screen opens on. */
   const [setupFor, setSetupFor] = useState<ProviderId>('github');
   // Re-renders relative times such as "Updated 5m" as they age.
@@ -77,14 +81,16 @@ export default function App() {
   }, []);
 
   const reloadAccounts = useCallback(async () => {
-    const { accounts: next } = await loadAccounts();
+    const { accounts: next, errors } = await loadAccounts();
     setAccounts(next);
+    setAccountErrors(errors);
     return next;
   }, []);
 
   useEffect(() => {
-    void loadAccounts().then(({ accounts: loaded, error }) => {
+    void loadAccounts().then(({ accounts: loaded, errors, error }) => {
       setAccounts(loaded);
+      setAccountErrors(errors);
       if (error) setAuthReason(error);
       setAuth(connectedTo(loaded).length > 0 ? 'ready' : 'missing');
     });
@@ -203,7 +209,7 @@ export default function App() {
           setAuth('ready');
           void reloadAccounts()
             .catch(() => undefined)
-            .then(() => dash.refresh());
+            .then(() => dash.refresh({ tokenChanged: true }));
         }}
         {...(canCancel ? { onCancel: () => setAuth('ready') } : {})}
       />
@@ -260,6 +266,12 @@ export default function App() {
 
       <main className="content">
         {signOutError && <p className="banner error-text">{signOutError}</p>}
+        {PROVIDER_IDS.flatMap((p) => {
+          const message = accountErrors[p];
+          return message
+            ? [<p key={`account-${p}`} className="banner error-text">Could not read your {providers[p].label} token: {message}</p>]
+            : [];
+        })}
         {rejectedNotice.map((text) => (
           <p key={text} className="banner error-text">{text}</p>
         ))}
@@ -351,13 +363,14 @@ export default function App() {
         config={config}
         update={update}
         accounts={accounts}
+        accountErrors={accountErrors}
         ownerTokens={tokenInfo?.owners ?? []}
         onOwnerTokensChanged={() => {
           const before = tokenOwners.join(',');
           void reloadAccounts().then(
             (next) => {
               // A changed owner set refetches on its own; a replaced token does not.
-              if ((next.github?.owners ?? []).map((o) => o.owner).join(',') === before) void dash.refresh();
+              if ((next.github?.owners ?? []).map((o) => o.owner).join(',') === before) void dash.refresh({ tokenChanged: true });
             },
             () => undefined,
           );

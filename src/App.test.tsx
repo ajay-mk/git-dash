@@ -126,6 +126,20 @@ describe('App', () => {
       expect(screen.queryByRole('heading', { name: /^Connect/ })).toBeNull();
     });
 
+    it('says when the GitLab token could not be read instead of showing it as disconnected', async () => {
+      vi.mocked(tokens.list).mockImplementation((provider) =>
+        provider === 'gitlab'
+          ? Promise.reject(new AppError('keyring', 'The keychain entry is damaged.'))
+          : Promise.resolve(stored(true)),
+      );
+      saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      expect(await screen.findByText('Could not read your GitLab token: The keychain entry is damaged.')).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(screen.getByText('Could not read the token: The keychain entry is damaged.')).toBeTruthy();
+    });
+
     it('keeps GitHub working when the GitLab token is rejected', async () => {
       storedTokens(stored(true), gitlab);
       vi.mocked(gitlabGraphql).mockRejectedValue(new AppError('unauthorized', 'Bad credentials'));

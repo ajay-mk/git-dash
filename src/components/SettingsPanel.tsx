@@ -467,11 +467,24 @@ function TokenActions({ provider, onChangeToken, onSignOut }: {
   );
 }
 
-function NotConnected({ provider, onConnect }: { provider: ProviderId; onConnect: (provider: ProviderId) => void }) {
+function NotConnected({
+  provider,
+  error,
+  onConnect,
+}: {
+  provider: ProviderId;
+  /** Why the stored token could not be read, if that is what happened. */
+  error?: string | undefined;
+  onConnect: (provider: ProviderId) => void;
+}) {
   const label = providers[provider].label;
   return (
     <div className="token-item">
-      <span className="token-item-name muted">Not connected</span>
+      {error ? (
+        <span className="token-item-name error-text">Could not read the token: {error}</span>
+      ) : (
+        <span className="token-item-name muted">Not connected</span>
+      )}
       <button type="button" className="btn" onClick={() => onConnect(provider)}>
         Connect {label}
       </button>
@@ -608,6 +621,7 @@ export function SettingsPanel({
   config,
   update,
   accounts,
+  accountErrors = {},
   ownerTokens,
   onChangeToken,
   onSignOut,
@@ -619,6 +633,8 @@ export function SettingsPanel({
   update: Update;
   /** What is stored for each service; `null` when it could not be read. */
   accounts: Record<ProviderId, TokenSummary | null>;
+  /** Services whose stored token could not be read, with the reason. */
+  accountErrors?: Partial<Record<ProviderId, string>>;
   ownerTokens: OwnerToken[];
   /** Connects a service, or replaces its token. */
   onChangeToken: (provider: ProviderId) => void;
@@ -766,7 +782,7 @@ export function SettingsPanel({
               <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
             </>
           ) : (
-            <NotConnected provider="github" onConnect={onChangeToken} />
+            <NotConnected provider="github" error={accountErrors.github} onConnect={onChangeToken} />
           )}
           <h4>GitLab</h4>
           {accounts.gitlab?.hasDefault ? (
@@ -779,7 +795,7 @@ export function SettingsPanel({
               <TokenActions provider="gitlab" onChangeToken={onChangeToken} onSignOut={onSignOut} />
             </>
           ) : (
-            <NotConnected provider="gitlab" onConnect={onChangeToken} />
+            <NotConnected provider="gitlab" error={accountErrors.gitlab} onConnect={onChangeToken} />
           )}
         </section>
 
