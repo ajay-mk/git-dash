@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  # issues: write lets labeler create a configured label if it is missing.
+  issues: write
   pull-requests: write
 
 jobs:
@@ -17,7 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # sync-labels removes area labels whose files are no longer in the diff.
+      # It only touches labels named in .github/labeler.yml.
       - uses: actions/labeler@v6
+        with:
+          sync-labels: true
 
       - name: Label by Conventional Commit prefix
         uses: actions/github-script@v9
@@ -26,8 +32,7 @@ jobs:
         with:
           script: |
             const match = /^(\w+)(?:\(([^)]*)\))?!?:/.exec(process.env.TITLE ?? "");
-            if (!match) return;
-            const [, type, scope] = match;
+            const [, type, scope] = match ?? [];
             const byType = {
               feat: "feature",
               fix: "fix",
@@ -37,11 +42,20 @@ jobs:
               test: "test",
             };
             const labels = new Set();
-            if (byType[type]) labels.add(byType[type]);
+            if (Object.hasOwn(byType, type)) labels.add(byType[type]);
             if (scope === "deps" || scope === "deps-dev") labels.add("dependencies");
-            if (labels.size === 0) return;
-            await github.rest.issues.addLabels({
-              ...context.repo,
-              issue_number: context.payload.pull_request.number,
-              labels: [...labels],
-            });
+
+            // When the title has a prefix, drop type labels an earlier title set.
+            // Titles without one (e.g. Dependabot's "Bump ...") keep their labels.
+            // ci and docs are left to labeler, which syncs them with the changed files.
+            const issue_number = context.payload.pull_request.number;
+            const owned = ["feature", "fix", "chore", "test", "dependencies"];
+            const current = context.payload.pull_request.labels.map((l) => l.name);
+            for (const name of current) {
+              if (match && owned.includes(name) && !labels.has(name)) {
+                await github.rest.issues.removeLabel({ ...context.repo, issue_number, name });
+              }
+            }
+            if (labels.size > 0) {
+              await github.rest.issues.addLabels({ ...context.repo, issue_number, labels: [...labels] });
+            }
