@@ -90,6 +90,9 @@ export function useDashboard(
     configRef.current = config;
     ownersRef.current = tokenOwners;
     onInboxChangeRef.current = onInboxChange;
+    // Turning notifications off forgets the baseline, so changes made while
+    // they were off are not reported once they are back on.
+    if (!onInboxChange) lastInbox.current = null;
   }, [config, tokenOwners, onInboxChange]);
 
   const refresh = useCallback(async (options: RefreshOptions = {}) => {
@@ -125,8 +128,10 @@ export function useDashboard(
       const onChange = onInboxChangeRef.current;
       // Nothing is kept while nobody watches (notifications or the sidebar
       // off), so turning them back on starts from a fresh baseline.
-      lastInbox.current =
-        next && onChange ? { key: keys.inbox, at: startedAt, snapshot: inboxBaseline(prev?.snapshot, next) } : null;
+      // With a token's results missing, its items were last seen at the
+      // previous comparison time, which therefore carries over.
+      const at = next?.incomplete && prev ? prev.at : startedAt;
+      lastInbox.current = next && onChange ? { key: keys.inbox, at, snapshot: inboxBaseline(prev?.snapshot, next) } : null;
       if (next && onChange && prev) onChange(prev.snapshot, next, prev.at);
     }
 

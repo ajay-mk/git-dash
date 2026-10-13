@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { defaultConfig, type DashboardConfig } from '../config/schema';
 import { providers } from '../providers';
 import type { InboxSnapshot } from '../providers/types';
@@ -68,14 +68,35 @@ describe('useDashboard inbox changes', () => {
       { initialProps: { watch: true } },
     );
     await waitFor(() => expect(result.current.inbox).not.toBeNull());
+    // Off and on again with no fetch in between.
     rerender({ watch: false });
-    await act(() => result.current.refresh());
     rerender({ watch: true });
     // What changed while nobody watched is not news.
     await act(() => result.current.refresh());
     expect(onChange).not.toHaveBeenCalled();
     await act(() => result.current.refresh());
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the comparison time while a token keeps failing', async () => {
+    const partial = { ...inbox('octocat'), incomplete: true };
+    vi.spyOn(providers.github, 'fetchInbox')
+      .mockResolvedValueOnce(inbox('octocat'))
+      .mockResolvedValueOnce(partial)
+      .mockResolvedValueOnce(partial)
+      .mockResolvedValue(inbox('octocat'));
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 1000));
+    onTestFinished(() => clock.mockRestore());
+    const onChange = vi.fn();
+    const config = defaultConfig();
+    const { result } = renderHook(() => useDashboard(config, [], true, onChange));
+    await waitFor(() => expect(result.current.inbox).not.toBeNull());
+    for (let i = 0; i < 3; i++) await act(() => result.current.refresh());
+    const times = onChange.mock.calls.map((call) => call[2] as number);
+    expect(times).toHaveLength(3);
+    // Each comparison goes back to the last complete fetch.
+    expect(new Set(times).size).toBe(1);
   });
 
   describe('while the window is hidden', () => {
