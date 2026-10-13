@@ -71,5 +71,6 @@ export function mergeInbox(primary: InboxSnapshot, others: readonly InboxSnapsho
     // A SAML error can't be tied to the org it came from, so keep the notice
     // if any token reported one rather than risk hiding missing results.
     ssoRestricted: all.some((s) => s.ssoRestricted),
+    ...(all.some((s) => s.incomplete) ? { incomplete: true } : {}),
   };
 }

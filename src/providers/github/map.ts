@@ -230,6 +230,9 @@ export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnaps
     // Search results from SSO-protected organizations come back as null
     // nodes, each with a SAML error.
     ssoRestricted: errors.some(isSamlFailure),
+    // Other errors null out results that are normally there. SSO ones are
+    // left out: they hide the same results every time.
+    ...(errors.some((e) => !isSamlFailure(e)) ? { incomplete: true } : {}),
   };
 }
 

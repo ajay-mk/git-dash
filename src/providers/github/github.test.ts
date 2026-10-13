@@ -170,6 +170,16 @@ describe('mappers', () => {
     );
     expect(inbox.ssoRestricted).toBe(true);
     expect(inbox.reviewRequests.items).toEqual([]);
+    // Withheld every time, so not a gap in this fetch.
+    expect(inbox.incomplete).toBeUndefined();
+  });
+
+  it('marks inbox results cut short by other errors incomplete', () => {
+    const inbox = mapInbox(
+      { viewer: { login: 'me' }, myPullRequests: null },
+      [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['myPullRequests'] }],
+    );
+    expect(inbox.incomplete).toBe(true);
   });
 });
 
