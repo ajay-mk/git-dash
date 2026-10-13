@@ -1,3 +1,4 @@
+import { requestPermission } from '@tauri-apps/plugin-notification';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -53,6 +54,20 @@ describe('SettingsPanel', () => {
   it('opens as a modal dialog', () => {
     setup();
     expect((screen.getByRole('dialog', { name: 'Settings' }) as HTMLDialogElement).open).toBe(true);
+  });
+
+  it('turns desktop notifications off and on, asking for permission when turned on', async () => {
+    const { config } = setup();
+    const toggle = screen.getByRole('checkbox', { name: 'Desktop notifications for new items' });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+
+    await userEvent.click(toggle);
+    expect(config().notifications).toBe(false);
+    expect(requestPermission).not.toHaveBeenCalled();
+
+    await userEvent.click(toggle);
+    expect(config().notifications).toBe(true);
+    expect(requestPermission).toHaveBeenCalled();
   });
 
   describe('pinning', () => {

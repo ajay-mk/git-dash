@@ -16,6 +16,12 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('@tauri-apps/plugin-notification', () => ({
+  isPermissionGranted: vi.fn(() => Promise.resolve(false)),
+  requestPermission: vi.fn(() => Promise.resolve('denied')),
+  sendNotification: vi.fn(),
+}));
+
 vi.mock('../lib/transport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/transport')>();
   const notMocked = () => Promise.reject(new actual.AppError('internal', 'not mocked in this test'));
