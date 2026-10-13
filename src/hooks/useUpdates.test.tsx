@@ -151,7 +151,9 @@ describe('useUpdates', () => {
     act(() => result.current.dismiss());
     expect(result.current.dismissed).toBe(true);
     act(() => result.current.checkNow());
-    await waitFor(() => expect(check).toHaveBeenCalledTimes(2));
+    expect(result.current.state.kind).toBe('checking');
+    await waitFor(() => expect(result.current.state.kind).toBe('available'));
+    expect(check).toHaveBeenCalledTimes(2);
     expect(result.current.dismissed).toBe(true);
     vi.mocked(check).mockResolvedValueOnce(fakeUpdate('1.3.0'));
     act(() => result.current.checkNow());
