@@ -25,9 +25,11 @@ ones can be added (see [Adding a provider](docs/development.md#adding-a-provider
   ones to fix or ready to merge), and issues/PRs assigned to you.
 - **Desktop notifications** when something new needs you: a review request,
   an assignment, or one of your pull requests failing CI, getting changes
-  requested or becoming ready to merge. Turn them off in Settings.
-- **Auto-refresh** on a configurable interval, paused while the window is
-  hidden. The window reopens where you left it.
+  requested or becoming ready to merge. They keep coming while the window is
+  minimized, as long as GitDash is running. Turn them off in Settings.
+- **Auto-refresh** on a configurable interval. While the window is hidden only
+  "Needs you" is checked, and only for notifications. The window reopens where
+  you left it.
 - Light and dark themes, and config export/import (it never contains your
   token).
 
