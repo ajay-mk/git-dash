@@ -148,5 +148,24 @@ describe('TokenSetup', () => {
       render(<TokenSetup provider="gitlab" onDone={vi.fn()} />);
       expect(screen.getByRole('heading', { name: 'Connect GitLab' })).toBeTruthy();
     });
+
+    it('keeps the connected instance when replacing its token', async () => {
+      vi.mocked(tokens.set).mockResolvedValue('jane.doe');
+      const { input, submit } = setup({ provider: 'gitlab', gitlabHost: 'gitlab.example.com' });
+      expect((screen.getByRole('textbox', { name: 'GitLab instance' }) as HTMLInputElement).value).toBe(
+        'gitlab.example.com',
+      );
+      await userEvent.type(input, GL_TOKEN);
+      await userEvent.click(submit);
+      expect(tokens.set).toHaveBeenCalledExactlyOnceWith('gitlab', GL_TOKEN, null, 'gitlab.example.com');
+    });
+
+    it('clears a typed token when switching service', async () => {
+      const { input, submit } = setup();
+      await userEvent.type(input, TOKEN);
+      await userEvent.click(screen.getByRole('button', { name: 'GitLab' }));
+      expect(input.value).toBe('');
+      expect(submit.hasAttribute('disabled')).toBe(true);
+    });
   });
 });

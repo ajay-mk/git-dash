@@ -87,9 +87,15 @@ function GitLabHelp({ host }: { host: string | null }) {
   );
 }
 
-export function TokenSetup({ provider: initial = 'github', onDone, onCancel, reason }: {
+export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, onCancel, reason }: {
   /** The service to connect first; the user can switch. */
   provider?: ProviderId;
+  /**
+   * The GitLab instance already connected, if any. A replacement token is
+   * almost always for the same instance, and must not go to gitlab.com by
+   * default.
+   */
+  gitlabHost?: string | null;
   onDone: (login: string, provider: ProviderId) => void;
   onCancel?: () => void;
   reason?: string | null;
@@ -98,7 +104,7 @@ export function TokenSetup({ provider: initial = 'github', onDone, onCancel, rea
   // its `value` attribute, which would put the token in the page markup.
   const input = useRef<HTMLInputElement>(null);
   const [providerId, setProviderId] = useState<ProviderId>(initial);
-  const [hostInput, setHostInput] = useState(GITLAB_COM);
+  const [hostInput, setHostInput] = useState(gitlabHost ?? GITLAB_COM);
   const [hasValue, setHasValue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -142,6 +148,10 @@ export function TokenSetup({ provider: initial = 'github', onDone, onCancel, rea
               aria-pressed={id === providerId}
               disabled={busy}
               onClick={() => {
+                if (id === providerId) return;
+                // A token typed for one service must never be sent to another.
+                if (input.current) input.current.value = '';
+                setHasValue(false);
                 setProviderId(id);
                 setError(null);
               }}

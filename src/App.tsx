@@ -197,6 +197,7 @@ export default function App() {
         key={auth === 'replacing' ? `replace-${setupFor}` : 'setup'}
         provider={auth === 'replacing' ? setupFor : (dash.rejected[0] ?? setupFor)}
         reason={auth === 'replacing' ? null : reason}
+        gitlabHost={accounts.gitlab?.host ?? null}
         onDone={() => {
           setAuthReason(null);
           setAuth('ready');
