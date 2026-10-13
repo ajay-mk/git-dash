@@ -174,6 +174,15 @@ export function useDashboard(
   }, [enabled, fetchKey, refresh]);
 
   const watchInbox = onInboxChange !== undefined;
+  // Turning notifications on takes a baseline right away, so what arrives
+  // before the next scheduled refresh is noticed.
+  const watching = useRef(watchInbox);
+  useEffect(() => {
+    const was = watching.current;
+    watching.current = watchInbox;
+    if (enabled && watchInbox && !was && !busy.current) void refresh({ inboxOnly: true });
+  }, [enabled, watchInbox, refresh]);
+
   useEffect(() => {
     if (!enabled || config.refreshMinutes <= 0) return;
     const intervalMs = config.refreshMinutes * 60_000;

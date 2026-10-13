@@ -30,6 +30,8 @@ import type {
 
 type Raw = Record<string, unknown>;
 
+const LONG_AGO = new Date(0).toISOString();
+
 function obj(v: unknown): Raw | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Raw) : null;
 }
@@ -168,7 +170,7 @@ const EMPTY: Counted<never> = { total: 0, items: [] };
  * When the latest of `node`'s timeline events (review requests or
  * assignments) that `matches` happened. `key` names the event's user field.
  * When none matches but older events were cut off, the one sought is older
- * than every event fetched, so the oldest of them is a safe stand-in.
+ * than every event fetched; it is then given as long ago.
  */
 function lastEvent(node: unknown, key: string, matches: (who: Raw) => boolean): string | undefined {
   const events = arr(obj(obj(node)?.timelineItems)?.nodes).flatMap((event) => {
@@ -182,7 +184,7 @@ function lastEvent(node: unknown, key: string, matches: (who: Raw) => boolean): 
     if (matches(who) && (!latest || at > latest)) latest = at;
   }
   if (latest || events.length < EVENTS_FETCHED) return latest;
-  return events.reduce((oldest, e) => (e.at < oldest ? e.at : oldest), events[0]!.at);
+  return LONG_AGO;
 }
 
 /**

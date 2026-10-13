@@ -148,9 +148,9 @@ describe('mappers', () => {
       );
     });
 
-    it('stands in the oldest event when older ones were cut off', () => {
+    it('takes a request older than every event fetched as long ago', () => {
       const days = Array.from({ length: EVENTS_FETCHED }, (_, i): [string, unknown] => [String(10 + i), someone]);
-      expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days) })).toBe('2026-10-10T00:00:00Z');
+      expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days) })).toBe('1970-01-01T00:00:00.000Z');
       expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days.slice(1)) })).toBeUndefined();
     });
 

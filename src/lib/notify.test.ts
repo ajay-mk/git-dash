@@ -180,6 +180,15 @@ describe('inboxBaseline', () => {
     expect(inboxAlerts(inboxBaseline(prev, partial), recovered, SINCE).map((x) => x.title)).toEqual(['CI failing']);
   });
 
+  it('compares pull requests from an incomplete fetch only once a complete one is back', () => {
+    const pending = { ...a, review: 'approved' as const, mergeable: true, ci: 'pending' as const };
+    const prev = inbox({ myPullRequests: counted(pending) });
+    // The check rollup was lost to an error, so CI reads as none.
+    const partial = inbox({ myPullRequests: counted({ ...pending, ci: 'none' }), incomplete: true });
+    expect(inboxAlerts(prev, partial, SINCE)).toEqual([]);
+    expect(inboxBaseline(prev, partial).myPullRequests.items).toEqual([pending]);
+  });
+
   it('takes a complete fetch as it is', () => {
     const next = inbox({ myPullRequests: counted(a) });
     expect(inboxBaseline(inbox({ myPullRequests: counted(a, b) }), next)).toBe(next);

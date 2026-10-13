@@ -60,7 +60,7 @@ describe('useDashboard inbox changes', () => {
   });
 
   it('starts over when notifications are turned back on', async () => {
-    vi.spyOn(providers.github, 'fetchInbox').mockResolvedValue(inbox('octocat'));
+    const fetchInbox = vi.spyOn(providers.github, 'fetchInbox').mockResolvedValue(inbox('octocat'));
     const onChange = vi.fn();
     const config = defaultConfig();
     const { result, rerender } = renderHook(
@@ -68,11 +68,12 @@ describe('useDashboard inbox changes', () => {
       { initialProps: { watch: true } },
     );
     await waitFor(() => expect(result.current.inbox).not.toBeNull());
-    // Off and on again with no fetch in between.
+    expect(fetchInbox).toHaveBeenCalledTimes(1);
     rerender({ watch: false });
     rerender({ watch: true });
-    // What changed while nobody watched is not news.
-    await act(() => result.current.refresh());
+    // What changed while nobody watched is not news; turning it back on
+    // takes a new baseline right away.
+    await waitFor(() => expect(fetchInbox).toHaveBeenCalledTimes(2));
     expect(onChange).not.toHaveBeenCalled();
     await act(() => result.current.refresh());
     expect(onChange).toHaveBeenCalledTimes(1);

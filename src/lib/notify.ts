@@ -102,7 +102,9 @@ export function inboxAlerts(
   }
 
   const before = new Map(prev.myPullRequests.items.map((pr) => [pr.url, pr]));
-  for (const pr of next.myPullRequests.items) {
+  // An incomplete fetch can lack fields (a check rollup lost to an error), so
+  // its pull requests are only compared once a complete one comes back.
+  for (const pr of next.incomplete ? [] : next.myPullRequests.items) {
     const old = before.get(pr.url);
     if (!old || pr.isDraft) continue;
     // Each change is reported, since the next fetch compares with this one.
@@ -124,15 +126,16 @@ export function inboxAlerts(
 }
 
 /**
- * What the next fetch is compared with. When a token's results are missing
- * from `next`, your pull requests that only it found keep their previous
- * state, so changes to them are still noticed once the token works again.
+ * What the next fetch is compared with. An incomplete `next` may lack some of
+ * your pull requests or some of their fields, so the ones already known keep
+ * their previous state; changes to them are noticed once a complete fetch
+ * comes back.
  */
 export function inboxBaseline(prev: InboxSnapshot | undefined, next: InboxSnapshot): InboxSnapshot {
   if (!next.incomplete || !prev) return next;
-  const present = new Set(next.myPullRequests.items.map((pr) => pr.url));
-  const missing = prev.myPullRequests.items.filter((pr) => !present.has(pr.url));
-  return { ...next, myPullRequests: { ...next.myPullRequests, items: [...next.myPullRequests.items, ...missing] } };
+  const known = new Set(prev.myPullRequests.items.map((pr) => pr.url));
+  const added = next.myPullRequests.items.filter((pr) => !known.has(pr.url));
+  return { ...next, myPullRequests: { ...next.myPullRequests, items: [...prev.myPullRequests.items, ...added] } };
 }
 
 let asked = false;
