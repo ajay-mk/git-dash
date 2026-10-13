@@ -1,0 +1,56 @@
+name: Platforms
+
+# CI builds the Tauri backend on Linux only. The macOS and Windows code paths
+# live in dependencies (the keychain backends), so check them whenever the
+# Rust dependencies change, which is what Dependabot's Cargo updates do.
+on:
+  push:
+    branches: [main]
+    paths:
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+      - .github/workflows/platforms.yml
+  pull_request:
+    paths:
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+      - .github/workflows/platforms.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platforms-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clippy:
+    name: Tauri backend (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # tauri::generate_context! embeds the frontend, so it must exist.
+      - run: mkdir -p dist && echo '<!doctype html>' > dist/index.html
+      - run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: src-tauri
