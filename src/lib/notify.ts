@@ -1,5 +1,5 @@
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
-import type { InboxSnapshot, IssueItem, PullRequestItem } from '../providers/types';
+import type { Counted, InboxSnapshot, IssueItem, PullRequestItem } from '../providers/types';
 import { myPrAction } from './health';
 
 /** One desktop notification. */
@@ -25,7 +25,9 @@ function label(item: PullRequestItem | IssueItem): string {
 /**
  * Review requests and assignments already seen this session. Lists only hold
  * the newest entries, so an item can drop out for a refresh and come back;
- * remembering it keeps that from notifying twice.
+ * remembering it keeps that from notifying twice. An item missing from a list
+ * that shows everything has really gone (reviewed, unassigned), so it is
+ * forgotten and a later re-request notifies again.
  */
 export class SeenItems {
   private readonly keys = new Set<string>();
@@ -38,9 +40,17 @@ export class SeenItems {
 
   /** Remembers the review requests and assignments in `snapshot`. */
   remember(snapshot: InboxSnapshot): void {
-    for (const key of itemKeys(snapshot)) {
-      this.keys.delete(key);
-      this.keys.add(key);
+    for (const [prefix, section] of sections(snapshot)) {
+      const present = new Set(section.items.map((item) => `${prefix}${item.url}`));
+      if (section.items.length >= section.total) {
+        for (const key of this.keys) {
+          if (key.startsWith(prefix) && !present.has(key)) this.keys.delete(key);
+        }
+      }
+      for (const key of present) {
+        this.keys.delete(key);
+        this.keys.add(key);
+      }
     }
     // Sets keep insertion order, so the oldest entries go first.
     for (const key of this.keys) {
@@ -50,10 +60,10 @@ export class SeenItems {
   }
 }
 
-function itemKeys(snapshot: InboxSnapshot): string[] {
+function sections(snapshot: InboxSnapshot): [string, Counted<{ url: string }>][] {
   return [
-    ...snapshot.reviewRequests.items.map((pr) => `review ${pr.url}`),
-    ...snapshot.assigned.items.map((item) => `assigned ${item.url}`),
+    ['review ', snapshot.reviewRequests],
+    ['assigned ', snapshot.assigned],
   ];
 }
 
@@ -92,11 +102,14 @@ export function inboxAlerts(
   for (const pr of next.myPullRequests.items) {
     const old = before.get(pr.url);
     if (!old || pr.isDraft) continue;
+    // Each change is reported, since the next fetch compares with this one.
     if (pr.ci === 'failure' && old.ci !== 'failure') {
       alerts.push({ title: 'CI failing', body: label(pr) });
-    } else if (pr.review === 'changes_requested' && old.review !== 'changes_requested') {
+    }
+    if (pr.review === 'changes_requested' && old.review !== 'changes_requested') {
       alerts.push({ title: 'Changes requested', body: label(pr) });
-    } else if (myPrAction(pr) === 'merge' && myPrAction(old) !== 'merge') {
+    }
+    if (myPrAction(pr) === 'merge' && myPrAction(old) !== 'merge') {
       alerts.push({ title: 'Ready to merge', body: label(pr) });
     }
   }

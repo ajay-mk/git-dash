@@ -90,12 +90,33 @@ describe('inboxAlerts', () => {
     const b = pr({ url: 'https://github.com/o/r/pull/2', updatedAt: FRESH });
     const seen = new SeenItems();
     const withA = inbox({ reviewRequests: counted(a) });
-    const withB = inbox({ reviewRequests: counted(b) });
+    // A list of one out of two: A dropped out but did not go away.
+    const withB = inbox({ reviewRequests: { total: 2, items: [b] } });
     seen.remember(withA);
     seen.remember(withB);
     expect(inboxAlerts(withB, withA, SINCE, seen)).toEqual([]);
     // Without the history, A would look new again.
     expect(inboxAlerts(withB, withA, SINCE)).toHaveLength(1);
+  });
+
+  it('notifies again when a review is re-requested after it was done', () => {
+    const a = pr({ url: 'https://github.com/o/r/pull/1', updatedAt: FRESH });
+    const seen = new SeenItems();
+    const requested = inbox({ reviewRequests: counted(a) });
+    const reviewed = inbox();
+    seen.remember(requested);
+    // The list is complete, so A really left it.
+    seen.remember(reviewed);
+    expect(inboxAlerts(reviewed, requested, SINCE, seen)).toEqual([
+      { title: 'Review requested', body: '#1 Add feature' },
+    ]);
+  });
+
+  it('reports a pull request that fails CI and gets changes requested at once', () => {
+    const before = pr();
+    const after = pr({ ci: 'failure', review: 'changes_requested' });
+    const alerts = inboxAlerts(inbox({ myPullRequests: counted(before) }), inbox({ myPullRequests: counted(after) }), SINCE);
+    expect(alerts.map((a) => a.title)).toEqual(['CI failing', 'Changes requested']);
   });
 
   it('forgets the oldest items past its limit', () => {
