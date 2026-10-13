@@ -123,6 +123,18 @@ export function inboxAlerts(
   return alerts;
 }
 
+/**
+ * What the next fetch is compared with. When a token's results are missing
+ * from `next`, your pull requests that only it found keep their previous
+ * state, so changes to them are still noticed once the token works again.
+ */
+export function inboxBaseline(prev: InboxSnapshot | undefined, next: InboxSnapshot): InboxSnapshot {
+  if (!next.incomplete || !prev) return next;
+  const present = new Set(next.myPullRequests.items.map((pr) => pr.url));
+  const missing = prev.myPullRequests.items.filter((pr) => !present.has(pr.url));
+  return { ...next, myPullRequests: { ...next.myPullRequests, items: [...next.myPullRequests.items, ...missing] } };
+}
+
 let asked = false;
 
 /**

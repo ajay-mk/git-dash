@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxSnapshot } from '../providers/types';
 import { issue, pr } from '../test/fixtures';
-import { inboxAlerts, MAX_ALERTS, SeenItems } from './notify';
+import { inboxAlerts, inboxBaseline, MAX_ALERTS, SeenItems } from './notify';
 
 vi.mock('@tauri-apps/plugin-notification', () => ({
   isPermissionGranted: vi.fn(() => Promise.resolve(false)),
@@ -163,6 +163,26 @@ describe('inboxAlerts', () => {
     expect(inboxAlerts(inbox(), inbox({ reviewRequests: counted(...items) }), SINCE)).toEqual([
       { title: `${MAX_ALERTS + 1} new items need you`, body: 'Open GitDash to see them.' },
     ]);
+  });
+});
+
+describe('inboxBaseline', () => {
+  const a = pr({ url: 'https://github.com/o/r/pull/1' });
+  const b = pr({ url: 'https://github.com/corp/x/pull/2' });
+
+  it('keeps your pull requests a failed token did not return', () => {
+    const prev = inbox({ myPullRequests: counted(a, b) });
+    const partial = inbox({ myPullRequests: counted(a), incomplete: true });
+    expect(inboxBaseline(prev, partial).myPullRequests.items).toEqual([a, b]);
+    // Once the token works again, B's change since the last full fetch shows.
+    const failing = { ...b, ci: 'failure' as const };
+    const recovered = inbox({ myPullRequests: counted(a, failing) });
+    expect(inboxAlerts(inboxBaseline(prev, partial), recovered, SINCE).map((x) => x.title)).toEqual(['CI failing']);
+  });
+
+  it('takes a complete fetch as it is', () => {
+    const next = inbox({ myPullRequests: counted(a) });
+    expect(inboxBaseline(inbox({ myPullRequests: counted(a, b) }), next)).toBe(next);
   });
 });
 

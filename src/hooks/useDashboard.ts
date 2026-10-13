@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { repoId, type DashboardConfig, type PinnedRepo } from '../config/schema';
+import { inboxBaseline } from '../lib/notify';
 import { AppError } from '../lib/transport';
 import { providers } from '../providers';
 import type { InboxSnapshot, RateLimit, RepoResult } from '../providers/types';
@@ -118,10 +119,15 @@ export function useDashboard(
     if (id !== requestId.current) return; // a newer refresh superseded this one
     busy.current = false;
 
-    if (inboxRes.status === 'fulfilled' && inboxRes.value) {
-      const prev = lastInbox.current;
-      lastInbox.current = { key: keys.inbox, at: startedAt, snapshot: inboxRes.value };
-      if (prev?.key === keys.inbox) onInboxChangeRef.current?.(prev.snapshot, inboxRes.value, prev.at);
+    if (inboxRes.status === 'fulfilled') {
+      const prev = lastInbox.current?.key === keys.inbox ? lastInbox.current : null;
+      const next = inboxRes.value;
+      const onChange = onInboxChangeRef.current;
+      // Nothing is kept while nobody watches (notifications or the sidebar
+      // off), so turning them back on starts from a fresh baseline.
+      lastInbox.current =
+        next && onChange ? { key: keys.inbox, at: startedAt, snapshot: inboxBaseline(prev?.snapshot, next) } : null;
+      if (next && onChange && prev) onChange(prev.snapshot, next, prev.at);
     }
 
     setState((s) => {

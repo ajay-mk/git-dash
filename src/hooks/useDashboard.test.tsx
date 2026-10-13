@@ -59,6 +59,25 @@ describe('useDashboard inbox changes', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
+  it('starts over when notifications are turned back on', async () => {
+    vi.spyOn(providers.github, 'fetchInbox').mockResolvedValue(inbox('octocat'));
+    const onChange = vi.fn();
+    const config = defaultConfig();
+    const { result, rerender } = renderHook(
+      ({ watch }: { watch: boolean }) => useDashboard(config, [], true, watch ? onChange : undefined),
+      { initialProps: { watch: true } },
+    );
+    await waitFor(() => expect(result.current.inbox).not.toBeNull());
+    rerender({ watch: false });
+    await act(() => result.current.refresh());
+    rerender({ watch: true });
+    // What changed while nobody watched is not news.
+    await act(() => result.current.refresh());
+    expect(onChange).not.toHaveBeenCalled();
+    await act(() => result.current.refresh());
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   describe('while the window is hidden', () => {
     afterEach(() => {
       vi.useRealTimers();
