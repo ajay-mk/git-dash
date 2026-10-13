@@ -16,11 +16,12 @@ import {
 } from './config/schema';
 import { loadConfig, saveConfig } from './config/storage';
 import { providers } from './providers';
-import { isAuthError, useDashboard } from './hooks/useDashboard';
+import { isAuthError, useDashboard, type InboxChangeHandler } from './hooks/useDashboard';
 import { useCardResize } from './hooks/useCardResize';
 import { useMasonry } from './hooks/useMasonry';
 import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
+import { inboxAlerts, showAlerts } from './lib/notify';
 import { shortAgo } from './lib/time';
 import { tokens, type TokenSummary } from './lib/transport';
 
@@ -75,7 +76,14 @@ export default function App() {
   }, [config.theme]);
 
   const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
-  const dash = useDashboard(config, tokenOwners, auth === 'ready');
+  const notify = config.notifications;
+  const onInboxChange = useCallback<InboxChangeHandler>(
+    (prev, next, since) => {
+      if (notify) void showAlerts(inboxAlerts(prev, next, since)).catch(() => undefined);
+    },
+    [notify],
+  );
+  const dash = useDashboard(config, tokenOwners, auth === 'ready', onInboxChange);
   const loadDetails = useCallback((url: string) => providers.github.fetchDetails(url, tokenOwners), [tokenOwners]);
 
   // A revoked or expired token sends the user back to the setup screen.

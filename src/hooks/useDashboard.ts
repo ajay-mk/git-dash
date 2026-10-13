@@ -44,7 +44,19 @@ function asAppError(err: unknown): AppError {
  * on the configured interval, and when the window regains focus after the
  * data went stale. Polling pauses while the window is hidden.
  */
-export function useDashboard(config: DashboardConfig, tokenOwners: readonly string[], enabled: boolean) {
+/**
+ * Called after a refresh with the previous and new "Needs you" snapshots,
+ * when both were fetched with the same settings and tokens. `since` is when
+ * `prev` was fetched.
+ */
+export type InboxChangeHandler = (prev: InboxSnapshot, next: InboxSnapshot, since: number) => void;
+
+export function useDashboard(
+  config: DashboardConfig,
+  tokenOwners: readonly string[],
+  enabled: boolean,
+  onInboxChange?: InboxChangeHandler,
+) {
   const [state, setState] = useState<DashboardState>(INITIAL);
   const requestId = useRef(0);
   const lastFetch = useRef(0);
@@ -60,15 +72,20 @@ export function useDashboard(config: DashboardConfig, tokenOwners: readonly stri
   );
   const configRef = useRef(config);
   const ownersRef = useRef(tokenOwners);
+  const onInboxChangeRef = useRef(onInboxChange);
+  // The last inbox fetched, with its settings and time, to compare the next one against.
+  const lastInbox = useRef<{ key: string; at: number; snapshot: InboxSnapshot } | null>(null);
   // Declared before the fetch effect so it runs first in the same commit.
   useEffect(() => {
     configRef.current = config;
     ownersRef.current = tokenOwners;
-  }, [config, tokenOwners]);
+    onInboxChangeRef.current = onInboxChange;
+  }, [config, tokenOwners, onInboxChange]);
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current;
-    lastFetch.current = Date.now();
+    const startedAt = Date.now();
+    lastFetch.current = startedAt;
     // Drop auth errors right away so a freshly saved token leaves the setup
     // screen immediately; other errors stay visible until the reload finishes.
     setState((s) => ({ ...s, loading: true, error: s.error && isAuthError(s.error) ? null : s.error }));
@@ -82,6 +99,12 @@ export function useDashboard(config: DashboardConfig, tokenOwners: readonly stri
       inbox.enabled ? provider.fetchInbox(inbox, owners) : Promise.resolve(null),
     ]);
     if (id !== requestId.current) return; // a newer refresh superseded this one
+
+    if (inboxRes.status === 'fulfilled' && inboxRes.value) {
+      const prev = lastInbox.current;
+      lastInbox.current = { key: keys.inbox, at: startedAt, snapshot: inboxRes.value };
+      if (prev?.key === keys.inbox) onInboxChangeRef.current?.(prev.snapshot, inboxRes.value, prev.at);
+    }
 
     setState((s) => {
       const next: DashboardState = { ...s, loading: false, error: null };
