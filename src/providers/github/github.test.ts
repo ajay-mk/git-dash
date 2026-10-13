@@ -128,7 +128,7 @@ describe('mappers', () => {
     const inbox = mapInbox({
       viewer: { login: 'Me' },
       reviewRequests: {
-        issueCount: 2,
+        issueCount: 3,
         nodes: [
           {
             number: 1,
@@ -140,6 +140,16 @@ describe('mappers', () => {
             },
           },
           { number: 2, timelineItems: { nodes: [event('2026-10-03T00:00:00Z', { __typename: 'Team' }, 'requestedReviewer')] } },
+          {
+            number: 3,
+            timelineItems: {
+              nodes: [
+                event('2026-10-01T00:00:00Z', { __typename: 'User', login: 'me' }, 'requestedReviewer'),
+                // Another team, asked later: not a new request for you.
+                event('2026-10-06T00:00:00Z', { __typename: 'Team' }, 'requestedReviewer'),
+              ],
+            },
+          },
         ],
       },
       assigned: {
@@ -150,7 +160,11 @@ describe('mappers', () => {
         ],
       },
     });
-    expect(inbox.reviewRequests.items.map((pr) => pr.requestedAt)).toEqual(['2026-10-01T00:00:00Z', '2026-10-03T00:00:00Z']);
+    expect(inbox.reviewRequests.items.map((pr) => pr.requestedAt)).toEqual([
+      '2026-10-01T00:00:00Z',
+      '2026-10-03T00:00:00Z',
+      '2026-10-01T00:00:00Z',
+    ]);
     expect(inbox.assigned.items.map((item) => item.assignedAt)).toEqual(['2026-10-02T00:00:00Z', undefined]);
   });
 

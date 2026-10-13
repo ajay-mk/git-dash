@@ -165,20 +165,25 @@ const EMPTY: Counted<never> = { total: 0, items: [] };
 
 /**
  * When the latest of `node`'s timeline events (review requests or
- * assignments) for `viewer` happened. `key` names the event's user field. A
- * request to a team counts too, since the search found the item through it.
+ * assignments) for `viewer` happened. `key` names the event's user field.
+ * Team members are not fetched, so a request to a team only counts when
+ * there is none to the viewer: the search then found the item through a team.
  */
 function lastEventFor(node: unknown, key: string, viewer: string): string | undefined {
-  let latest: string | undefined;
+  let mine: string | undefined;
+  let team: string | undefined;
   for (const event of arr(obj(obj(node)?.timelineItems)?.nodes)) {
     const e = obj(event);
     const who = obj(e?.[key]);
     const at = str(e?.createdAt);
     if (!at || !who) continue;
-    const mine = who.__typename === 'Team' || str(who.login)?.toLowerCase() === viewer;
-    if (mine && (!latest || at > latest)) latest = at;
+    if (str(who.login)?.toLowerCase() === viewer) {
+      if (!mine || at > mine) mine = at;
+    } else if (who.__typename === 'Team' && (!team || at > team)) {
+      team = at;
+    }
   }
-  return latest;
+  return mine ?? team;
 }
 
 export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnapshot {
