@@ -1,0 +1,47 @@
+name: Label PRs
+
+# pull_request_target so PRs from forks can be labelled too. This workflow never
+# checks out or runs PR code: labeler reads its config from the base branch and
+# the title is only read through an environment variable.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Label by files and title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/labeler@v6
+
+      - name: Label by Conventional Commit prefix
+        uses: actions/github-script@v9
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        with:
+          script: |
+            const match = /^(\w+)(?:\(([^)]*)\))?!?:/.exec(process.env.TITLE ?? "");
+            if (!match) return;
+            const [, type, scope] = match;
+            const byType = {
+              feat: "feature",
+              fix: "fix",
+              docs: "docs",
+              ci: "ci",
+              chore: "chore",
+              test: "test",
+            };
+            const labels = new Set();
+            if (byType[type]) labels.add(byType[type]);
+            if (scope === "deps" || scope === "deps-dev") labels.add("dependencies");
+            if (labels.size === 0) return;
+            await github.rest.issues.addLabels({
+              ...context.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: [...labels],
+            });
