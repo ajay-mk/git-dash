@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxSnapshot } from '../providers/types';
 import { issue, pr } from '../test/fixtures';
-import { inboxAlerts, MAX_ALERTS } from './notify';
+import { inboxAlerts, MAX_ALERTS, SeenItems } from './notify';
 
 vi.mock('@tauri-apps/plugin-notification', () => ({
   isPermissionGranted: vi.fn(() => Promise.resolve(false)),
@@ -83,6 +83,27 @@ describe('inboxAlerts', () => {
     expect(
       inboxAlerts(inbox({ myPullRequests: counted(draft) }), inbox({ myPullRequests: counted({ ...draft, ci: 'failure' }) }), SINCE),
     ).toEqual([]);
+  });
+
+  it('does not repeat items that dropped out of the list and came back', () => {
+    const a = pr({ url: 'https://github.com/o/r/pull/1', updatedAt: FRESH });
+    const b = pr({ url: 'https://github.com/o/r/pull/2', updatedAt: FRESH });
+    const seen = new SeenItems();
+    const withA = inbox({ reviewRequests: counted(a) });
+    const withB = inbox({ reviewRequests: counted(b) });
+    seen.remember(withA);
+    seen.remember(withB);
+    expect(inboxAlerts(withB, withA, SINCE, seen)).toEqual([]);
+    // Without the history, A would look new again.
+    expect(inboxAlerts(withB, withA, SINCE)).toHaveLength(1);
+  });
+
+  it('forgets the oldest items past its limit', () => {
+    const seen = new SeenItems(2);
+    const item = (n: number) => pr({ url: `https://github.com/o/r/pull/${n}` });
+    seen.remember(inbox({ reviewRequests: counted(item(1), item(2), item(3)) }));
+    expect(seen.has('review https://github.com/o/r/pull/1')).toBe(false);
+    expect(seen.has('review https://github.com/o/r/pull/3')).toBe(true);
   });
 
   it('says nothing when the account changed', () => {

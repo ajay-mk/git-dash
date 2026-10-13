@@ -21,7 +21,7 @@ import { useCardResize } from './hooks/useCardResize';
 import { useMasonry } from './hooks/useMasonry';
 import { useReorder } from './hooks/useReorder';
 import { repoHealth } from './lib/health';
-import { inboxAlerts, showAlerts } from './lib/notify';
+import { inboxAlerts, SeenItems, showAlerts } from './lib/notify';
 import { shortAgo } from './lib/time';
 import { tokens, type TokenSummary } from './lib/transport';
 
@@ -76,9 +76,16 @@ export default function App() {
   }, [config.theme]);
 
   const tokenOwners = useMemo(() => tokenInfo?.owners.map((o) => o.owner) ?? [], [tokenInfo]);
-  const onInboxChange = useCallback<InboxChangeHandler>((prev, next, since) => {
-    void showAlerts(inboxAlerts(prev, next, since)).catch(() => undefined);
-  }, []);
+  const [seenItems] = useState(() => new SeenItems());
+  const onInboxChange = useCallback<InboxChangeHandler>(
+    (prev, next, since) => {
+      seenItems.remember(prev);
+      const alerts = inboxAlerts(prev, next, since, seenItems);
+      seenItems.remember(next);
+      void showAlerts(alerts).catch(() => undefined);
+    },
+    [seenItems],
+  );
   const dash = useDashboard(config, tokenOwners, auth === 'ready', config.notifications ? onInboxChange : undefined);
   const loadDetails = useCallback((url: string) => providers.github.fetchDetails(url, tokenOwners), [tokenOwners]);
 

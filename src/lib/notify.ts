@@ -23,12 +23,52 @@ function label(item: PullRequestItem | IssueItem): string {
 }
 
 /**
+ * Review requests and assignments already seen this session. Lists only hold
+ * the newest entries, so an item can drop out for a refresh and come back;
+ * remembering it keeps that from notifying twice.
+ */
+export class SeenItems {
+  private readonly keys = new Set<string>();
+
+  constructor(private readonly max = 1000) {}
+
+  has(key: string): boolean {
+    return this.keys.has(key);
+  }
+
+  /** Remembers the review requests and assignments in `snapshot`. */
+  remember(snapshot: InboxSnapshot): void {
+    for (const key of itemKeys(snapshot)) {
+      this.keys.delete(key);
+      this.keys.add(key);
+    }
+    // Sets keep insertion order, so the oldest entries go first.
+    for (const key of this.keys) {
+      if (this.keys.size <= this.max) break;
+      this.keys.delete(key);
+    }
+  }
+}
+
+function itemKeys(snapshot: InboxSnapshot): string[] {
+  return [
+    ...snapshot.reviewRequests.items.map((pr) => `review ${pr.url}`),
+    ...snapshot.assigned.items.map((item) => `assigned ${item.url}`),
+  ];
+}
+
+/**
  * What changed in "Needs you" between two snapshots fetched with the same
  * settings: new review requests and assignments, and your own pull requests
  * that started failing, got changes requested or became ready to merge.
- * `since` is when `prev` was fetched.
+ * `since` is when `prev` was fetched; items in `seen` are not new.
  */
-export function inboxAlerts(prev: InboxSnapshot, next: InboxSnapshot, since: number): Alert[] {
+export function inboxAlerts(
+  prev: InboxSnapshot,
+  next: InboxSnapshot,
+  since: number,
+  seen: Pick<SeenItems, 'has'> = new SeenItems(),
+): Alert[] {
   // A different account: everything would look new.
   if (prev.viewer !== next.viewer) return [];
   const recent = (item: { updatedAt: string }) => Date.parse(item.updatedAt) >= since - CLOCK_SLACK_MS;
@@ -36,12 +76,14 @@ export function inboxAlerts(prev: InboxSnapshot, next: InboxSnapshot, since: num
 
   const seenReviews = new Set(prev.reviewRequests.items.map((pr) => pr.url));
   for (const pr of next.reviewRequests.items) {
-    if (!seenReviews.has(pr.url) && recent(pr)) alerts.push({ title: 'Review requested', body: label(pr) });
+    if (!seenReviews.has(pr.url) && !seen.has(`review ${pr.url}`) && recent(pr)) {
+      alerts.push({ title: 'Review requested', body: label(pr) });
+    }
   }
 
   const seenAssigned = new Set(prev.assigned.items.map((item) => item.url));
   for (const item of next.assigned.items) {
-    if (!seenAssigned.has(item.url) && recent(item)) {
+    if (!seenAssigned.has(item.url) && !seen.has(`assigned ${item.url}`) && recent(item)) {
       alerts.push({ title: item.isPullRequest ? 'Pull request assigned to you' : 'Issue assigned to you', body: label(item) });
     }
   }
