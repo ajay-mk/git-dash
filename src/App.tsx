@@ -208,11 +208,15 @@ export default function App() {
         reason={auth === 'replacing' ? null : reason}
         gitlabHost={accounts.gitlab?.host ?? null}
         onDone={() => {
-          setAuthReason(null);
-          setAuth('ready');
+          // Stay on this screen until the new GitLab instance is registered,
+          // so rows from the old one are never treated as its links.
           void reloadAccounts()
             .catch(() => undefined)
-            .then(() => dash.refresh({ tokenChanged: true }));
+            .then(() => {
+              setAuthReason(null);
+              setAuth('ready');
+              void dash.refresh({ tokenChanged: true });
+            });
         }}
         {...(canCancel ? { onCancel: () => setAuth('ready') } : {})}
       />
@@ -388,18 +392,24 @@ export default function App() {
           setSignOutError(null);
           // Only drop the token once the keychain entry is really gone;
           // otherwise it would quietly come back on the next launch.
-          tokens.clear(provider).then(
-            () => {
-              setAuthReason(null);
-              const left = connected.filter((p) => p !== provider);
-              if (left.length === 0) {
-                setSetupFor(provider);
-                setAuth('missing');
-              }
-              void reloadAccounts().catch(() => undefined);
-            },
-            (err: Error) => setSignOutError(`Could not remove the token: ${err.message}`),
-          );
+          const left = connected.filter((p) => p !== provider);
+          // With nothing connected, Settings is out of reach, so owner tokens
+          // could no longer be seen or removed: signing out drops them too.
+          const owners = left.length === 0 && provider === 'github' ? tokenOwners : [];
+          // Owner tokens go first, so a failure leaves the default in place.
+          Promise.all(owners.map((owner) => tokens.clear(provider, owner)))
+            .then(() => tokens.clear(provider))
+            .then(
+              () => {
+                setAuthReason(null);
+                if (left.length === 0) {
+                  setSetupFor(provider);
+                  setAuth('missing');
+                }
+                void reloadAccounts().catch(() => undefined);
+              },
+              (err: Error) => setSignOutError(`Could not remove the token: ${err.message}`),
+            );
         }}
       />
     </div>

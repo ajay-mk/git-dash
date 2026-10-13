@@ -87,6 +87,37 @@ describe('App', () => {
     expect(tokens.clear).toHaveBeenCalledExactlyOnceWith('github');
   });
 
+  it('removing the last token also removes owner tokens, which Settings could no longer reach', async () => {
+    storedTokens({ ...stored(true), owners: [{ owner: 'acme', login: 'acme-bot' }] });
+    saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove GitHub token' }));
+
+    expect(await screen.findByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
+    expect(vi.mocked(tokens.clear).mock.calls).toEqual([['github', 'acme'], ['github']]);
+  });
+
+  it('shows the dashboard only once the new token is registered', async () => {
+    storedTokens(stored(false));
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Connect GitHub' });
+
+    let finish: (summary: TokenSummary) => void = () => {};
+    vi.mocked(tokens.list).mockImplementation((provider) =>
+      provider === 'gitlab' ? Promise.resolve(stored(false)) : new Promise((resolve) => (finish = resolve)),
+    );
+    vi.mocked(tokens.set).mockResolvedValue('octocat');
+    await userEvent.type(screen.getByLabelText('Access token'), 'github_pat_SECRET123');
+    await userEvent.click(screen.getByRole('button', { name: 'Save token' }));
+    await waitFor(() => expect(tokens.list).toHaveBeenCalledTimes(4));
+    expect(screen.getByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
+
+    finish(stored(true));
+    expect(await screen.findByRole('heading', DASHBOARD)).toBeTruthy();
+  });
+
   it('stays on the dashboard when the keychain refuses to remove the token', async () => {
     storedTokens(stored(true));
     vi.mocked(tokens.clear).mockRejectedValue(new AppError('keyring', 'The keychain is locked.'));
