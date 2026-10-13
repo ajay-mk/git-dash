@@ -382,7 +382,7 @@ describe('SettingsPanel', () => {
 
     it('suggests projects from GitLab when it is selected', async () => {
       vi.mocked(gitlabGraphql).mockResolvedValue({
-        data: { projects: { nodes: [{ fullPath: 'group/sub/web', archived: false }] } },
+        data: { viewer: { username: 'jane.doe' }, projects: { nodes: [{ fullPath: 'group/sub/web', archived: false }] } },
       });
       setupBoth();
       await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Service' }), 'GitLab');

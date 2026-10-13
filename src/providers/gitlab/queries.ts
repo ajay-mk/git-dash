@@ -151,10 +151,12 @@ export const PROJECT_SUGGESTIONS_FETCHED = 100;
 
 /**
  * Projects the viewer is a member of, most recently active first. Archived
- * ones are dropped when mapping.
+ * ones are dropped when mapping. GitLab answers a rejected token as an
+ * anonymous request, so the viewer tells an expired token from no projects.
  */
 export const PROJECTS_QUERY = `
 query GitDashProjectList($n: Int!) {
+  ${VIEWER_ALIAS}: currentUser { username }
   projects(membership: true, first: $n, sort: "latest_activity_desc") {
     nodes { fullPath archived lastActivityAt }
   }

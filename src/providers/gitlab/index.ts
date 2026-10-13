@@ -133,8 +133,10 @@ export const gitlab: Provider = {
   },
 
   async listRepos() {
-    const res = await gitlabGraphql<{ projects?: unknown }>(PROJECTS_QUERY, { n: PROJECT_SUGGESTIONS_FETCHED });
-    const projects = dataOrThrow(res, 'your projects').projects;
+    const res = await gitlabGraphql<Record<string, unknown>>(PROJECTS_QUERY, { n: PROJECT_SUGGESTIONS_FETCHED });
+    const data = dataOrThrow(res, 'your projects');
+    if (!signedIn(data[VIEWER_ALIAS])) throw rejected();
+    const projects = data.projects;
     if (projects == null) throw new AppError('http', 'Could not list projects.');
     return { repos: mapProjectSuggestions(projects).map((p) => p.name), complete: true };
   },

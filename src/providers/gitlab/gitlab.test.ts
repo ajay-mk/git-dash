@@ -425,6 +425,7 @@ describe('gitlab provider', () => {
   it('suggests member projects, skipping archived and malformed ones', async () => {
     graphql.mockResolvedValue({
       data: {
+        viewer: { username: 'jane.doe' },
         projects: {
           nodes: [
             { fullPath: 'acme/platform/api' },
@@ -435,6 +436,11 @@ describe('gitlab provider', () => {
       },
     });
     expect(await gitlab.listRepos([])).toEqual({ repos: ['acme/platform/api'], complete: true });
+  });
+
+  it('reports a rejected token instead of an empty project list', async () => {
+    graphql.mockResolvedValue({ data: { viewer: null, projects: { nodes: [] } } });
+    await expect(gitlab.listRepos([])).rejects.toMatchObject({ kind: 'unauthorized' });
   });
 
   it('loads details by project path and number', async () => {
