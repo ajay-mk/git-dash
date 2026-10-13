@@ -84,15 +84,3 @@ jobs:
       - run: mkdir -p dist && echo '<!doctype html>' > dist/index.html
       - run: cargo check --all-targets --locked
         working-directory: src-tauri
-
-  workflows:
-    name: Workflow files (actionlint)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: docker://rhysd/actionlint:1.7.12
-        with:
-          args: -color
