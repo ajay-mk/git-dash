@@ -386,6 +386,18 @@ describe('gitlab provider', () => {
     await expect(gitlab.fetchRepos(pins(1), [])).rejects.toMatchObject({ kind: 'unauthorized' });
   });
 
+  it('does not blame the token when GitLab failed to load the signed-in user', async () => {
+    const errors = [{ message: 'boom', path: ['viewer'] }];
+    graphql.mockResolvedValue({ data: { viewer: null, p0: null }, errors });
+    await expect(gitlab.fetchRepos(pins(1), [])).rejects.toMatchObject({ kind: 'http' });
+    graphql.mockResolvedValue({ data: { viewer: null, projects: { nodes: [] } }, errors });
+    await expect(gitlab.listRepos([])).rejects.toMatchObject({ kind: 'http' });
+    graphql.mockResolvedValue({ data: { currentUser: null }, errors: [{ message: 'boom', path: ['currentUser'] }] });
+    await expect(
+      gitlab.fetchInbox({ enabled: true, reviewRequests: true, myPullRequests: true, assigned: false, limit: 5 }, []),
+    ).rejects.toMatchObject({ kind: 'http' });
+  });
+
   it('fails the inbox instead of showing a list that did not load as empty', async () => {
     const inbox = { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 5 };
     graphql.mockResolvedValueOnce({

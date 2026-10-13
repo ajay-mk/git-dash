@@ -47,8 +47,15 @@ function signedIn(viewer: unknown): boolean {
   return typeof viewer === 'object' && viewer !== null && typeof (viewer as { username?: unknown }).username === 'string';
 }
 
-function rejected(): AppError {
-  return new AppError('unauthorized', 'GitLab did not accept the token.');
+/**
+ * Fails unless the viewer came back. GitLab answers a rejected token as an
+ * anonymous request, so a missing viewer with no errors means the token was
+ * not accepted; with errors, it says nothing about the token.
+ */
+function requireViewer(viewer: unknown, errors: GraphQLError[] | undefined): void {
+  if (signedIn(viewer)) return;
+  if (errors?.length) throw new AppError('http', 'GitLab could not verify the token right now.');
+  throw new AppError('unauthorized', 'GitLab did not accept the token.');
 }
 
 function errorUnder(errors: GraphQLError[] | undefined, alias: string): GraphQLError | undefined {
@@ -77,7 +84,7 @@ export const gitlab: Provider = {
         const { query, variables } = buildProjectsQuery(batch);
         const res = await gitlabGraphql<Record<string, unknown>>(query, variables);
         const data = dataOrThrow(res, 'your projects');
-        if (!signedIn(data[VIEWER_ALIAS])) throw rejected();
+        requireViewer(data[VIEWER_ALIAS], res.errors);
         batch.forEach((repo, i) => {
           const alias = projectAlias(i);
           const raw = data[alias];
@@ -118,8 +125,8 @@ export const gitlab: Provider = {
       withAssigned: config.assigned,
     });
     const user = dataOrThrow(res, 'your inbox').currentUser;
-    const me = typeof user?.username === 'string' ? user.username : null;
-    if (!me) throw rejected();
+    requireViewer(user, res.errors);
+    const me = user!.username as string;
     // A list that failed comes back empty next to the others; showing it as
     // "nothing needs you" would be wrong.
     if (res.errors?.length) throw new AppError('http', 'GitLab could not load all of your inbox.');
@@ -135,7 +142,7 @@ export const gitlab: Provider = {
   async listRepos() {
     const res = await gitlabGraphql<Record<string, unknown>>(PROJECTS_QUERY, { n: PROJECT_SUGGESTIONS_FETCHED });
     const data = dataOrThrow(res, 'your projects');
-    if (!signedIn(data[VIEWER_ALIAS])) throw rejected();
+    requireViewer(data[VIEWER_ALIAS], res.errors);
     const projects = data.projects;
     if (projects == null) throw new AppError('http', 'Could not list projects.');
     return { repos: mapProjectSuggestions(projects).map((p) => p.name), complete: true };
