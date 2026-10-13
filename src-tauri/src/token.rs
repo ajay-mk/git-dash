@@ -296,12 +296,16 @@ impl TokenStore {
 
     pub fn summary(&self, provider: Provider) -> Result<TokenSummary> {
         let mut inner = self.lock()?;
-        let has_default = match inner.get(provider, &Slot::Default) {
+        let stored = match inner.get(provider, &Slot::Default) {
             Ok(_) => true,
             Err(Error::NoToken) => false,
             Err(err) => return Err(err),
         };
         let index = inner.index(provider)?;
+        // A GitLab token is only usable with the instance it was verified
+        // against; one left without it by an interrupted write must be
+        // entered again, host included.
+        let has_default = stored && (provider != Provider::GitLab || index.host.is_some());
         Ok(TokenSummary {
             has_default,
             default_login: index.default_login.clone().filter(|_| has_default),
@@ -389,6 +393,7 @@ impl TokenStore {
             .cache
             .insert((provider, slot.clone()), token.to_owned());
         let index = inner.index(provider)?;
+        let unbound = index.clone();
         match slot {
             Slot::Default => {
                 index.default_login = Some(login.to_owned());
@@ -400,7 +405,17 @@ impl TokenStore {
                     .insert(owner.as_str().to_owned(), login.to_owned());
             }
         }
-        inner.save_index(provider)
+        let saved = inner.save_index(provider);
+        if saved.is_err() && provider == Provider::GitLab && matches!(slot, Slot::Default) {
+            // Keep memory in line with the stored index, and drop the token
+            // so it is not left behind without the host it belongs to.
+            *inner.index(provider)? = unbound;
+            inner.cache.remove(&(provider, slot.clone()));
+            if let Ok(e) = entry(&slot.account(provider)) {
+                let _ = delete(&e);
+            }
+        }
+        saved
     }
 
     pub fn clear(&self, provider: Provider, slot: &Slot) -> Result<()> {
@@ -590,6 +605,39 @@ mod tests {
 
         assert_eq!(Index::decode("not json"), Index::default());
         assert_eq!(Index::decode("[]"), Index::default());
+    }
+
+    fn store_with(provider: Provider, host: Option<&str>) -> TokenStore {
+        let store = TokenStore::default();
+        {
+            let mut inner = store.lock().unwrap();
+            inner
+                .cache
+                .insert((provider, Slot::Default), "glpat-token".into());
+            let index = Index {
+                default_login: Some("jane.doe".into()),
+                host: host.map(str::to_owned),
+                ..Index::default()
+            };
+            inner.indexes.insert(provider, index);
+        }
+        store
+    }
+
+    #[test]
+    fn a_gitlab_token_without_its_instance_is_not_connected() {
+        let bound = store_with(Provider::GitLab, Some("gitlab.example.com"));
+        assert!(bound.summary(Provider::GitLab).unwrap().has_default);
+        let unbound = store_with(Provider::GitLab, None);
+        let summary = unbound.summary(Provider::GitLab).unwrap();
+        assert!(!summary.has_default);
+        assert_eq!(summary.default_login, None);
+        assert!(
+            store_with(Provider::GitHub, None)
+                .summary(Provider::GitHub)
+                .unwrap()
+                .has_default
+        );
     }
 
     #[test]
