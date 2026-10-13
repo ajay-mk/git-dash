@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { shortAgo } from '../lib/time';
+import { providerOfUrl, refSigil } from '../lib/url';
+import { providers } from '../providers';
 import type { CheckItem, IssueItem, ItemDetails, PullRequestItem, ReviewerState } from '../providers/types';
 import { ExternalLink } from './ExternalLink';
 import { CiIcon } from './StatusIcons';
@@ -62,10 +64,11 @@ function DetailsContent({ item, details, error }: {
   const pr = details?.pr ?? null;
   // Assigned items can be pull requests too.
   const isPr = item.kind === 'pr' || item.issue.isPullRequest;
+  const provider = providerOfUrl(base.url) ?? 'github';
   return (
     <>
       <div className="details-head">
-        <span className="row-num">{base.repo ?? ''}#{base.number}</span>
+        <span className="row-num">{base.repo ?? ''}{refSigil(base.url, isPr)}{base.number}</span>
         {item.kind === 'pr' && item.pr.isDraft && <span className="badge badge-muted">draft</span>}
       </div>
       <div className="details-title">{base.title}</div>
@@ -123,11 +126,13 @@ function DetailsContent({ item, details, error }: {
         </>
       )}
       <div className="details-actions">
-        <ExternalLink href={base.url} className="btn btn-primary">Open on GitHub</ExternalLink>
+        <ExternalLink href={base.url} className="btn btn-primary">Open on {providers[provider].label}</ExternalLink>
         {isPr && (
           <>
-            <ExternalLink href={`${base.url}/files`} className="btn">Files</ExternalLink>
-            <ExternalLink href={`${base.url}/checks`} className="btn">Checks</ExternalLink>
+            <ExternalLink href={`${base.url}/${provider === 'gitlab' ? 'diffs' : 'files'}`} className="btn">Files</ExternalLink>
+            <ExternalLink href={`${base.url}/${provider === 'gitlab' ? 'pipelines' : 'checks'}`} className="btn">
+              {provider === 'gitlab' ? 'Pipelines' : 'Checks'}
+            </ExternalLink>
           </>
         )}
       </div>

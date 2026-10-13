@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, defaultConfig, defaultWidgets, parseConfig, parseRepoInput, pruneLayout, shiftListLimits } from './schema';
+import {
+  ConfigError,
+  defaultConfig,
+  defaultWidgets,
+  parseConfig,
+  parseGitLabInput,
+  parseGitLabPath,
+  parseRepoInput,
+  providerOfInput,
+  pruneLayout,
+  shiftListLimits,
+} from './schema';
 
 describe('parseRepoInput', () => {
   it('accepts owner/name and GitHub URLs', () => {
@@ -16,6 +27,45 @@ describe('parseRepoInput', () => {
   });
 });
 
+describe('GitLab paths', () => {
+  it('splits nested groups from the project', () => {
+    expect(parseGitLabPath('acme/api')).toEqual({ owner: 'acme', name: 'api' });
+    expect(parseGitLabPath('acme/platform/core/api.v2')).toEqual({ owner: 'acme/platform/core', name: 'api.v2' });
+    expect(parseGitLabPath('acme/api.git')).toEqual({ owner: 'acme', name: 'api' });
+  });
+
+  it('rejects invalid paths', () => {
+    for (const bad of ['', 'api', 'acme//api', '-acme/api', 'acme/.api', 'acme/api.', 'acme/x.atom', 'a b/c', 'a/../b', 'a/<b>', `${'g/'.repeat(21)}p`]) {
+      expect(parseGitLabPath(bad), bad).toBeNull();
+    }
+  });
+
+  it('reads links on the instance, including pages inside a project', () => {
+    const host = 'gitlab.example.com';
+    expect(parseGitLabInput(' https://gitlab.example.com/acme/sub/api/ ', host)).toEqual({ owner: 'acme/sub', name: 'api' });
+    expect(parseGitLabInput('gitlab.example.com/acme/api/-/merge_requests/3', host)).toEqual({ owner: 'acme', name: 'api' });
+    expect(parseGitLabInput('https://gitlab.example.com/acme/api?tab=x', host)).toEqual({ owner: 'acme', name: 'api' });
+    expect(parseGitLabInput('acme/api', host)).toEqual({ owner: 'acme', name: 'api' });
+    expect(parseGitLabInput('https://gitlab.com/acme/api', host)).toBeNull();
+  });
+
+  it('tells which service a pasted link is for', () => {
+    expect(providerOfInput('https://github.com/a/b', 'gitlab.com')).toBe('github');
+    expect(providerOfInput('https://gitlab.com/a/b', 'gitlab.com')).toBe('gitlab');
+    expect(providerOfInput('https://gitlab.com/a/b', null)).toBeNull();
+    expect(providerOfInput('a/b', 'gitlab.com')).toBeNull();
+    expect(providerOfInput('https://www.github.com/a/b', 'gitlab.com')).toBe('github');
+    expect(providerOfInput('https://www.gitlab.example.com/a/b', 'www.gitlab.example.com')).toBe('gitlab');
+    expect(providerOfInput('https://www.gitlab.com/a/b', 'gitlab.com')).toBeNull();
+    expect(providerOfInput('https://GitLab.example.com:443/a/b', 'gitlab.example.com')).toBe('gitlab');
+    expect(providerOfInput('https://gitlab.example.com:8443/a/b', 'gitlab.example.com')).toBeNull();
+    expect(parseGitLabInput('https://gitlab.example.com:443/group/sub/web', 'gitlab.example.com')).toEqual({
+      owner: 'group/sub',
+      name: 'web',
+    });
+  });
+});
+
 describe('parseConfig', () => {
   const valid = {
     ...defaultConfig(),
@@ -24,12 +74,20 @@ describe('parseConfig', () => {
 
   it('round-trips a valid config', () => {
     expect(parseConfig(JSON.parse(JSON.stringify(valid)))).toEqual(valid);
+    const gitlab = { ...valid, repos: [{ provider: 'gitlab', owner: 'acme/platform', name: 'api', widgets: defaultWidgets() }] };
+    expect(parseConfig(JSON.parse(JSON.stringify(gitlab)))).toEqual(gitlab);
+  });
+
+  it('rejects GitLab projects whose owner and name do not split as stored', () => {
+    for (const [owner, name] of [['acme', 'platform/api'], ['acme/', 'api'], ['acme', '../api']]) {
+      expect(() => parseConfig({ ...valid, repos: [{ provider: 'gitlab', owner, name }] }), `${owner} ${name}`).toThrow(ConfigError);
+    }
   });
 
   it('rejects malformed input', () => {
     expect(() => parseConfig(null)).toThrow(ConfigError);
     expect(() => parseConfig({ ...valid, version: 2 })).toThrow(ConfigError);
-    expect(() => parseConfig({ ...valid, repos: [{ provider: 'gitlab', owner: 'a', name: 'b' }] })).toThrow(ConfigError);
+    expect(() => parseConfig({ ...valid, repos: [{ provider: 'gitea', owner: 'a', name: 'b' }] })).toThrow(ConfigError);
     expect(() => parseConfig({ ...valid, repos: [{ provider: 'github', owner: 'a', name: '../../x' }] })).toThrow(ConfigError);
     expect(() => parseConfig({ ...valid, repos: Array(51).fill(valid.repos[0]) })).toThrow(ConfigError);
   });

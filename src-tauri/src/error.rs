@@ -14,6 +14,14 @@ pub enum Error {
     InvalidTokenFormat,
     #[error("Invalid account or organization name")]
     InvalidOwner,
+    #[error("Enter the address of a GitLab instance, such as gitlab.com or gitlab.example.com")]
+    InvalidHost,
+    #[error("Only GitHub uses tokens per account or organization")]
+    OwnerTokensUnsupported,
+    #[error("The token is missing the read_api scope")]
+    InsufficientScope,
+    #[error("Only links to GitHub or your GitLab instance can be opened")]
+    ForbiddenUrl,
     #[error("Too many access tokens; remove one first")]
     TooManyTokens,
     #[error("Only read-only GraphQL queries are allowed")]
@@ -22,7 +30,7 @@ pub enum Error {
     RequestTooLarge,
     #[error("Unsupported provider: {0}")]
     UnknownProvider(String),
-    #[error("GitHub API rate limit reached; try again later")]
+    #[error("API rate limit reached; try again later")]
     RateLimited,
     #[error("Provider returned HTTP {0}")]
     Http(u16),
@@ -41,6 +49,10 @@ impl Error {
             Error::Unauthorized => "unauthorized",
             Error::InvalidTokenFormat => "invalid_token_format",
             Error::InvalidOwner => "invalid_owner",
+            Error::InvalidHost => "invalid_host",
+            Error::OwnerTokensUnsupported => "owner_tokens_unsupported",
+            Error::InsufficientScope => "insufficient_scope",
+            Error::ForbiddenUrl => "forbidden_url",
             Error::TooManyTokens => "too_many_tokens",
             Error::ForbiddenOperation => "forbidden_operation",
             Error::RequestTooLarge => "request_too_large",

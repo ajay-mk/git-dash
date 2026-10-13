@@ -1,7 +1,9 @@
 mod commands;
 mod error;
 mod github;
+mod gitlab;
 mod graphql_guard;
+mod http;
 mod token;
 
 use std::sync::Arc;
@@ -29,24 +31,22 @@ fn is_app_url(url: &Url) -> bool {
     }
 }
 
-/// Same rule as `isSafeExternalUrl` in `src/lib/url.ts`: plain
-/// `https://github.com/...` URLs only.
-fn is_github_url(url: &Url) -> bool {
-    url.scheme() == "https"
-        && url.host_str() == Some("github.com")
-        && url.port().is_none()
-        && url.username().is_empty()
-        && url.password().is_none()
-}
-
 /// The app never opens windows of its own. A request for one (a middle- or
 /// Ctrl-click on a link, `window.open`) would otherwise get a bare webview
-/// popup on Windows, outside the navigation allow-list. GitHub links go to the
-/// system browser instead, like a normal click; anything else is dropped.
-fn on_new_window<R: tauri::Runtime>(url: Url) -> NewWindowResponse<R> {
-    if is_github_url(&url) {
-        let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
-    }
+/// popup on Windows, outside the navigation allow-list. Links that
+/// `open_external` would accept go to the system browser instead, like a
+/// normal click; anything else is dropped.
+fn on_new_window<R: tauri::Runtime>(
+    tokens: &Arc<token::TokenStore>,
+    url: Url,
+) -> NewWindowResponse<R> {
+    let tokens = Arc::clone(tokens);
+    // The allow-list reads the keychain, which must not block the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        if commands::may_open(&tokens, &url) {
+            let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+        }
+    });
     NewWindowResponse::Deny
 }
 
@@ -55,7 +55,10 @@ pub fn run() {
     let state = AppState {
         tokens: Arc::new(token::TokenStore::default()),
         github: github::GitHubClient::new().expect("failed to initialise HTTP client"),
+        gitlab: gitlab::GitLabClient::new().expect("failed to initialise HTTP client"),
     };
+
+    let tokens = Arc::clone(&state.tokens);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -65,6 +68,8 @@ pub fn run() {
             commands::token_set,
             commands::token_clear,
             commands::github_graphql,
+            commands::gitlab_graphql,
+            commands::open_external,
         ])
         .setup(|app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
@@ -72,7 +77,7 @@ pub fn run() {
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(480.0, 400.0)
                 .on_navigation(is_app_url)
-                .on_new_window(|url, _| on_new_window(url))
+                .on_new_window(move |url, _| on_new_window(&tokens, url))
                 .build()?;
             Ok(())
         })
@@ -96,23 +101,5 @@ mod tests {
         ));
         assert!(!is_app_url(&Url::parse("file:///etc/passwd").unwrap()));
         assert!(!is_app_url(&Url::parse("http://localhost:8080/").unwrap()));
-    }
-
-    #[test]
-    fn new_windows_only_open_github_links() {
-        assert!(is_github_url(
-            &Url::parse("https://github.com/ajay-mk/git-dash/pull/1").unwrap()
-        ));
-        for bad in [
-            "http://github.com/",
-            "https://github.com:8443/",
-            "https://user@github.com/",
-            "https://github.com.evil.com/",
-            "https://gist.github.com/",
-            "javascript:alert(1)",
-            "file:///etc/passwd",
-        ] {
-            assert!(!is_github_url(&Url::parse(bad).unwrap()), "{bad}");
-        }
     }
 }

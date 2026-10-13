@@ -30,11 +30,14 @@ src-tauri/              Rust backend
 
 ## Adding a provider
 
-1. Add its id to `ProviderId` in `src/providers/types.ts`.
-2. Implement the `Provider` interface (see `src/providers/github/`) and register
-   it in `src/providers/index.ts`.
-3. Add a backend client and token slot in `src-tauri/src/` with a
+1. Add its id to `PROVIDER_IDS` in `src/providers/types.ts`.
+2. Implement the `Provider` interface (see `src/providers/github/` and
+   `src/providers/gitlab/`) and register it in `src/providers/index.ts`.
+3. Teach `src/config/schema.ts` its repository paths, and `src/lib/url.ts`
+   which web pages belong to it.
+4. Add a backend client and token slot in `src-tauri/src/` with a
    read-only command, and grant it in `src-tauri/capabilities/default.json`.
+   Allow its web pages in `open_external` in `src-tauri/src/commands.rs`.
 
 ## App icons
 

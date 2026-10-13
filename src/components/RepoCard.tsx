@@ -3,6 +3,7 @@ import { MAX_ITEMS, MIN_ITEMS, repoId, type PinnedRepo, type WidgetConfig, type 
 import type { CardResize } from '../hooks/useCardResize';
 import { REORDER_ATTR } from '../hooks/useReorder';
 import { HEALTH_LABELS, repoHealth } from '../lib/health';
+import { connectedGitLabHost } from '../lib/url';
 import type { RepoError, RepoResult, RepoSnapshot } from '../providers/types';
 import { Collapsible } from './Collapsible';
 import { ExternalLink } from './ExternalLink';
@@ -14,8 +15,10 @@ function shown(widget: { limit: number }, delta: number): number {
   return Math.min(MAX_ITEMS, Math.max(MIN_ITEMS, widget.limit + delta));
 }
 
-function Widget({ widget, data, collapsed, onToggle, delta }: {
+function Widget({ widget, data, collapsed, onToggle, delta, mergeRequests }: {
   widget: WidgetConfig;
+  /** GitLab calls pull requests merge requests. */
+  mergeRequests: boolean;
   data: RepoSnapshot;
   collapsed: boolean;
   onToggle: () => void;
@@ -35,14 +38,14 @@ function Widget({ widget, data, collapsed, onToggle, delta }: {
         <Collapsible
           className="widget"
           name={widget.type}
-          title="Pull requests"
+          title={mergeRequests ? 'Merge requests' : 'Pull requests'}
           count={prs.total}
           collapsed={collapsed}
           onToggle={onToggle}
           badge={attention > 0 ? <span className="badge badge-bad">{attention} need attention</span> : null}
         >
           {prs.items.length === 0 ? (
-            <p className="empty">No open pull requests</p>
+            <p className="empty">{mergeRequests ? 'No open merge requests' : 'No open pull requests'}</p>
           ) : (
             <ul className="rows">
               {prs.items.slice(0, shown(widget, delta)).map((pr) => (
@@ -78,6 +81,11 @@ function Widget({ widget, data, collapsed, onToggle, delta }: {
       );
     }
   }
+}
+
+function fallbackUrl(repo: PinnedRepo): string {
+  const host = repo.provider === 'gitlab' ? connectedGitLabHost() : 'github.com';
+  return host ? `https://${host}/${repo.owner}/${repo.name}` : '';
 }
 
 function RepoErrorText({ error }: { error: RepoError }) {
@@ -133,10 +141,11 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
     >
       <header className="card-header">
         {handle}
-        <ExternalLink href={data?.url ?? `https://github.com/${repo.owner}/${repo.name}`} className="card-title">
+        <ExternalLink href={data?.url ?? fallbackUrl(repo)} className="card-title">
           <span className="owner">{repo.owner}/</span>
           {repo.name}
         </ExternalLink>
+        {repo.provider === 'gitlab' && <span className="badge badge-muted">GitLab</span>}
         {data?.isPrivate && <span className="badge badge-muted">private</span>}
         {data?.isArchived && <span className="badge badge-muted">archived</span>}
         {data?.ci && (
@@ -159,6 +168,7 @@ export function RepoCard({ repo, result, collapsedWidgets, onToggleWidget, handl
               collapsed={collapsed.includes(w.type)}
               onToggle={() => onToggleWidget(w.type)}
               delta={resize?.delta ?? 0}
+              mergeRequests={repo.provider === 'gitlab'}
             />
           ))}
         {data && repo.widgets.length === 0 && <p className="empty">No widgets enabled</p>}

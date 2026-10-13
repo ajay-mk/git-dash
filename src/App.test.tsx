@@ -3,13 +3,18 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { defaultConfig } from './config/schema';
-import { AppError, githubGraphql, tokens } from './lib/transport';
+import { AppError, githubGraphql, gitlabGraphql, tokens, type TokenSummary } from './lib/transport';
 import { pinned } from './test/fixtures';
 
 const DASHBOARD = { name: 'Pin your first repository' };
 
 function stored(hasDefault: boolean) {
-  return { hasDefault, defaultLogin: hasDefault ? 'octocat' : null, owners: [] };
+  return { hasDefault, defaultLogin: hasDefault ? 'octocat' : null, owners: [], host: null };
+}
+
+/** Stores `github` for GitHub and `gitlab` (nothing by default) for GitLab. */
+function storedTokens(github: TokenSummary, gitlab: TokenSummary = stored(false)) {
+  vi.mocked(tokens.list).mockImplementation((provider) => Promise.resolve(provider === 'gitlab' ? gitlab : github));
 }
 
 function saveConfig(config = defaultConfig()) {
@@ -18,7 +23,7 @@ function saveConfig(config = defaultConfig()) {
 
 describe('App', () => {
   it('shows token setup when no token is stored', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(false));
+    storedTokens(stored(false));
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
@@ -33,7 +38,7 @@ describe('App', () => {
   });
 
   it('shows the dashboard when a token is stored', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(true));
+    storedTokens(stored(true));
     saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
     render(<App />);
 
@@ -42,7 +47,7 @@ describe('App', () => {
   });
 
   it('returns to token setup when GitHub rejects the token', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(true));
+    storedTokens(stored(true));
     vi.mocked(githubGraphql).mockRejectedValue(new AppError('unauthorized', 'Bad credentials'));
     saveConfig({ ...defaultConfig(), repos: [pinned()] });
     render(<App />);
@@ -60,7 +65,7 @@ describe('App', () => {
   });
 
   it('stays on the dashboard for errors other than authentication', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(true));
+    storedTokens(stored(true));
     vi.mocked(githubGraphql).mockRejectedValue(new AppError('network', 'Could not reach GitHub.'));
     saveConfig({ ...defaultConfig(), repos: [pinned()] });
     render(<App />);
@@ -71,32 +76,148 @@ describe('App', () => {
   });
 
   it('removing the token clears it and shows token setup', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(true));
+    storedTokens(stored(true));
     saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
     render(<App />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Settings' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Remove token' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove GitHub token' }));
 
     expect(await screen.findByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
     expect(tokens.clear).toHaveBeenCalledExactlyOnceWith('github');
   });
 
+  it('removing the last token also removes owner tokens, which Settings could no longer reach', async () => {
+    storedTokens({ ...stored(true), owners: [{ owner: 'acme', login: 'acme-bot' }] });
+    saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove GitHub token' }));
+
+    expect(await screen.findByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
+    expect(vi.mocked(tokens.clear).mock.calls).toEqual([['github', 'acme'], ['github']]);
+  });
+
+  it('shows the dashboard only once the new token is registered', async () => {
+    storedTokens(stored(false));
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Connect GitHub' });
+
+    let finish: (summary: TokenSummary) => void = () => {};
+    vi.mocked(tokens.list).mockImplementation((provider) =>
+      provider === 'gitlab' ? Promise.resolve(stored(false)) : new Promise((resolve) => (finish = resolve)),
+    );
+    vi.mocked(tokens.set).mockResolvedValue('octocat');
+    await userEvent.type(screen.getByLabelText('Access token'), 'github_pat_SECRET123');
+    await userEvent.click(screen.getByRole('button', { name: 'Save token' }));
+    await waitFor(() => expect(tokens.list).toHaveBeenCalledTimes(4));
+    expect(screen.getByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
+
+    finish(stored(true));
+    expect(await screen.findByRole('heading', DASHBOARD)).toBeTruthy();
+  });
+
   it('stays on the dashboard when the keychain refuses to remove the token', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(true));
+    storedTokens(stored(true));
     vi.mocked(tokens.clear).mockRejectedValue(new AppError('keyring', 'The keychain is locked.'));
     saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
     render(<App />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Settings' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Remove token' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove GitHub token' }));
 
     expect(await screen.findByText('Could not remove the token: The keychain is locked.')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Connect GitHub' })).toBeNull();
   });
 
+  describe('with GitLab', () => {
+    const gitlab = { hasDefault: true, defaultLogin: 'jane.doe', owners: [], host: 'gitlab.example.com' };
+    const project = pinned('acme/platform', 'api', { provider: 'gitlab' });
+    const projectData = {
+      data: {
+        viewer: { username: 'jane.doe' },
+        p0: {
+          fullPath: 'acme/platform/api',
+          webUrl: 'https://gitlab.example.com/acme/platform/api',
+          repository: { rootRef: 'main' },
+        },
+      },
+    };
+
+    it('shows a GitLab-only dashboard and links to the instance', async () => {
+      storedTokens(stored(false), gitlab);
+      vi.mocked(gitlabGraphql).mockResolvedValue(projectData);
+      saveConfig({ ...defaultConfig(), repos: [project], inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      const title = await screen.findByRole('link', { name: /acme\/platform\/\s*api/ });
+      expect(title.getAttribute('href')).toBe('https://gitlab.example.com/acme/platform/api');
+      expect(githubGraphql).not.toHaveBeenCalled();
+      expect(screen.queryByRole('heading', { name: /^Connect/ })).toBeNull();
+    });
+
+    it('says when the GitLab token could not be read instead of showing it as disconnected', async () => {
+      vi.mocked(tokens.list).mockImplementation((provider) =>
+        provider === 'gitlab'
+          ? Promise.reject(new AppError('keyring', 'The keychain entry is damaged.'))
+          : Promise.resolve(stored(true)),
+      );
+      saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      expect(await screen.findByText('Could not read your GitLab token: The keychain entry is damaged.')).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(screen.getByText('Could not read the token: The keychain entry is damaged.')).toBeTruthy();
+    });
+
+    it('keeps GitHub working when the GitLab token is rejected', async () => {
+      storedTokens(stored(true), gitlab);
+      vi.mocked(gitlabGraphql).mockRejectedValue(new AppError('unauthorized', 'Bad credentials'));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      saveConfig({ ...defaultConfig(), repos: [project], inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      expect(await screen.findByText('Your GitLab token was rejected or has expired. Replace it in Settings.')).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: /^Connect/ })).toBeNull();
+    });
+
+    it('asks to connect GitLab for its projects while only GitHub is connected', async () => {
+      storedTokens(stored(true));
+      vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
+      saveConfig({ ...defaultConfig(), repos: [project], inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      expect(await screen.findByText('Connect GitLab in Settings to load this repository.')).toBeTruthy();
+      expect(gitlabGraphql).not.toHaveBeenCalled();
+    });
+
+    it('connects GitLab from settings and can cancel back to the dashboard', async () => {
+      storedTokens(stored(true));
+      saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Connect GitLab' }));
+      expect(screen.getByRole('heading', { name: 'Connect GitLab' })).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(await screen.findByRole('heading', DASHBOARD)).toBeTruthy();
+    });
+
+    it('removing GitLab keeps the GitHub dashboard', async () => {
+      storedTokens(stored(true), gitlab);
+      saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
+      render(<App />);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Remove GitLab token' }));
+      await waitFor(() => expect(tokens.clear).toHaveBeenCalledExactlyOnceWith('gitlab'));
+      expect(screen.getByRole('heading', DASHBOARD)).toBeTruthy();
+    });
+  });
+
   it('persists settings changes', async () => {
-    vi.mocked(tokens.list).mockResolvedValue(stored(true));
+    storedTokens(stored(true));
     saveConfig({ ...defaultConfig(), inbox: { ...defaultConfig().inbox, enabled: false } });
     render(<App />);
 
@@ -120,7 +241,7 @@ describe('App', () => {
     }
 
     async function renderRepos() {
-      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      storedTokens(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       saveConfig({ ...defaultConfig(), repos, inbox: { ...defaultConfig().inbox, enabled: false } });
       render(<App />);
@@ -217,7 +338,7 @@ describe('App', () => {
       saved().repos.find((r) => r.name === name)!.widgets.flatMap((w) => (w.limit === undefined ? [] : [w.limit]));
 
     async function renderRepos() {
-      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      storedTokens(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       saveConfig({ ...defaultConfig(), repos, inbox: { ...defaultConfig().inbox, enabled: false } });
       render(<App />);
@@ -243,7 +364,7 @@ describe('App', () => {
     });
 
     it('leaves lists that have not loaded as they are, and collapsed lists at their limit', async () => {
-      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      storedTokens(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       const layout = { ...defaultConfig().layout, collapsedWidgets: ['github:octo/one#issues'] };
       const one = pinned('octo', 'one', {
@@ -307,7 +428,7 @@ describe('App', () => {
     }
 
     async function renderSpan(span: number) {
-      vi.mocked(tokens.list).mockResolvedValue(stored(true));
+      storedTokens(stored(true));
       vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
       const layout = { ...defaultConfig().layout, cardSpans: { 'github:octo/one': span } };
       saveConfig({ ...defaultConfig(), repos, layout, inbox: { ...defaultConfig().inbox, enabled: false } });

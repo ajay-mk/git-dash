@@ -1,14 +1,12 @@
 //! Minimal GitHub GraphQL client. The token is attached here and nowhere else.
 
-use std::time::Duration;
-
-use reqwest::{header, redirect, StatusCode};
+use reqwest::{header, StatusCode};
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
+use crate::http::{client, read_body};
 
 const GRAPHQL_ENDPOINT: &str = "https://api.github.com/graphql";
-const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 pub struct GitHubClient {
     http: reqwest::Client,
@@ -16,17 +14,7 @@ pub struct GitHubClient {
 
 impl GitHubClient {
     pub fn new() -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .user_agent(concat!("GitDash/", env!("CARGO_PKG_VERSION")))
-            .https_only(true)
-            // Never follow redirects: the token must only ever go to the
-            // fixed GitHub API endpoint.
-            .redirect(redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|_| Error::Internal)?;
-        Ok(Self { http })
+        Ok(Self { http: client()? })
     }
 
     /// Sends a GraphQL request and returns the decoded JSON body, which may
@@ -80,20 +68,6 @@ fn login_from(body: &Value) -> Result<String> {
         .and_then(Value::as_str)
         .map(str::to_owned)
         .ok_or_else(|| Error::Network("GitHub could not verify the token right now".into()))
-}
-
-async fn read_body(response: reqwest::Response) -> Result<Vec<u8>> {
-    if response
-        .content_length()
-        .is_some_and(|len| len as usize > MAX_RESPONSE_BYTES)
-    {
-        return Err(Error::RequestTooLarge);
-    }
-    let body = response.bytes().await?;
-    if body.len() > MAX_RESPONSE_BYTES {
-        return Err(Error::RequestTooLarge);
-    }
-    Ok(body.to_vec())
 }
 
 /// A 403 without rate-limit headers can still be a secondary rate limit;
