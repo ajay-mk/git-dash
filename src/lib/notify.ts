@@ -102,11 +102,10 @@ export function inboxAlerts(
   }
 
   const before = new Map(prev.myPullRequests.items.map((pr) => [pr.url, pr]));
-  // An incomplete fetch can lack fields (a check rollup lost to an error), so
-  // its pull requests are only compared once a complete one comes back.
-  for (const pr of next.incomplete ? [] : next.myPullRequests.items) {
+  for (const pr of next.myPullRequests.items) {
     const old = before.get(pr.url);
-    if (!old || pr.isDraft) continue;
+    // A pull request with fields lost to an error is compared once they load.
+    if (!old || pr.isDraft || pr.partial) continue;
     // Each change is reported, since the next fetch compares with this one.
     if (pr.ci === 'failure' && old.ci !== 'failure') {
       alerts.push({ title: 'CI failing', body: label(pr) });
@@ -126,16 +125,19 @@ export function inboxAlerts(
 }
 
 /**
- * What the next fetch is compared with. An incomplete `next` may lack some of
- * your pull requests or some of their fields, so the ones already known keep
- * their previous state; changes to them are noticed once a complete fetch
- * comes back.
+ * What the next fetch is compared with. Your pull requests whose fields
+ * failed to load keep their previous state, and when a token's results are
+ * missing, so do the ones only it found; changes to them are noticed once
+ * they load again.
  */
 export function inboxBaseline(prev: InboxSnapshot | undefined, next: InboxSnapshot): InboxSnapshot {
-  if (!next.incomplete || !prev) return next;
-  const known = new Set(prev.myPullRequests.items.map((pr) => pr.url));
-  const added = next.myPullRequests.items.filter((pr) => !known.has(pr.url));
-  return { ...next, myPullRequests: { ...next.myPullRequests, items: [...prev.myPullRequests.items, ...added] } };
+  const items = next.myPullRequests.items;
+  if (!prev || (!next.incomplete && !items.some((pr) => pr.partial))) return next;
+  const before = new Map(prev.myPullRequests.items.map((pr) => [pr.url, pr]));
+  const kept = items.map((pr) => (pr.partial ? (before.get(pr.url) ?? pr) : pr));
+  const present = new Set(items.map((pr) => pr.url));
+  const missing = next.incomplete ? prev.myPullRequests.items.filter((pr) => !present.has(pr.url)) : [];
+  return { ...next, myPullRequests: { ...next.myPullRequests, items: [...kept, ...missing] } };
 }
 
 let asked = false;

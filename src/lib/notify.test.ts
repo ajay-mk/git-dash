@@ -180,13 +180,20 @@ describe('inboxBaseline', () => {
     expect(inboxAlerts(inboxBaseline(prev, partial), recovered, SINCE).map((x) => x.title)).toEqual(['CI failing']);
   });
 
-  it('compares pull requests from an incomplete fetch only once a complete one is back', () => {
+  it('compares a pull request with lost fields only once they load', () => {
     const pending = { ...a, review: 'approved' as const, mergeable: true, ci: 'pending' as const };
     const prev = inbox({ myPullRequests: counted(pending) });
     // The check rollup was lost to an error, so CI reads as none.
-    const partial = inbox({ myPullRequests: counted({ ...pending, ci: 'none' }), incomplete: true });
+    const partial = inbox({ myPullRequests: counted({ ...pending, ci: 'none', partial: true }), incomplete: true });
     expect(inboxAlerts(prev, partial, SINCE)).toEqual([]);
     expect(inboxBaseline(prev, partial).myPullRequests.items).toEqual([pending]);
+  });
+
+  it('still reports pull requests the working tokens returned', () => {
+    const prev = inbox({ myPullRequests: counted(a, b) });
+    // B's token failed; A came back complete.
+    const partial = inbox({ myPullRequests: counted({ ...a, ci: 'failure' }), incomplete: true });
+    expect(inboxAlerts(prev, partial, SINCE).map((x) => x.title)).toEqual(['CI failing']);
   });
 
   it('takes a complete fetch as it is', () => {

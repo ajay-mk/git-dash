@@ -174,6 +174,14 @@ describe('mappers', () => {
     expect(inbox.incomplete).toBeUndefined();
   });
 
+  it('flags pull requests whose fields were lost to an error', () => {
+    const inbox = mapInbox(
+      { viewer: { login: 'me' }, myPullRequests: { issueCount: 2, nodes: [{ number: 1 }, { number: 2 }] } },
+      [{ type: 'SERVICE_UNAVAILABLE', message: 'Timeout', path: ['myPullRequests', 'nodes', 1, 'commits'] }],
+    );
+    expect(inbox.myPullRequests.items.map((pr) => pr.partial)).toEqual([undefined, true]);
+  });
+
   it('marks inbox results cut short by other errors incomplete', () => {
     const inbox = mapInbox(
       { viewer: { login: 'me' }, myPullRequests: null },

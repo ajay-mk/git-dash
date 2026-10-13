@@ -122,7 +122,7 @@ export function mapIssue(v: unknown): IssueItem | null {
   };
 }
 
-function mapConnection<T>(v: unknown, mapper: (n: unknown) => T | null, totalKey = 'totalCount'): Counted<T> {
+function mapConnection<T>(v: unknown, mapper: (n: unknown, index: number) => T | null, totalKey = 'totalCount'): Counted<T> {
   const c = obj(v);
   const items = arr(c?.nodes)
     .map(mapper)
@@ -224,10 +224,22 @@ export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnaps
     const at = lastEvent(n, 'assignee', (who) => str(who.login)?.toLowerCase() === me);
     return item && at ? { ...item, assignedAt: at } : item;
   };
+  // Pull requests whose fields (e.g. the check rollup) were lost to an error.
+  const partial = new Set(
+    errors.flatMap((e) =>
+      e.path?.[0] === 'myPullRequests' && e.path[1] === 'nodes' && typeof e.path[2] === 'number' && e.path.length > 3
+        ? [e.path[2]]
+        : [],
+    ),
+  );
+  const mine = (n: unknown, index: number): PullRequestItem | null => {
+    const pr = mapPullRequest(n);
+    return pr && partial.has(index) ? { ...pr, partial: true } : pr;
+  };
   return {
     viewer,
     reviewRequests: d.reviewRequests ? mapConnection(d.reviewRequests, reviewRequest, 'issueCount') : EMPTY,
-    myPullRequests: d.myPullRequests ? mapConnection(d.myPullRequests, mapPullRequest, 'issueCount') : EMPTY,
+    myPullRequests: d.myPullRequests ? mapConnection(d.myPullRequests, mine, 'issueCount') : EMPTY,
     assigned: d.assigned ? mapConnection(d.assigned, assignment, 'issueCount') : EMPTY,
     // Search results from SSO-protected organizations come back as null
     // nodes, each with a SAML error.

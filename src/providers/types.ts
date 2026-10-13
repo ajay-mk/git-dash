@@ -35,6 +35,8 @@ export interface PullRequestItem {
   repo?: string;
   /** When your review was last requested; set for the inbox's review requests. */
   requestedAt?: string;
+  /** Some of its fields failed to load, so they may read as empty. */
+  partial?: boolean;
 }
 
 export interface IssueItem {
