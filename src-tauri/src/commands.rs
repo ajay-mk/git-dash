@@ -134,12 +134,8 @@ pub async fn gitlab_graphql(
     if !variables.is_object() || variables.to_string().len() > graphql_guard::MAX_QUERY_BYTES {
         return Err(Error::RequestTooLarge);
     }
-    let (slot, token, host) = blocking(&state.tokens, |t| {
-        let host = t.host(Provider::GitLab)?.ok_or(Error::NoToken)?;
-        let (slot, token) = t.resolve(Provider::GitLab, None)?;
-        Ok((slot, token, host))
-    })
-    .await?;
+    let (slot, token, host) =
+        blocking(&state.tokens, |t| t.resolve_with_host(Provider::GitLab)).await?;
     let result = state
         .gitlab
         .graphql(&host, &token, &query, &variables)

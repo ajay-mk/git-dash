@@ -316,6 +316,21 @@ impl TokenStore {
         })
     }
 
+    /// The default token together with the instance it was verified against,
+    /// read under one lock so a concurrent `set` cannot pair a token with
+    /// another token's host. Blocking: call from a blocking-safe context.
+    pub fn resolve_with_host(&self, provider: Provider) -> Result<(Slot, String, Host)> {
+        let mut inner = self.lock()?;
+        let host = inner
+            .index(provider)?
+            .host
+            .as_deref()
+            .and_then(|h| Host::parse(h).ok())
+            .ok_or(Error::NoToken)?;
+        let token = inner.get(provider, &Slot::Default)?;
+        Ok((Slot::Default, token, host))
+    }
+
     /// The GitLab instance the default token was verified against.
     pub fn host(&self, provider: Provider) -> Result<Option<Host>> {
         let mut inner = self.lock()?;
