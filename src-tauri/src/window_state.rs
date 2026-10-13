@@ -128,6 +128,15 @@ impl Bounds {
             && (min_height..=100_000.0).contains(&self.height)
     }
 
+    /// Centers the window on `screen` unless it is already there.
+    pub fn move_onto(&mut self, screen: &Area) {
+        if self.is_visible_on(std::slice::from_ref(screen)) {
+            return;
+        }
+        self.x = screen.x + ((screen.width - self.width * screen.scale) / 2.0).max(0.0);
+        self.y = screen.y + ((screen.height - self.height * screen.scale) / 2.0).max(0.0);
+    }
+
     /// Whether enough of the window's top edge is on one of `screens`. On macOS
     /// the position is the content area's, just below the title bar.
     pub fn is_visible_on(&self, screens: &[Area]) -> bool {
@@ -194,6 +203,10 @@ pub fn track<R: Runtime>(window: &Window<R>) {
     if maximized || window.is_fullscreen().unwrap_or(false) {
         if let Some(bounds) = saved.as_mut() {
             bounds.maximized = maximized;
+            // Moved to another screen while maximized: restore there.
+            if let Ok(Some(monitor)) = window.current_monitor() {
+                bounds.move_onto(&Area::of(&monitor));
+            }
         }
         return;
     }
@@ -296,6 +309,18 @@ mod tests {
         };
         assert!(bounds(-2400.0, 40.0).is_visible_on(&[hidpi]));
         assert!(!bounds(-2400.0, 40.0).is_visible_on(&[SCREEN]));
+    }
+
+    #[test]
+    fn moves_onto_the_screen_it_was_maximized_on() {
+        let mut moved = bounds(80.0, 40.0);
+        moved.move_onto(&RIGHT);
+        assert_eq!((moved.x, moved.y), (1440.0 + 320.0, 120.0));
+        assert!(moved.is_visible_on(&[RIGHT]));
+        // Already there: left where it was.
+        let mut kept = bounds(80.0, 40.0);
+        kept.move_onto(&SCREEN);
+        assert_eq!(kept, bounds(80.0, 40.0));
     }
 
     #[test]
