@@ -35,6 +35,9 @@ export const PROJECTS_PER_REQUEST = 2;
 /** Pipelines of the default branch's head commit searched for the branch's own. */
 export const PIPELINES_FETCHED = 10;
 
+/** Alias of the signed-in user in the projects query. */
+export const VIEWER_ALIAS = 'viewer';
+
 export function projectAlias(index: number): string {
   return `p${index}`;
 }
@@ -92,7 +95,10 @@ export function buildProjectsQuery(repos: PinnedRepo[]): BuiltQuery {
   });
 
   const defs = varDefs.length > 0 ? `(${varDefs.join(', ')})` : '';
-  return { query: `query GitDashProjects${defs} { ${selections.join(' ')} }`, variables };
+  // GitLab answers a request with a bad token as if it were anonymous, so
+  // private projects would look missing; the viewer tells the two apart.
+  const viewer = `${VIEWER_ALIAS}: currentUser { username }`;
+  return { query: `query GitDashProjects${defs} { ${viewer} ${selections.join(' ')} }`, variables };
 }
 
 /** Merge requests that need the viewer; assigned issues follow in `ASSIGNED_ISSUES_QUERY`. */

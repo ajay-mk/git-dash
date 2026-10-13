@@ -325,7 +325,7 @@ describe('gitlab provider', () => {
 
   it('fetches projects in small batches and reports missing ones', async () => {
     graphql.mockImplementation((_query, variables) => {
-      const data: Record<string, unknown> = {};
+      const data: Record<string, unknown> = { viewer: { username: 'jane.doe' } };
       for (const [key, path] of Object.entries(variables)) {
         const alias = key.replace('path', 'p');
         data[alias] = path === 'acme/platform/p1' ? null : { fullPath: path, repository: { rootRef: 'main' } };
@@ -342,11 +342,30 @@ describe('gitlab provider', () => {
 
   it('reports a project with errors instead of a partly empty card', async () => {
     graphql.mockResolvedValue({
-      data: { p0: { fullPath: 'acme/platform/p0' } },
+      data: { viewer: { username: 'jane.doe' }, p0: { fullPath: 'acme/platform/p0' } },
       errors: [{ message: 'boom', path: ['p0', 'mergeRequests'] }],
     });
     const { repos } = await gitlab.fetchRepos(pins(1), []);
     expect(repos.get('gitlab:acme/platform/p0')).toMatchObject({ ok: false, error: { kind: 'unknown' } });
+  });
+
+  it('treats projects loaded without a signed-in user as a rejected token', async () => {
+    // A revoked token is answered as anonymous: private projects come back null.
+    graphql.mockResolvedValue({ data: { viewer: null, p0: null } });
+    await expect(gitlab.fetchRepos(pins(1), [])).rejects.toMatchObject({ kind: 'unauthorized' });
+  });
+
+  it('fails the inbox instead of showing a list that did not load as empty', async () => {
+    const inbox = { enabled: true, reviewRequests: true, myPullRequests: true, assigned: true, limit: 5 };
+    graphql.mockResolvedValueOnce({
+      data: { currentUser: { username: 'jane.doe', reviewRequestedMergeRequests: null } },
+      errors: [{ message: 'boom', path: ['currentUser', 'reviewRequestedMergeRequests'] }],
+    });
+    await expect(gitlab.fetchInbox(inbox, [])).rejects.toMatchObject({ kind: 'http' });
+    graphql
+      .mockResolvedValueOnce({ data: { currentUser: { username: 'jane.doe' } } })
+      .mockResolvedValueOnce({ data: { issues: null }, errors: [{ message: 'boom', path: ['issues'] }] });
+    await expect(gitlab.fetchInbox(inbox, [])).rejects.toMatchObject({ kind: 'http' });
   });
 
   it('loads assigned issues for the current user', async () => {

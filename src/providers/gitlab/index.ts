@@ -20,6 +20,7 @@ import {
   projectAlias,
   PROJECTS_PER_REQUEST,
   PROJECTS_QUERY,
+  VIEWER_ALIAS,
 } from './queries';
 import { gitlabTokenUrl, SCOPE_LABELS } from './tokenTemplate';
 
@@ -36,6 +37,14 @@ function dataOrThrow<T>(res: GraphQLResponse<T>, what: string): T {
     throw new AppError('http', `GitLab returned no ${what}.`);
   }
   return res.data;
+}
+
+function signedIn(viewer: unknown): boolean {
+  return typeof viewer === 'object' && viewer !== null && typeof (viewer as { username?: unknown }).username === 'string';
+}
+
+function rejected(): AppError {
+  return new AppError('unauthorized', 'GitLab did not accept the token.');
 }
 
 function errorUnder(errors: GraphQLError[] | undefined, alias: string): GraphQLError | undefined {
@@ -63,6 +72,7 @@ export const gitlab: Provider = {
         const { query, variables } = buildProjectsQuery(batch);
         const res = await gitlabGraphql<Record<string, unknown>>(query, variables);
         const data = dataOrThrow(res, 'your projects');
+        if (!signedIn(data[VIEWER_ALIAS])) throw rejected();
         batch.forEach((repo, i) => {
           const alias = projectAlias(i);
           const raw = data[alias];
@@ -89,11 +99,15 @@ export const gitlab: Provider = {
     });
     const user = dataOrThrow(res, 'your inbox').currentUser;
     const me = typeof user?.username === 'string' ? user.username : null;
-    if (!me) throw new AppError('unauthorized', 'GitLab did not accept the token.');
+    if (!me) throw rejected();
+    // A list that failed comes back empty next to the others; showing it as
+    // "nothing needs you" would be wrong.
+    if (res.errors?.length) throw new AppError('http', 'GitLab could not load all of your inbox.');
     let issues: unknown = null;
     if (config.assigned) {
       const assigned = await gitlabGraphql<{ issues?: unknown }>(ASSIGNED_ISSUES_QUERY, { me, n: config.limit });
       issues = dataOrThrow(assigned, 'your assigned issues').issues;
+      if (assigned.errors?.length) throw new AppError('http', 'GitLab could not load your assigned issues.');
     }
     return mapInbox(user, issues, config.limit);
   },
