@@ -62,7 +62,8 @@ repository cards show the error instead).
 ## GitLab
 
 GitDash works with gitlab.com and with self-hosted GitLab 18 or newer that is
-reachable over HTTPS. Choose **GitLab** on the setup screen, or **Settings →
+reachable over HTTPS. Certificates from a private certificate authority work
+when your operating system trusts that authority. Choose **GitLab** on the setup screen, or **Settings →
 Access tokens → Connect GitLab** once GitHub is connected.
 
 1. Enter your instance, such as `gitlab.com` or `gitlab.example.com` (add the
