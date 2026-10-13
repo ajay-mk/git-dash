@@ -228,6 +228,16 @@ export function parseGitLabPath(path: string): { owner: string; name: string } |
   return { owner: parts.slice(0, -1).join('/'), name: parts.at(-1)! };
 }
 
+/** A URL authority the way GitLab hosts are stored: lowercase, no default port. */
+function canonicalHost(authority: string): string | null {
+  if (/[@?#\\]/.test(authority)) return null;
+  try {
+    return new URL(`https://${authority}/`).host;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Parses "group/project", "group/subgroup/project" or a URL of a page on the
  * GitLab instance `host` (such as a merge request). Returns null if invalid.
@@ -235,7 +245,7 @@ export function parseGitLabPath(path: string): { owner: string; name: string } |
 export function parseGitLabInput(input: string, host: string): { owner: string; name: string } | null {
   let value = input.trim();
   const url = /^(?:https:\/\/)?([^/\s]+)\/(.+)$/i.exec(value);
-  if (url?.[1]?.toLowerCase() === host.toLowerCase()) value = url[2]!;
+  if (url?.[1] && canonicalHost(url[1]) === host.toLowerCase()) value = url[2]!;
   // Pages inside a project live under "/-/", e.g. "/-/merge_requests/1".
   value = value.replace(/\/-(?:\/.*)?$/, '').replace(/[?#].*$/, '');
   return parseGitLabPath(value);
@@ -246,7 +256,8 @@ export function parseGitLabInput(input: string, host: string): { owner: string; 
  * instance. `null` for plain paths and other hosts.
  */
 export function providerOfInput(input: string, gitlabHost: string | null): ProviderId | null {
-  const host = /^(?:https?:\/\/)?([^/\s]+)\//i.exec(input.trim())?.[1]?.toLowerCase();
+  const authority = /^(?:https?:\/\/)?([^/\s]+)\//i.exec(input.trim())?.[1];
+  const host = authority ? canonicalHost(authority) : null;
   if (host === 'github.com' || host === 'www.github.com') return 'github';
   if (gitlabHost && host === gitlabHost.toLowerCase()) return 'gitlab';
   return null;

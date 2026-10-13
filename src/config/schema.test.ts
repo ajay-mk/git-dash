@@ -57,6 +57,12 @@ describe('GitLab paths', () => {
     expect(providerOfInput('https://www.github.com/a/b', 'gitlab.com')).toBe('github');
     expect(providerOfInput('https://www.gitlab.example.com/a/b', 'www.gitlab.example.com')).toBe('gitlab');
     expect(providerOfInput('https://www.gitlab.com/a/b', 'gitlab.com')).toBeNull();
+    expect(providerOfInput('https://GitLab.example.com:443/a/b', 'gitlab.example.com')).toBe('gitlab');
+    expect(providerOfInput('https://gitlab.example.com:8443/a/b', 'gitlab.example.com')).toBeNull();
+    expect(parseGitLabInput('https://gitlab.example.com:443/group/sub/web', 'gitlab.example.com')).toEqual({
+      owner: 'group/sub',
+      name: 'web',
+    });
   });
 });
 
