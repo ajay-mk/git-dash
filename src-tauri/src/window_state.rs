@@ -1,20 +1,25 @@
 //! Remembers the main window's size, position and maximized state between
 //! launches.
 //!
-//! Everything is kept in logical points and handed to the window builder, so
-//! the OS places the window on the right screen at the right scale. Restoring
-//! physical pixels right after the window is created is unreliable on macOS:
-//! the window does not know its screen's scale factor yet, so Retina displays
-//! get the window at twice its size, and that size is then saved again.
+//! The size is kept in logical points and handed to the window builder, so
+//! the OS applies it at the right scale. Restoring physical pixels right after
+//! the window is created is unreliable on macOS: the window does not know its
+//! screen's scale factor yet, so Retina displays get the window at twice its
+//! size, and that size is then saved again.
+//!
+//! Positions are kept in the desktop's own coordinate space: logical points on
+//! macOS, which lays out all screens in points, and physical pixels elsewhere,
+//! where screens with different scales share one pixel space.
 
 use std::{fs, path::PathBuf, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Monitor, Runtime, Window};
+use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, Runtime, Window};
 
 const FILE_NAME: &str = "window-state.json";
 
-/// The window's last size and position, in logical points.
+/// The window's last size, in logical points, and position, in desktop
+/// coordinates (see [`desktop_position`]).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Bounds {
     pub x: f64,
@@ -24,7 +29,7 @@ pub struct Bounds {
     pub maximized: bool,
 }
 
-/// A screen's area in logical points.
+/// A screen's area in desktop coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Area {
     pub x: f64,
@@ -36,15 +41,63 @@ pub struct Area {
 impl Area {
     fn of(monitor: &Monitor) -> Self {
         let scale = monitor.scale_factor();
-        let position = monitor.position().to_logical::<f64>(scale);
-        let size = monitor.size().to_logical::<f64>(scale);
+        let (x, y) = desktop_position(*monitor.position(), scale);
+        let size = monitor.size();
+        let (width, height) = if cfg!(target_os = "macos") {
+            let size = size.to_logical::<f64>(scale);
+            (size.width, size.height)
+        } else {
+            (f64::from(size.width), f64::from(size.height))
+        };
         Self {
-            x: position.x,
-            y: position.y,
-            width: size.width,
-            height: size.height,
+            x,
+            y,
+            width,
+            height,
         }
     }
+}
+
+/// A position in the desktop's coordinate space. macOS reports screens and
+/// windows in points scaled by their own screen's factor, so dividing by that
+/// factor gives back the points it lays the desktop out in.
+fn desktop_position(position: PhysicalPosition<i32>, scale: f64) -> (f64, f64) {
+    if cfg!(target_os = "macos") {
+        let position = position.to_logical::<f64>(scale);
+        (position.x, position.y)
+    } else {
+        (f64::from(position.x), f64::from(position.y))
+    }
+}
+
+/// Moves a window being built to a saved position. On macOS the builder takes
+/// desktop points directly; elsewhere the window is created hidden and moved
+/// in physical pixels, which every screen shares, before it is shown.
+pub fn position_builder<'a, R: Runtime, M: Manager<R>>(
+    builder: tauri::webview::WebviewWindowBuilder<'a, R, M>,
+    bounds: &Bounds,
+) -> tauri::webview::WebviewWindowBuilder<'a, R, M> {
+    if cfg!(target_os = "macos") {
+        builder.position(bounds.x, bounds.y)
+    } else {
+        builder.visible(false)
+    }
+}
+
+/// Finishes [`position_builder`] once the window exists.
+pub fn position_window<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    bounds: &Bounds,
+) -> tauri::Result<()> {
+    if !cfg!(target_os = "macos") {
+        // Rounded: saved values came from whole pixels.
+        let _ = window.set_position(PhysicalPosition::new(
+            bounds.x.round() as i32,
+            bounds.y.round() as i32,
+        ));
+        window.show()?;
+    }
+    Ok(())
 }
 
 /// How much of the window's title bar area must be on a screen to keep the
@@ -136,11 +189,11 @@ pub fn track<R: Runtime>(window: &Window<R>) {
     ) else {
         return;
     };
-    let position = position.to_logical::<f64>(scale);
+    let (x, y) = desktop_position(position, scale);
     let size = size.to_logical::<f64>(scale);
     *saved = Some(Bounds {
-        x: position.x,
-        y: position.y,
+        x,
+        y,
         width: size.width,
         height: size.height,
         maximized: false,

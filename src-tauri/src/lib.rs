@@ -87,15 +87,21 @@ pub fn run() {
             // is no longer connected is dropped and the OS places the window.
             let saved = window_state::load(app.handle(), MIN_SIZE.0, MIN_SIZE.1);
             app.manage(window_state::Tracker::new(saved.map(|(bounds, _)| bounds)));
-            if let Some((saved, on_screen)) = saved {
+            let position = saved
+                .filter(|(_, on_screen)| *on_screen)
+                .map(|(bounds, _)| bounds);
+            if let Some((saved, _)) = saved {
                 builder = builder
                     .inner_size(saved.width, saved.height)
                     .maximized(saved.maximized);
-                if on_screen {
-                    builder = builder.position(saved.x, saved.y);
-                }
             }
-            builder.build()?;
+            if let Some(bounds) = &position {
+                builder = window_state::position_builder(builder, bounds);
+            }
+            let window = builder.build()?;
+            if let Some(bounds) = &position {
+                window_state::position_window(&window, bounds)?;
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
