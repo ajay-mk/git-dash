@@ -9,6 +9,7 @@ import { parseRepoInput, type PinnedRepo } from '../../config/schema';
 import { prNeedsAttention } from '../../lib/health';
 import type { GraphQLError } from '../../lib/transport';
 import { isSafeExternalUrl } from '../../lib/url';
+import { EVENTS_FETCHED } from './queries';
 import { PERMISSION_LABELS } from './tokenTemplate';
 import type {
   CheckItem,
@@ -165,25 +166,46 @@ const EMPTY: Counted<never> = { total: 0, items: [] };
 
 /**
  * When the latest of `node`'s timeline events (review requests or
- * assignments) for `viewer` happened. `key` names the event's user field.
- * Team members are not fetched, so a request to a team only counts when
- * there is none to the viewer: the search then found the item through a team.
+ * assignments) that `matches` happened. `key` names the event's user field.
+ * When none matches but older events were cut off, the one sought is older
+ * than every event fetched, so the oldest of them is a safe stand-in.
  */
-function lastEventFor(node: unknown, key: string, viewer: string): string | undefined {
-  let mine: string | undefined;
-  let team: string | undefined;
-  for (const event of arr(obj(obj(node)?.timelineItems)?.nodes)) {
+function lastEvent(node: unknown, key: string, matches: (who: Raw) => boolean): string | undefined {
+  const events = arr(obj(obj(node)?.timelineItems)?.nodes).flatMap((event) => {
     const e = obj(event);
     const who = obj(e?.[key]);
     const at = str(e?.createdAt);
-    if (!at || !who) continue;
-    if (str(who.login)?.toLowerCase() === viewer) {
-      if (!mine || at > mine) mine = at;
-    } else if (who.__typename === 'Team' && (!team || at > team)) {
-      team = at;
-    }
+    return at && who ? [{ at, who }] : [];
+  });
+  let latest: string | undefined;
+  for (const { at, who } of events) {
+    if (matches(who) && (!latest || at > latest)) latest = at;
   }
-  return mine ?? team;
+  if (latest || events.length < EVENTS_FETCHED) return latest;
+  return events.reduce((oldest, e) => (e.at < oldest ? e.at : oldest), events[0]!.at);
+}
+
+/**
+ * Which review-request events are the viewer's: the request to them if it is
+ * still pending, otherwise those to a team that is. Team members are not
+ * fetched; the search found the pull request through one of those teams.
+ */
+function reviewRequestMatcher(node: unknown, viewer: string): (who: Raw) => boolean {
+  const isViewer = (who: Raw) => who.__typename === 'User' && str(who.login)?.toLowerCase() === viewer;
+  const pending = obj(obj(node)?.reviewRequests)?.nodes;
+  if (!Array.isArray(pending)) return (who) => isViewer(who) || who.__typename === 'Team';
+  const reviewers = pending.flatMap((r) => {
+    const who = obj(obj(r)?.requestedReviewer);
+    return who ? [who] : [];
+  });
+  if (reviewers.some(isViewer)) return isViewer;
+  const teams = new Set(
+    reviewers.flatMap((who) => {
+      const id = str(who.id);
+      return who.__typename === 'Team' && id ? [id] : [];
+    }),
+  );
+  return (who) => who.__typename === 'Team' && teams.has(str(who.id) ?? '');
 }
 
 export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnapshot {
@@ -192,12 +214,12 @@ export function mapInbox(data: unknown, errors: GraphQLError[] = []): InboxSnaps
   const me = viewer.toLowerCase();
   const reviewRequest = (n: unknown): PullRequestItem | null => {
     const pr = mapPullRequest(n);
-    const at = lastEventFor(n, 'requestedReviewer', me);
+    const at = lastEvent(n, 'requestedReviewer', reviewRequestMatcher(n, me));
     return pr && at ? { ...pr, requestedAt: at } : pr;
   };
   const assignment = (n: unknown): IssueItem | null => {
     const item = mapIssue(n);
-    const at = lastEventFor(n, 'assignee', me);
+    const at = lastEvent(n, 'assignee', (who) => str(who.login)?.toLowerCase() === me);
     return item && at ? { ...item, assignedAt: at } : item;
   };
   return {

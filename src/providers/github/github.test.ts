@@ -3,7 +3,7 @@ import type { PinnedRepo } from '../../config/schema';
 import { githubGraphql } from '../../lib/transport';
 import { github } from './index';
 import { DETAILS_BODY_CHARS, describeRepoError, mapDetails, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
-import { buildReposQuery, DETAILS_QUERY, OPEN_PRS_FETCHED } from './queries';
+import { buildReposQuery, DETAILS_QUERY, EVENTS_FETCHED, OPEN_PRS_FETCHED } from './queries';
 
 vi.mock('../../lib/transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/transport')>()),
@@ -123,49 +123,44 @@ describe('mappers', () => {
     expect(inbox.ssoRestricted).toBe(false);
   });
 
-  it('takes when your review was requested or the item assigned to you', () => {
-    const event = (createdAt: string, who: unknown, key: string) => ({ createdAt, [key]: who });
-    const inbox = mapInbox({
-      viewer: { login: 'Me' },
-      reviewRequests: {
-        issueCount: 3,
-        nodes: [
-          {
-            number: 1,
-            timelineItems: {
-              nodes: [
-                event('2026-10-01T00:00:00Z', { __typename: 'User', login: 'me' }, 'requestedReviewer'),
-                event('2026-10-05T00:00:00Z', { __typename: 'User', login: 'someone' }, 'requestedReviewer'),
-              ],
-            },
-          },
-          { number: 2, timelineItems: { nodes: [event('2026-10-03T00:00:00Z', { __typename: 'Team' }, 'requestedReviewer')] } },
-          {
-            number: 3,
-            timelineItems: {
-              nodes: [
-                event('2026-10-01T00:00:00Z', { __typename: 'User', login: 'me' }, 'requestedReviewer'),
-                // Another team, asked later: not a new request for you.
-                event('2026-10-06T00:00:00Z', { __typename: 'Team' }, 'requestedReviewer'),
-              ],
-            },
-          },
-        ],
-      },
-      assigned: {
-        issueCount: 2,
-        nodes: [
-          { number: 3, timelineItems: { nodes: [event('2026-10-02T00:00:00Z', { __typename: 'User', login: 'me' }, 'assignee')] } },
-          { number: 4 },
-        ],
-      },
+  describe('when your review was requested or the item assigned to you', () => {
+    const me = { __typename: 'User', login: 'me' };
+    const someone = { __typename: 'User', login: 'someone' };
+    const teamA = { __typename: 'Team', id: 'A' };
+    const teamB = { __typename: 'Team', id: 'B' };
+    const events = (key: string, ...list: [string, unknown][]) => ({
+      timelineItems: { nodes: list.map(([day, who]) => ({ createdAt: `2026-10-${day}T00:00:00Z`, [key]: who })) },
     });
-    expect(inbox.reviewRequests.items.map((pr) => pr.requestedAt)).toEqual([
-      '2026-10-01T00:00:00Z',
-      '2026-10-03T00:00:00Z',
-      '2026-10-01T00:00:00Z',
-    ]);
-    expect(inbox.assigned.items.map((item) => item.assignedAt)).toEqual(['2026-10-02T00:00:00Z', undefined]);
+    const pending = (...who: unknown[]) => ({ reviewRequests: { nodes: who.map((w) => ({ requestedReviewer: w })) } });
+    const requestedAt = (node: Record<string, unknown>) =>
+      mapInbox({ viewer: { login: 'Me' }, reviewRequests: { issueCount: 1, nodes: [{ number: 1, ...node }] } }).reviewRequests.items[0]
+        ?.requestedAt;
+
+    it('takes the request to you while it is pending', () => {
+      expect(requestedAt({ ...pending(me, teamB), ...events('requestedReviewer', ['01', me], ['05', someone], ['06', teamB]) })).toBe(
+        '2026-10-01T00:00:00Z',
+      );
+    });
+
+    it('takes the pending team request when yours was done', () => {
+      expect(requestedAt({ ...pending(teamA), ...events('requestedReviewer', ['01', me], ['03', teamA], ['04', teamB]) })).toBe(
+        '2026-10-03T00:00:00Z',
+      );
+    });
+
+    it('stands in the oldest event when older ones were cut off', () => {
+      const days = Array.from({ length: EVENTS_FETCHED }, (_, i): [string, unknown] => [String(10 + i), someone]);
+      expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days) })).toBe('2026-10-10T00:00:00Z');
+      expect(requestedAt({ ...pending(me), ...events('requestedReviewer', ...days.slice(1)) })).toBeUndefined();
+    });
+
+    it('takes the latest assignment to you', () => {
+      const inbox = mapInbox({
+        viewer: { login: 'me' },
+        assigned: { issueCount: 2, nodes: [{ number: 3, ...events('assignee', ['02', me], ['05', someone]) }, { number: 4 }] },
+      });
+      expect(inbox.assigned.items.map((item) => item.assignedAt)).toEqual(['2026-10-02T00:00:00Z', undefined]);
+    });
   });
 
   it('flags inbox results hidden by SSO', () => {

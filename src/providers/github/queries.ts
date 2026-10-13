@@ -89,10 +89,16 @@ export function buildReposQuery(repos: PinnedRepo[]): BuiltQuery {
   return { query, variables };
 }
 
-/** The latest few review requests or assignments, to tell when yours happened. */
-const EVENTS_FETCHED = 10;
-const REVIEW_REQUESTED = `timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: ${EVENTS_FETCHED}) {
-  nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } } }
+/**
+ * The latest review requests or assignments, to tell when yours happened.
+ * Exported so the mapper knows when older events were cut off.
+ */
+export const EVENTS_FETCHED = 10;
+const REVIEWER = '__typename ... on User { login } ... on Team { id }';
+/** Pending requests tell whether yours is direct or through a team. */
+const REVIEW_REQUESTED = `reviewRequests(first: 20) { nodes { requestedReviewer { ${REVIEWER} } } }
+timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: ${EVENTS_FETCHED}) {
+  nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ${REVIEWER} } } }
 }`;
 const ASSIGNED = `timelineItems(itemTypes: [ASSIGNED_EVENT], last: ${EVENTS_FETCHED}) {
   nodes { ... on AssignedEvent { createdAt assignee { __typename ... on User { login } } } }
