@@ -86,7 +86,9 @@ export default function App() {
     },
     [seenItems],
   );
-  const dash = useDashboard(config, tokenOwners, auth === 'ready', config.notifications ? onInboxChange : undefined);
+  // Notifications come from the "Needs you" lists, so they need the sidebar on.
+  const notify = config.notifications && config.inbox.enabled;
+  const dash = useDashboard(config, tokenOwners, auth === 'ready', notify ? onInboxChange : undefined);
   const loadDetails = useCallback((url: string) => providers.github.fetchDetails(url, tokenOwners), [tokenOwners]);
 
   // A revoked or expired token sends the user back to the setup screen.
