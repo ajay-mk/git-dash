@@ -167,6 +167,7 @@ export const DETAILS_LIST_FETCHED = 50;
 const DETAILS_COMMON = `
   createdAt description userNotesCount
   labels(first: 10) { nodes { title color } }
+  assignees(first: 10) { nodes { username } }
 `;
 
 /** One merge request or issue of a project, for the details view. */
@@ -177,13 +178,13 @@ query GitDashDetails($path: ID!, $iid: String!, $n: Int!, $mr: Boolean!) {
       ${DETAILS_COMMON}
       sourceBranch targetBranch
       diffStatsSummary { additions deletions fileCount }
+      diffStats { additions deletions }
       headPipeline { jobs(first: $n, retried: false) { count nodes { name status webPath } } }
       reviewers(first: $n) { nodes { username mergeRequestInteraction { reviewState } } }
       approvedBy(first: $n) { nodes { username } }
     }
     issue(iid: $iid) @skip(if: $mr) {
       ${DETAILS_COMMON}
-      assignees(first: 10) { nodes { username } }
     }
   }
 }

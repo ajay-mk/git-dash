@@ -146,6 +146,30 @@ function mapMergeable(n: Raw): boolean | null {
   return n.conflicts === false ? true : null;
 }
 
+/**
+ * Totals from the per-file stats when GitLab sent them: the summary alone can
+ * be stale after a file was added and removed again (gitlab-org/gitlab#607371).
+ */
+function mapDiffStats(mr: Raw | null): { additions: number; deletions: number; changedFiles: number } {
+  const files = mr?.diffStats;
+  if (Array.isArray(files)) {
+    return files.reduce<{ additions: number; deletions: number; changedFiles: number }>(
+      (t, f) => ({
+        additions: t.additions + num(obj(f)?.additions),
+        deletions: t.deletions + num(obj(f)?.deletions),
+        changedFiles: t.changedFiles + 1,
+      }),
+      { additions: 0, deletions: 0, changedFiles: 0 },
+    );
+  }
+  const summary = obj(mr?.diffStatsSummary);
+  return {
+    additions: num(summary?.additions),
+    deletions: num(summary?.deletions),
+    changedFiles: num(summary?.fileCount),
+  };
+}
+
 function mapLabels(v: unknown): Label[] {
   return arr(obj(v)?.nodes).flatMap((node) => {
     const n = obj(node);
@@ -340,7 +364,7 @@ export function mapDetails(project: unknown): ItemDetails | null {
   if (!n) return null;
   const jobs = obj(obj(mr?.headPipeline)?.jobs);
   const checks = arr(jobs?.nodes).flatMap((j) => mapJob(j) ?? []);
-  const stats = obj(mr?.diffStatsSummary);
+  const stats = mapDiffStats(mr);
   return {
     createdAt: str(n.createdAt) ?? '',
     incomplete: false,
@@ -355,9 +379,7 @@ export function mapDetails(project: unknown): ItemDetails | null {
       ? {
           baseRef: str(mr.targetBranch) ?? '',
           headRef: str(mr.sourceBranch) ?? '',
-          additions: num(stats?.additions),
-          deletions: num(stats?.deletions),
-          changedFiles: num(stats?.fileCount),
+          ...stats,
           checks,
           checksTotal: Math.max(checks.length, num(jobs?.count)),
           reviewers: mapReviewers(mr.reviewers, mr.approvedBy),

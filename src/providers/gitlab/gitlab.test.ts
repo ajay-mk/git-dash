@@ -267,7 +267,14 @@ describe('mappers', () => {
         labels: { nodes: [{ title: 'perf', color: '#00ff00' }] },
         sourceBranch: 'feat/cache',
         targetBranch: 'main',
-        diffStatsSummary: { additions: 10, deletions: 2, fileCount: 3 },
+        // A stale summary; the per-file stats win.
+        diffStatsSummary: { additions: 99, deletions: 99, fileCount: 9 },
+        diffStats: [
+          { additions: 4, deletions: 1 },
+          { additions: 6, deletions: 1 },
+          { additions: 0, deletions: 0 },
+        ],
+        assignees: { nodes: [{ username: 'jane.doe' }] },
         headPipeline: {
           jobs: {
             count: 12,
@@ -289,11 +296,13 @@ describe('mappers', () => {
     expect(details).toMatchObject({
       body: 'Adds a cache. More.',
       comments: 3,
+      assignees: ['jane.doe'],
       labels: [{ name: 'perf', color: '00ff00' }],
       pr: {
         baseRef: 'main',
         headRef: 'feat/cache',
         additions: 10,
+        deletions: 2,
         changedFiles: 3,
         checksTotal: 12,
         checks: [
