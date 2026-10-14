@@ -21,7 +21,7 @@ jobs:
     steps:
       # sync-labels removes area labels whose files are no longer in the diff.
       # It only touches labels named in .github/labeler.yml.
-      - uses: actions/labeler@v6
+      - uses: actions/labeler@v7
         with:
           sync-labels: true
 
