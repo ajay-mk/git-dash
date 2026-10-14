@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { providers } from '../providers';
 import { GITLAB_COM, normalizeGitLabHost } from '../providers/gitlab/host';
 import { PROVIDER_IDS, type ProviderId } from '../providers/types';
@@ -87,7 +87,7 @@ function GitLabHelp({ host }: { host: string | null }) {
   );
 }
 
-export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, onCancel, reason }: {
+export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, onCancel, reason, notice }: {
   /** The service to connect first; the user can switch. */
   provider?: ProviderId;
   /**
@@ -99,6 +99,8 @@ export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, o
   onDone: (login: string, provider: ProviderId) => void;
   onCancel?: () => void;
   reason?: string | null;
+  /** Shown above the form, such as an available update. */
+  notice?: ReactNode;
 }) {
   // The input is uncontrolled: React mirrors a controlled input's value into
   // its `value` attribute, which would put the token in the page markup.
@@ -134,6 +136,7 @@ export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, o
 
   return (
     <main className="setup">
+      {notice}
       <form className="setup-card" onSubmit={submit}>
         <h1>
           <img className="setup-logo" src={logo} alt="" />

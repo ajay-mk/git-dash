@@ -10,8 +10,13 @@
     "allow-github-graphql",
     "allow-gitlab-graphql",
     "allow-open-external",
+    "allow-save-window-state",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install",
+    "process:allow-restart"
   ]
 }

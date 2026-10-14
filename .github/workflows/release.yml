@@ -1,8 +1,9 @@
 name: Release
 
 # Pushing a version tag (vX.Y.Z) builds installers for every platform and
-# attaches them, with SHA-256 checksums, to a draft GitHub Release. Publishing
-# the draft stays a manual step.
+# attaches them, with SHA-256 checksums and the signed update manifest
+# (latest.json), to a draft GitHub Release. Publishing the draft stays a manual
+# step, and is what offers the update to installed apps.
 on:
   push:
     tags: ['v*']
@@ -96,11 +97,18 @@ jobs:
           # Windows signing goes in tauri.conf.json (bundle.windows.signCommand
           # or certificateThumbprint) together with a step that installs the
           # certificate from a secret.
+          # Signs the update files the app installs itself (see
+          # docs/releasing.md). tauri.release.conf.json turns on
+          # createUpdaterArtifacts, which fails the build without them; local
+          # builds leave it off, so they need no key.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
       # Keep only the installers: the action also reports the raw .app bundle
       # on macOS, which is a directory and is shipped inside the .dmg anyway.
+      # Signatures and the macOS update archive are handled by the next step.
       - name: Collect installers
         shell: bash
         env:
@@ -112,16 +120,30 @@ jobs:
             const path = require("node:path");
             for (const file of JSON.parse(process.env.ARTIFACT_PATHS)) {
               if (!fs.statSync(file).isFile()) continue;
+              if (file.endsWith(".sig") || file.endsWith(".app.tar.gz")) continue;
               fs.copyFileSync(file, path.join("out", path.basename(file)));
               console.log(path.basename(file));
             }
           '
           test -n "$(ls out)"
 
+      - name: Collect update files
+        shell: bash
+        run: node scripts/updater.mjs collect "$TARGET" "src-tauri/target/$TARGET/release/bundle" out updater
+        env:
+          TARGET: ${{ matrix.target }}
+
       - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.target }}
           path: out/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: updater-${{ matrix.target }}
+          path: updater/*
           if-no-files-found: error
           retention-days: 7
 
@@ -132,11 +154,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@v8
         with:
           pattern: installers-*
           path: out
           merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: updater-*
+          path: updater
+          merge-multiple: true
+
+      # Points installed apps at this release's update files. The updater
+      # reads it from releases/latest, so it only takes effect once the draft
+      # is published.
+      - name: Write the update manifest
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: node scripts/updater.mjs manifest "$REPO" "$TAG" updater out
 
       - name: Generate checksums
         working-directory: out

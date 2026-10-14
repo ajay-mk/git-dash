@@ -30,6 +30,9 @@ providers can be added (see [Adding a provider](docs/development.md#adding-a-pro
 - **Auto-refresh** on a configurable interval. While the window is hidden only
   "Needs you" is checked, and only for notifications. The window reopens where
   you left it.
+- **Updates in the app**: GitDash checks for a new release at launch and every
+  few hours, and installs it when you choose *Restart to update*. Updates are
+  signed and checked before they are installed.
 - Light and dark themes, and config export/import (it never contains your
   token).
 

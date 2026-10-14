@@ -243,6 +243,13 @@ pub fn track<R: Runtime>(window: &Window<R>) {
 
 /// Writes the last recorded bounds to disk. Failures are ignored: the next
 /// launch then opens at the default size.
+/// Saves the window now. Installing an update on Windows ends the process
+/// without the usual exit event, so the app calls this before it starts.
+#[tauri::command]
+pub fn save_window_state<R: Runtime>(app: AppHandle<R>) {
+    save(&app);
+}
+
 pub fn save<R: Runtime>(app: &AppHandle<R>) {
     let tracker = app.state::<Tracker>();
     let Some(bounds) = tracker.0.lock().ok().and_then(|saved| *saved) else {

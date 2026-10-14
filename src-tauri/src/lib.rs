@@ -67,6 +67,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
@@ -80,6 +82,7 @@ pub fn run() {
             commands::github_graphql,
             commands::gitlab_graphql,
             commands::open_external,
+            window_state::save_window_state,
         ])
         .setup(|app| {
             let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
