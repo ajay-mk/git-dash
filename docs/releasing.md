@@ -43,7 +43,7 @@ releases without signing in, so updates only work while the repository is
 public. To host them elsewhere, change `plugins.updater.endpoints` and the
 download URLs that `scripts/updater.mjs` writes.
 
-The private key lives in two repository secrets, which the build uses:
+The private key lives in two repository secrets:
 
 - `TAURI_SIGNING_PRIVATE_KEY`: the contents of the private key file.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: its password.
@@ -61,13 +61,25 @@ npx tauri signer generate -w ~/.tauri/gitdash.key
 Put the contents of `~/.tauri/gitdash.key.pub` in `plugins.updater.pubkey`
 and update both secrets.
 
+Only the *Sign the update files* job of the release workflow reads these
+secrets. The
+build jobs run third-party code (npm packages, Cargo build scripts, the Tauri
+action), so they never get the key: each makes a throwaway key, which the
+bundler needs to produce update files at all. The sign job then signs every
+update file again with the real key (`tauri signer sign --app-version`), and
+`scripts/updater.mjs manifest` refuses any file whose signature was not made
+with the key in `plugins.updater.pubkey`. The sign job installs the locked
+dependencies with scripts disabled, and the step that holds the key runs only
+the Tauri CLI.
+
 Only release builds make update files: `src-tauri/tauri.release.conf.json`
 turns on `createUpdaterArtifacts`, so a local `npm run tauri build` needs no
-key. To try a signed build locally, set the two variables and add
+key. To try a release build locally, set the two variables (any key works,
+e.g. one from `npx tauri signer generate`) and add
 `--config src-tauri/tauri.release.conf.json`.
 
 `scripts/updater.mjs` writes `latest.json`. Each build records the files the
-bundler signed (the macOS `.app.tar.gz`, the Windows `.msi` and `-setup.exe`,
-and the Linux packages), and the release job lists them by platform and
+bundler made signatures for (the macOS `.app.tar.gz`, the Windows `.msi` and `-setup.exe`,
+and the Linux packages), and the sign job lists them by platform and
 installer, so each app updates from the same kind of file it was installed
 from.

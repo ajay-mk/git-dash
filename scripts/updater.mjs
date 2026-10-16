@@ -2,18 +2,24 @@
 // Builds the update manifest (latest.json) the in-app updater reads.
 //
 //   node scripts/updater.mjs collect <target> <bundle-dir> <out-dir> <entries-dir>
-//       After a build: copies each signed update file into <out-dir> under
-//       the name it is published as, and records its signature in
-//       <entries-dir>/<target>.json.
-//   node scripts/updater.mjs manifest <owner/repo> <tag> <entries-dir> <out-dir>
-//       Once every build is in: writes <out-dir>/latest.json.
+//       After a build: copies each update file into <out-dir> under the name
+//       it is published as, and records it in <entries-dir>/<target>.json.
+//   node scripts/updater.mjs files <entries-dir>
+//       Lists the update files of every build, one per line, for signing.
+//   node scripts/updater.mjs manifest <owner/repo> <tag> <entries-dir> <files-dir> <latest.json>
+//       Once every update file in <files-dir> is signed (as <file>.sig):
+//       writes the manifest to <latest.json>.
 //
-// The bundler signs each update file with the key in TAURI_SIGNING_PRIVATE_KEY
-// and writes the signature next to it as <file>.sig.
+// The builds sign update files with a throwaway key: the bundler insists on a
+// key, and the build runs third-party code that must never see the real one.
+// Their .sig files only mark which files are update files. The release
+// workflow signs those files again with the real key, in a job that runs no
+// project dependencies, and the manifest only accepts signatures made with
+// the key whose public half is in src-tauri/tauri.conf.json.
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // The updater looks up `{os}-{arch}-{installer}` first, then `{os}-{arch}`.
 const PLATFORMS = {
@@ -70,7 +76,7 @@ export function collect(target, bundleDir, outDir, entriesDir) {
     if (entries[key]) throw new Error(`two update files for ${key}: ${entries[key].file} and ${basename(file)}`);
     const name = publishedName(basename(file), target);
     copyFileSync(file, join(outDir, name));
-    entries[key] = { file: name, signature: readFileSync(sig, 'utf8').trim() };
+    entries[key] = { file: name };
   }
   if (Object.keys(entries).length === 0) throw new Error(`no signed update files under ${bundleDir}`);
   mkdirSync(entriesDir, { recursive: true });
@@ -86,11 +92,31 @@ export function signedVersion(signature) {
   return field ? field.slice('version:'.length) : null;
 }
 
-export function manifest({ repo, tag, entries, published, date = new Date() }) {
+/**
+ * The id of the key behind a minisign signature or public key, both stored
+ * base64-encoded as Tauri writes them. The id is the 8 bytes after the
+ * 2-byte algorithm tag on the line after the untrusted comment, stored
+ * little-endian; it is returned the way minisign and `tauri signer` print it.
+ */
+export function keyId(encoded) {
+  const line = Buffer.from(encoded, 'base64').toString('utf8').split('\n')[1] ?? '';
+  const bytes = Buffer.from(line.trim(), 'base64');
+  if (bytes.length < 10) throw new Error('not a minisign key or signature');
+  return Buffer.from(bytes.subarray(2, 10)).reverse().toString('hex').toUpperCase();
+}
+
+export function manifest({ repo, tag, entries, signatures, pubkey, published, date = new Date() }) {
   const version = tag.replace(/^v/, '');
+  const expectedKey = keyId(pubkey);
   const platforms = {};
-  for (const [key, { file, signature }] of Object.entries(entries)) {
+  for (const [key, { file }] of Object.entries(entries)) {
     if (!published.includes(file)) throw new Error(`${file} (for ${key}) is not among the release files`);
+    const signature = signatures[file];
+    if (!signature) throw new Error(`${file} is not signed`);
+    // The builds sign with a throwaway key; only the release key may ship.
+    if (keyId(signature) !== expectedKey) {
+      throw new Error(`${file} was signed with key ${keyId(signature)}, not the update key ${expectedKey}`);
+    }
     // The app is set to refuse an update signed for another version.
     if (signedVersion(signature) !== version) {
       throw new Error(`${file} was signed for version ${signedVersion(signature)}, not ${version}`);
@@ -124,19 +150,35 @@ function readEntries(entriesDir) {
   return entries;
 }
 
+/** The updater public key the app is built with. */
+function appPubkey() {
+  const config = join(dirname(fileURLToPath(import.meta.url)), '..', 'src-tauri', 'tauri.conf.json');
+  return JSON.parse(readFileSync(config, 'utf8')).plugins.updater.pubkey;
+}
+
 function main([command, ...args]) {
   if (command === 'collect' && args.length === 4) {
     const entries = collect(...args);
     for (const [key, { file }] of Object.entries(entries)) console.log(`${key}: ${file}`);
-  } else if (command === 'manifest' && args.length === 4) {
-    const [repo, tag, entriesDir, outDir] = args;
-    const latest = manifest({ repo, tag, entries: readEntries(entriesDir), published: readdirSync(outDir) });
-    writeFileSync(join(outDir, 'latest.json'), `${JSON.stringify(latest, null, 2)}\n`);
+  } else if (command === 'files' && args.length === 1) {
+    const files = new Set(Object.values(readEntries(args[0])).map((e) => e.file));
+    for (const file of files) console.log(file);
+  } else if (command === 'manifest' && args.length === 5) {
+    const [repo, tag, entriesDir, filesDir, output] = args;
+    const entries = readEntries(entriesDir);
+    const signatures = {};
+    for (const { file } of Object.values(entries)) {
+      const sig = join(filesDir, `${file}.sig`);
+      if (existsSync(sig)) signatures[file] = readFileSync(sig, 'utf8').trim();
+    }
+    const latest = manifest({ repo, tag, entries, signatures, pubkey: appPubkey(), published: readdirSync(filesDir) });
+    writeFileSync(output, `${JSON.stringify(latest, null, 2)}\n`);
     console.log(Object.keys(latest.platforms).join('\n'));
   } else {
     throw new Error(
       'usage: updater.mjs collect <target> <bundle-dir> <out-dir> <entries-dir>\n' +
-        '       updater.mjs manifest <owner/repo> <tag> <entries-dir> <out-dir>',
+        '       updater.mjs files <entries-dir>\n' +
+        '       updater.mjs manifest <owner/repo> <tag> <entries-dir> <files-dir> <latest.json>',
     );
   }
 }
