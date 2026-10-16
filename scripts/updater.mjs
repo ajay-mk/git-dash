@@ -95,13 +95,14 @@ export function signedVersion(signature) {
 /**
  * The id of the key behind a minisign signature or public key, both stored
  * base64-encoded as Tauri writes them. The id is the 8 bytes after the
- * 2-byte algorithm tag on the line after the untrusted comment.
+ * 2-byte algorithm tag on the line after the untrusted comment, stored
+ * little-endian; it is returned the way minisign and `tauri signer` print it.
  */
 export function keyId(encoded) {
   const line = Buffer.from(encoded, 'base64').toString('utf8').split('\n')[1] ?? '';
   const bytes = Buffer.from(line.trim(), 'base64');
   if (bytes.length < 10) throw new Error('not a minisign key or signature');
-  return bytes.subarray(2, 10).toString('hex');
+  return Buffer.from(bytes.subarray(2, 10)).reverse().toString('hex').toUpperCase();
 }
 
 export function manifest({ repo, tag, entries, signatures, pubkey, published, date = new Date() }) {

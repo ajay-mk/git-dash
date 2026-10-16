@@ -86,7 +86,7 @@ jobs:
       - name: Make a throwaway update-signing key
         shell: bash
         run: |
-          npx --no-install tauri signer generate --ci -w "$RUNNER_TEMP/throwaway.key"
+          npm exec --no -- tauri signer generate --ci -w "$RUNNER_TEMP/throwaway.key"
           echo "TAURI_SIGNING_PRIVATE_KEY=$RUNNER_TEMP/throwaway.key" >> "$GITHUB_ENV"
           echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
 
@@ -179,18 +179,23 @@ jobs:
           path: updater
           merge-multiple: true
 
-      # The only step that sees the release key. Each signature is bound to
-      # the app version, which the updater checks against latest.json.
+      - name: List the update files
+        run: |
+          node scripts/updater.mjs files updater > "$RUNNER_TEMP/update-files.txt"
+          test -s "$RUNNER_TEMP/update-files.txt"
+
+      # The only step that sees the release key, and it runs nothing but the
+      # Tauri CLI. Each signature is bound to the app version, which the
+      # updater checks against latest.json.
       - name: Sign with the release key
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAG: ${{ github.ref_name }}
         run: |
-          mapfile -t files < <(node scripts/updater.mjs files updater)
-          test "${#files[@]}" -gt 0
+          mapfile -t files < "$RUNNER_TEMP/update-files.txt"
           for file in "${files[@]}"; do
-            npx --no-install tauri signer sign --app-version "${TAG#v}" "out/$file"
+            npm exec --no -- tauri signer sign --app-version "${TAG#v}" "out/$file"
           done
 
       # Points installed apps at this release's update files. The updater

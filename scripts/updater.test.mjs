@@ -104,8 +104,8 @@ describe('updater manifest', () => {
   });
 
   it('reads the key id of signatures and public keys', () => {
-    expect(keyId(sig('a.deb'))).toBe(KEY);
-    expect(keyId(pubkey)).toBe(KEY);
+    expect(keyId(sig('a.deb'))).toBe('0807060504030201');
+    expect(keyId(pubkey)).toBe('0807060504030201');
     expect(() => keyId(Buffer.from('untrusted comment: x\nRUQ=\n').toString('base64'))).toThrow();
   });
 
@@ -119,7 +119,7 @@ describe('updater manifest', () => {
     delete unsigned['GitDash_1.0.0_amd64.AppImage'];
     expect(() => manifest({ ...base, signatures: unsigned })).toThrow(/AppImage is not signed/);
     const throwaway = { ...signatures, 'GitDash_1.0.0_x64-setup.exe': sig('GitDash_1.0.0_x64-setup.exe', '1.0.0', THROWAWAY) };
-    expect(() => manifest({ ...base, signatures: throwaway })).toThrow(/signed with key f0f1f2f3f4f5f6f7/);
+    expect(() => manifest({ ...base, signatures: throwaway })).toThrow(/signed with key F7F6F5F4F3F2F1F0/);
   });
 
   it('refuses a manifest with a missing platform or file', () => {

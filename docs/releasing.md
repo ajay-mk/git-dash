@@ -69,7 +69,8 @@ bundler needs to produce update files at all. The sign job then signs every
 update file again with the real key (`tauri signer sign --app-version`), and
 `scripts/updater.mjs manifest` refuses any file whose signature was not made
 with the key in `plugins.updater.pubkey`. The sign job installs the locked
-dependencies with scripts disabled and runs only the Tauri CLI.
+dependencies with scripts disabled, and the step that holds the key runs only
+the Tauri CLI.
 
 Only release builds make update files: `src-tauri/tauri.release.conf.json`
 turns on `createUpdaterArtifacts`, so a local `npm run tauri build` needs no
