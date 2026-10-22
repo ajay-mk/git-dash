@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+reviews:
+  # chill: fewer, higher-confidence comments.
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  # Put the summary in CodeRabbit's own comment, not the PR description.
+  high_level_summary_in_walkthrough: true
+  # Cut the extras so the review is mostly the line comments.
+  poem: false
+  in_progress_fortune: false
+  sequence_diagrams: false
+  collapse_walkthrough: true
+  review_status: true
+  # One label for the main kind of change, plus ui/provider/tauri for what it touches.
+  suggested_labels: true
+  auto_apply_labels: true
+  labeling_instructions:
+    - label: feature
+      instructions: Mainly adds new functionality.
+    - label: fix
+      instructions: Mainly fixes a bug.
+    - label: chore
+      instructions: Mainly maintenance, refactoring or cleanup that does not change behavior.
+    - label: test
+      instructions: Only adds or changes tests.
+    - label: docs
+      instructions: Only changes documentation (README.md, SECURITY.md or docs/).
+    - label: ci
+      instructions: Only changes CI or repo automation in .github/ or .coderabbit.yaml.
+    - label: dependencies
+      instructions: Mainly bumps or changes dependencies (package.json, package-lock.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock or pinned actions).
+    - label: ui
+      instructions: >-
+        Changes the frontend UI: src/App.tsx, src/styles.css, src/assets/,
+        src/components/, src/hooks/ or index.html.
+    - label: provider
+      instructions: Changes the provider code in src/providers/.
+    - label: tauri
+      instructions: Changes the Rust backend or Tauri config in src-tauri/.
+  auto_review:
+    enabled: true
+    drafts: false
+    # Review once when a PR opens; ask with `@coderabbitai review` after that.
+    auto_incremental_review: false
+    base_branches:
+      - "^main$"
+  path_instructions:
+    - path: "src-tauri/src/**"
+      instructions: >-
+        The backend is the only place tokens are used. Flag anything that
+        returns a token to the webview, sends one anywhere other than
+        api.github.com or the GitLab instance it was saved for, allows plain
+        HTTP or redirects, weakens the mutation/subscription check in
+        graphql_guard.rs, or lets the frontend name keychain entries.
+        SECURITY.md describes the model.
+    - path: "src-tauri/capabilities/**"
+      instructions: >-
+        Webview permissions must stay least-privilege. Question any new
+        permission or command grant.
+    - path: "src/**"
+      instructions: >-
+        The frontend never sees a token. User input must be passed as GraphQL
+        variables, never interpolated into query text. API data is rendered
+        as text only, and links must go through the checks in src/lib/url.ts.
+        Imported config must be validated by src/config/schema.ts.
+    - path: "**/*.test.*"
+      instructions: Tests use Vitest and Testing Library.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Actions must be pinned to full commit SHAs with a version comment, and
+        workflows should keep read-only permissions unless a job needs more.
+        In release.yml, build jobs must not get secrets or write access.
+
+chat:
+  auto_reply: true
+
+# PRs only: no automatic comments, plans or labels on issues.
+issue_enrichment:
+  auto_enrich:
+    enabled: false
+  planning:
+    enabled: false
+    auto_planning:
+      enabled: false
