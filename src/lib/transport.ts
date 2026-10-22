@@ -108,6 +108,8 @@ export const tokens = {
 export interface GhStatus {
   /** Where the GitHub CLI was found, or `null` if it is not installed in a known place. */
   path: string | null;
+  /** Every place GitDash looks for it on this system. */
+  searched: string[];
 }
 
 /** Whether the GitHub CLI is installed where GitDash looks for it. */

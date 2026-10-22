@@ -248,8 +248,10 @@ fixed install locations and strips the environment instead.
   `GitDashRepos` takes a list of repositories (at most 10) and builds the
   batched query from fixed pieces. The documents were checked token for token
   against the previous TypeScript ones.
-- `src-tauri/src/gh.rs`: finds gh in fixed install locations (refusing
-  world-writable files or directories), runs `gh auth token --hostname
+- `src-tauri/src/gh.rs`: finds gh in fixed install locations (Homebrew,
+  MacPorts, Linux packages, Linuxbrew, Snap, Nix, and on Windows the official
+  installer, winget, Scoop and Chocolatey), refusing world-writable files or
+  directories, and runs `gh auth token --hostname
   github.com [--user <login>]` with a cleared environment, fixed `PATH`, no
   stdin, a 10 s limit and a 4 KiB output cap, and maps failures to fixed
   messages. On Windows it starts gh without a console window.
@@ -257,7 +259,12 @@ fixed install locations and strips the environment instead.
   gh login. Nothing is stored in the keychain for it; the index records the
   login. Linking deletes any token stored for the slot. Tokens read from gh
   are kept in memory once GitHub confirms they belong to the linked login,
-  and dropped on a 401 so the next request asks gh again.
+  and dropped on a 401 so the next request asks gh again. Only one gh read
+  runs at a time; requests arriving together reuse its result. When linking,
+  the stored token is deleted only after the link is saved.
+- Setup steps (install, `gh auth login`, the exact places GitDash looks and
+  how to link gh there, **Check again**) on the setup screen and in Settings
+  when gh is not found, and in `docs/tokens.md`.
 - Commands `gh_status` (where gh was found) and `token_link_gh` (link the
   default slot or an owner to gh's active account).
 - UI: **Use GitHub CLI login** on the setup screen when gh is found, **Use

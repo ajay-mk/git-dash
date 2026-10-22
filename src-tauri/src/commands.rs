@@ -17,6 +17,9 @@ pub struct AppState {
     pub tokens: Arc<TokenStore>,
     pub github: GitHubClient,
     pub gitlab: GitLabClient,
+    /// Held while a token is read from the GitHub CLI, so requests that
+    /// arrive together (as they do at startup) run gh once, not each.
+    pub gh_read: async_runtime::Mutex<()>,
 }
 
 /// Runs a blocking keychain operation off the async runtime's worker threads.
@@ -117,7 +120,13 @@ pub async fn github_graphql(
         t.resolve(Provider::GitHub, owner.as_ref())
     })
     .await?;
-    let Resolved { slot, token, .. } = verify_gh(&state, resolved).await?;
+    let (slot, token) = match resolved {
+        Resolved::Token { slot, token } => (slot, token),
+        Resolved::FromGh { slot, login } => {
+            let token = read_gh(&state, &slot, login).await?;
+            (slot, token)
+        }
+    };
     let result = state.github.graphql(&token, &query, &variables).await;
     if matches!(result, Err(Error::Unauthorized)) {
         // Revoked or expired: make the next call re-read the keychain, or ask
@@ -127,27 +136,35 @@ pub async fn github_graphql(
     result
 }
 
-/// A token just read from the GitHub CLI is used only once GitHub confirms it
-/// belongs to the account the slot is linked to, so switching accounts in gh
-/// cannot silently change whose data GitDash shows.
-async fn verify_gh(state: &State<'_, AppState>, resolved: Resolved) -> Result<Resolved> {
-    let Some(expected) = resolved.verify_login.as_deref() else {
-        return Ok(resolved);
-    };
-    let login = state.github.viewer_login(&resolved.token).await?;
-    if !login.eq_ignore_ascii_case(expected) {
+/// Reads the token for a slot linked to the GitHub CLI account `login`. It is
+/// used only once GitHub confirms it belongs to that account, so switching
+/// accounts in gh cannot silently change whose data GitDash shows.
+async fn read_gh(state: &State<'_, AppState>, slot: &Slot, login: String) -> Result<String> {
+    let _one_at_a_time = state.gh_read.lock().await;
+    // Whoever held the lock before may have just read it.
+    if let Some(token) = state.tokens.cached_gh(Provider::GitHub, slot, &login) {
+        return Ok(token);
+    }
+    let pinned = login.clone();
+    let token = async_runtime::spawn_blocking(move || gh::token(Some(&pinned)))
+        .await
+        .map_err(|_| Error::Internal)??;
+    let owner = state.github.viewer_login(&token).await?;
+    if !owner.eq_ignore_ascii_case(&login) {
         return Err(Error::GhAccountMismatch);
     }
     state
         .tokens
-        .remember_gh(Provider::GitHub, &resolved.slot, expected, &resolved.token);
-    Ok(resolved)
+        .remember_gh(Provider::GitHub, slot, &login, &token);
+    Ok(token)
 }
 
 /// Whether the GitHub CLI is installed where GitDash looks for it, and where.
 #[derive(serde::Serialize)]
 pub struct GhStatus {
     path: Option<String>,
+    /// Every place GitDash looks, for the setup instructions.
+    searched: Vec<String>,
 }
 
 #[tauri::command]
@@ -157,6 +174,7 @@ pub async fn gh_status() -> Result<GhStatus> {
         .map_err(|_| Error::Internal)?;
     Ok(GhStatus {
         path: path.map(|p| p.display().to_string()),
+        searched: gh::searched(),
     })
 }
 

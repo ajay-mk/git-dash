@@ -67,12 +67,45 @@ then uses the account gh is signed in to:
   Access tokens → Per-owner tokens**, enter an owner and choose **Use GitHub
   CLI** to use gh's login for just that owner.
 - **Where gh must be installed.** GitDash only runs gh from its usual install
-  locations: Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), MacPorts
-  (`/opt/local/bin`), Linux packages (`/usr/bin`, `/usr/local/bin`), Linuxbrew,
-  Snap, and on Windows the official installer, winget or Scoop. It is not
-  looked up on `PATH`. The setup screen shows which `gh` it found.
+  locations, never from `PATH`; see [Setting up GitHub CLI](#setting-up-github-cli).
 - GitDash never uses `GH_TOKEN` or `GITHUB_TOKEN`, even if they are set; only
   tokens gh itself stores are used. gh 2.40 or newer is needed.
+
+### Setting up GitHub CLI
+
+If the setup screen does not offer **Use GitHub CLI login**, open *Use your
+GitHub CLI login instead* there (or in Settings under per-owner tokens) for
+these steps with the exact locations for your system:
+
+1. Install GitHub CLI: `brew install gh` on macOS, `winget install --id
+   GitHub.cli` on Windows, or see the
+   [install guide](https://github.com/cli/cli#installation).
+2. In a terminal, run `gh auth login` and choose *GitHub.com*. With several
+   accounts, `gh auth switch` picks the one GitDash should use.
+3. Make sure gh is in one of the places GitDash looks:
+
+   | System | Locations |
+   | --- | --- |
+   | macOS | `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts) |
+   | Linux | `/usr/bin`, `/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/snap/bin`, `/run/current-system/sw/bin` (NixOS) |
+   | macOS and Linux | `~/.nix-profile/bin`, `/nix/var/nix/profiles/default/bin` (Nix) |
+   | Windows | `%ProgramFiles%\GitHub CLI` (official installer), `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `%USERPROFILE%\scoop\shims`, `%ProgramData%\chocolatey\bin` |
+
+   If `which gh` shows somewhere else (for example `~/.local/bin` or a
+   version manager), link it into one of them:
+
+   ```sh
+   sudo mkdir -p /usr/local/bin && sudo ln -sf "$(which gh)" /usr/local/bin/gh
+   ```
+
+   On Windows, if `where gh` shows another location, install gh again with
+   one of the installers above. GitDash refuses a gh that anyone could
+   replace (one in, or linked from, a folder everyone can write to).
+4. Choose **Check again**, then **Use GitHub CLI login**.
+
+If GitDash then says GitHub CLI is not signed in, run `gh auth login` again
+(or `gh auth status` to see which accounts gh knows). Once fixed in gh, the
+next refresh works without linking again.
 
 ## Several accounts or organizations
 

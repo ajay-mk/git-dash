@@ -409,6 +409,10 @@ details .help-list { margin-top: 8px; }
 .gh-option { display: grid; gap: 8px; }
 .gh-option > .btn { justify-self: start; }
 .gh-option .hint { margin: 0; }
+.gh-help summary { cursor: pointer; }
+.gh-help > .hint, .gh-help > .help-list { margin-top: 8px; }
+.gh-paths { padding-left: 18px; margin: 4px 0; }
+.command { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow-x: auto; white-space: pre; font-size: 12px; }
 .setup-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .setup-or::before, .setup-or::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 .field { display: grid; gap: 6px; font-weight: 500; }

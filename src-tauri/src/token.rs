@@ -243,13 +243,13 @@ pub struct OwnerToken {
 }
 
 /// The token picked for a request.
-pub struct Resolved {
-    pub slot: Slot,
-    pub token: String,
-    /// Set when the token was just read from the GitHub CLI: the caller must
-    /// check it belongs to this login, then hand it to
-    /// [`TokenStore::remember_gh`], before relying on it again.
-    pub verify_login: Option<String>,
+pub enum Resolved {
+    /// A stored token, or one read from the GitHub CLI earlier and checked.
+    Token { slot: Slot, token: String },
+    /// The slot is linked to the GitHub CLI account `login` and no checked
+    /// token is in memory: the caller must read it from gh, check it belongs
+    /// to `login`, and hand it to [`TokenStore::remember_gh`].
+    FromGh { slot: Slot, login: String },
 }
 
 #[derive(Default)]
@@ -346,49 +346,45 @@ impl TokenStore {
     /// Blocking (keychain, and possibly `gh`): call from a blocking-safe
     /// context.
     pub fn resolve(&self, provider: Provider, owner: Option<&Owner>) -> Result<Resolved> {
-        let (slot, login) = {
-            let mut inner = self.lock()?;
-            let mut slot = match owner {
-                Some(owner) if inner.index(provider)?.owners.contains_key(owner.as_str()) => {
-                    Slot::Owner(owner.clone())
-                }
-                _ => Slot::Default,
-            };
-            loop {
-                let linked = inner.index(provider)?.gh_login(&slot).map(str::to_owned);
-                if let Some(login) = linked {
-                    if let Some(token) = inner.cache.get(&(provider, slot.clone())) {
-                        let token = token.clone();
-                        return Ok(Resolved {
-                            slot,
-                            token,
-                            verify_login: None,
-                        });
-                    }
-                    break (slot, login);
-                }
-                match inner.get(provider, &slot) {
-                    Ok(token) => {
-                        return Ok(Resolved {
-                            slot,
-                            token,
-                            verify_login: None,
-                        })
-                    }
-                    // An owner's token removed from the keychain behind our
-                    // back: fall back to the default one.
-                    Err(Error::NoToken) if slot != Slot::Default => slot = Slot::Default,
-                    Err(err) => return Err(err),
-                }
+        let mut inner = self.lock()?;
+        let mut slot = match owner {
+            Some(owner) if inner.index(provider)?.owners.contains_key(owner.as_str()) => {
+                Slot::Owner(owner.clone())
             }
+            _ => Slot::Default,
         };
-        // Not holding the lock: gh may take a moment.
-        let token = crate::gh::token(Some(&login))?;
-        Ok(Resolved {
-            slot,
-            token,
-            verify_login: Some(login),
-        })
+        loop {
+            let linked = inner.index(provider)?.gh_login(&slot).map(str::to_owned);
+            if let Some(login) = linked {
+                return Ok(match inner.cache.get(&(provider, slot.clone())) {
+                    Some(token) => Resolved::Token {
+                        token: token.clone(),
+                        slot,
+                    },
+                    None => Resolved::FromGh { slot, login },
+                });
+            }
+            match inner.get(provider, &slot) {
+                Ok(token) => return Ok(Resolved::Token { slot, token }),
+                // An owner's token removed from the keychain behind our
+                // back: fall back to the default one.
+                Err(Error::NoToken) if slot != Slot::Default => slot = Slot::Default,
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    /// A checked GitHub CLI token for `slot` already in memory, if the slot
+    /// is still linked to `login`.
+    pub fn cached_gh(&self, provider: Provider, slot: &Slot, login: &str) -> Option<String> {
+        let mut inner = self.lock().ok()?;
+        let linked = inner
+            .index(provider)
+            .is_ok_and(|index| index.gh_login(slot) == Some(login));
+        if !linked {
+            return None;
+        }
+        inner.cache.get(&(provider, slot.clone())).cloned()
     }
 
     /// Keeps a token read from the GitHub CLI in memory once the caller has
@@ -424,10 +420,6 @@ impl TokenStore {
                 return Err(Error::TooManyTokens);
             }
         }
-        let account = slot.account(provider);
-        delete(&entry(&account)?)?;
-        delete(&legacy_entry(&account)?)?;
-        inner.cache.remove(&(provider, slot.clone()));
         let previous = inner.index(provider)?.clone();
         let index = inner.index(provider)?;
         match slot {
@@ -443,12 +435,19 @@ impl TokenStore {
             }
         }
         if let Err(err) = inner.save_index(provider) {
+            // Nothing was deleted yet, so the slot is exactly as it was.
             *inner.index(provider)? = previous;
             return Err(err);
         }
         inner
             .cache
             .insert((provider, slot.clone()), token.to_owned());
+        // Only now that the link is saved, drop the stored token, so a failed
+        // save can never lose it. The link is in force either way: resolve()
+        // never reads the keychain for a linked slot.
+        let account = slot.account(provider);
+        delete(&entry(&account)?)?;
+        delete(&legacy_entry(&account)?)?;
         Ok(())
     }
 
@@ -877,14 +876,28 @@ mod tests {
     #[test]
     fn linked_tokens_are_served_from_memory() {
         let store = linked_store();
-        let resolved = store.resolve(Provider::GitHub, None).unwrap();
-        assert_eq!(resolved.token, "gho_cached");
-        assert_eq!(resolved.verify_login, None);
+        assert!(matches!(
+            store.resolve(Provider::GitHub, None).unwrap(),
+            Resolved::Token { token, slot: Slot::Default } if token == "gho_cached"
+        ));
         // A stored per-owner token is unaffected by links elsewhere.
         let corp = Owner::parse("corp").unwrap();
-        let resolved = store.resolve(Provider::GitHub, Some(&corp)).unwrap();
-        assert_eq!(resolved.token, "ghp_stored");
-        assert_eq!(resolved.slot, Slot::Owner(corp));
+        assert!(matches!(
+            store.resolve(Provider::GitHub, Some(&corp)).unwrap(),
+            Resolved::Token { token, slot } if token == "ghp_stored" && slot == Slot::Owner(corp.clone())
+        ));
+        // Without a checked token in memory, the caller is told to ask gh,
+        // for the pinned login.
+        store.forget_cached(Provider::GitHub, &Slot::Default);
+        assert!(matches!(
+            store.resolve(Provider::GitHub, None).unwrap(),
+            Resolved::FromGh { login, slot: Slot::Default } if login == "octocat"
+        ));
+        let acme = Owner::parse("acme").unwrap();
+        assert!(matches!(
+            store.resolve(Provider::GitHub, Some(&acme)).unwrap(),
+            Resolved::FromGh { login, .. } if login == "octocat"
+        ));
     }
 
     #[test]
@@ -904,8 +917,14 @@ mod tests {
             .contains_key(&(Provider::GitHub, Slot::Default)));
         store.remember_gh(Provider::GitHub, &Slot::Default, "octocat", "gho_fresh");
         assert_eq!(
-            store.resolve(Provider::GitHub, None).unwrap().token,
-            "gho_fresh"
+            store
+                .cached_gh(Provider::GitHub, &Slot::Default, "octocat")
+                .as_deref(),
+            Some("gho_fresh")
+        );
+        assert_eq!(
+            store.cached_gh(Provider::GitHub, &Slot::Default, "someone-else"),
+            None
         );
         // Not linked: nothing is cached, so a stored token cannot be shadowed.
         let corp = Slot::Owner(Owner::parse("corp").unwrap());

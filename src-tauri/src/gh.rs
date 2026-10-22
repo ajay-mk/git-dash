@@ -55,17 +55,37 @@ fn candidates() -> Vec<PathBuf> {
         if let Some(home) = var("USERPROFILE") {
             paths.push(home.join("scoop").join("shims").join("gh.exe"));
         }
+        if let Some(data) = var("ProgramData") {
+            paths.push(data.join("chocolatey").join("bin").join("gh.exe"));
+        }
     } else {
         for p in [
             "/usr/bin/gh",
             "/usr/local/bin/gh",
             "/home/linuxbrew/.linuxbrew/bin/gh",
             "/snap/bin/gh",
+            "/run/current-system/sw/bin/gh",
         ] {
             paths.push(p.into());
         }
     }
+    if cfg!(unix) {
+        // Nix, on macOS and Linux alike.
+        if let Some(home) = std::env::var_os("HOME") {
+            paths.push(PathBuf::from(home).join(".nix-profile/bin/gh"));
+        }
+        paths.push("/nix/var/nix/profiles/default/bin/gh".into());
+    }
     paths
+}
+
+/// Every place GitDash looks for gh on this system, for the setup
+/// instructions.
+pub fn searched() -> Vec<String> {
+    candidates()
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect()
 }
 
 /// A file or directory others may write to could have been swapped for
@@ -156,14 +176,17 @@ fn command(gh: &Path, login: Option<&str>) -> Command {
     cmd
 }
 
-/// Why `gh` exited without a token, from its error output. Unknown output
-/// counts as not being logged in, which is by far the common case.
+/// Why `gh` exited without a token, from its error output. Only known
+/// phrases are recognised; anything else (a locked keychain, a broken
+/// config) is a generic failure rather than advice to sign in again.
 fn failure(stderr: &str) -> Error {
     let stderr = stderr.to_ascii_lowercase();
-    if stderr.contains("unknown flag") {
+    if stderr.contains("no oauth token found") || stderr.contains("not logged in") {
+        Error::GhNotLoggedIn
+    } else if stderr.contains("unknown flag") || stderr.contains("unknown command") {
         Error::GhOutdated
     } else {
-        Error::GhNotLoggedIn
+        Error::GhFailed
     }
 }
 
@@ -185,13 +208,17 @@ fn run(mut cmd: Command) -> Result<String> {
         return Err(Error::GhFailed);
     };
     // Read both pipes while waiting, so a chatty child cannot block on a full
-    // pipe; anything past the cap is ignored.
+    // pipe; anything past the cap is ignored. The results come back over a
+    // channel, so a helper process that keeps a pipe open after gh exits
+    // cannot hold us past the time limit.
     let read = |pipe: Box<dyn Read + Send>| {
+        let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let mut buf = Vec::new();
             let _ = pipe.take(MAX_OUTPUT + 1).read_to_end(&mut buf);
-            buf
-        })
+            let _ = tx.send(buf);
+        });
+        rx
     };
     let out = read(Box::new(stdout));
     let err = read(Box::new(stderr));
@@ -210,8 +237,14 @@ fn run(mut cmd: Command) -> Result<String> {
             }
         }
     };
-    let out = out.join().map_err(|_| Error::GhFailed)?;
-    let err = err.join().map_err(|_| Error::GhFailed)?;
+    let collect = |rx: std::sync::mpsc::Receiver<Vec<u8>>| {
+        let left = TIMEOUT
+            .saturating_sub(start.elapsed())
+            .max(Duration::from_millis(500));
+        rx.recv_timeout(left).map_err(|_| Error::GhFailed)
+    };
+    let out = collect(out)?;
+    let err = collect(err)?;
     if out.len() as u64 > MAX_OUTPUT {
         return Err(Error::GhFailed);
     }
@@ -298,6 +331,17 @@ mod tests {
             run(command(&old, Some("me"))),
             Err(Error::GhOutdated)
         ));
+        let removed = fake_gh(
+            "removed",
+            "echo 'unknown command \"token\" for \"gh auth\"' >&2\nexit 1",
+        );
+        assert!(matches!(
+            run(command(&removed, None)),
+            Err(Error::GhOutdated)
+        ));
+        // Anything else is not a reason to tell people to sign in again.
+        let keyring = fake_gh("keyring", "echo 'failed to unlock keyring' >&2\nexit 1");
+        assert!(matches!(run(command(&keyring, None)), Err(Error::GhFailed)));
         let garbage = fake_gh("garbage", "echo 'not a token at all'");
         assert!(matches!(run(command(&garbage, None)), Err(Error::GhFailed)));
     }
@@ -308,6 +352,16 @@ mod tests {
         let slow = fake_gh("slow", "exec sleep 30");
         let start = Instant::now();
         assert!(matches!(run(command(&slow, None)), Err(Error::GhFailed)));
+        assert!(start.elapsed() < TIMEOUT + Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_helper_holding_the_output_open_cannot_outlast_the_limit() {
+        let _serial = serial();
+        // gh exits at once, but a background process keeps stdout open.
+        let leaky = fake_gh("leaky", &format!("sleep 30 &\necho {TOKEN}"));
+        let start = Instant::now();
+        assert!(matches!(run(command(&leaky, None)), Err(Error::GhFailed)));
         assert!(start.elapsed() < TIMEOUT + Duration::from_secs(5));
     }
 

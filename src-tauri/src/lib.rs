@@ -62,6 +62,7 @@ pub fn run() {
         tokens: Arc::new(token::TokenStore::default()),
         github: github::GitHubClient::new().expect("failed to initialise HTTP client"),
         gitlab: gitlab::GitLabClient::new().expect("failed to initialise HTTP client"),
+        gh_read: tauri::async_runtime::Mutex::new(()),
     };
 
     let tokens = Arc::clone(&state.tokens);

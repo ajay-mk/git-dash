@@ -453,7 +453,7 @@ describe('SettingsPanel', () => {
     });
 
     it('links an owner to the GitHub CLI login when gh is installed', async () => {
-      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh' });
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh', searched: ['/usr/bin/gh'] });
       vi.mocked(tokens.linkGh).mockResolvedValue('octocat');
       setup();
       const button = await screen.findByRole('button', { name: 'Use GitHub CLI' });
@@ -464,10 +464,11 @@ describe('SettingsPanel', () => {
       expect(tokens.set).not.toHaveBeenCalled();
     });
 
-    it('is not offered without gh', async () => {
+    it('is not offered without gh, which comes with setup steps instead', async () => {
       setup();
       await waitFor(() => expect(ghStatus).toHaveBeenCalled());
       expect(screen.queryByRole('button', { name: 'Use GitHub CLI' })).toBeNull();
+      expect(await screen.findByText('Use your GitHub CLI login for an owner')).toBeTruthy();
     });
   });
 

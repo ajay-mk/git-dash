@@ -24,7 +24,8 @@ import {
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
-import { useGhPath } from '../hooks/useGhStatus';
+import { useGhStatus } from '../hooks/useGhStatus';
+import { GhSetupHelp } from './GhSetup';
 import type { Updates } from '../hooks/useUpdates';
 import { canNotify } from '../lib/notify';
 import { matchRepos } from '../lib/suggest';
@@ -510,7 +511,8 @@ function OwnerTokens({ owners, open, onChanged }: { owners: OwnerToken[]; open: 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tokenInput = useRef<HTMLInputElement>(null);
-  const ghPath = useGhPath(open);
+  const gh = useGhStatus(open);
+  const ghPath = gh.status?.path;
 
   const replacing = owners.some((o) => o.owner === owner.trim().toLowerCase());
   const target = isValidOwner(owner.trim()) ? owner.trim() : null;
@@ -648,6 +650,9 @@ function OwnerTokens({ owners, open, onChanged }: { owners: OwnerToken[]; open: 
         )}
       </form>
       {error && <p className="error-text" role="alert">{error}</p>}
+      {gh.status && !gh.status.path && (
+        <GhSetupHelp summary="Use your GitHub CLI login for an owner" status={gh.status} onRecheck={gh.recheck} />
+      )}
     </>
   );
 }

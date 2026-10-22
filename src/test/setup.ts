@@ -39,7 +39,7 @@ vi.mock('../lib/transport', async (importOriginal) => {
       clear: vi.fn(() => Promise.resolve()),
       linkGh: vi.fn(notMocked),
     },
-    ghStatus: vi.fn(() => Promise.resolve({ path: null })),
+    ghStatus: vi.fn(() => Promise.resolve({ path: null, searched: ['/usr/local/bin/gh'] })),
     githubGraphql: vi.fn(notMocked),
     gitlabGraphql: vi.fn(notMocked),
     openExternalUrl: vi.fn(() => Promise.resolve()),

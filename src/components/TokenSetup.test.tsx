@@ -170,14 +170,32 @@ describe('TokenSetup', () => {
   });
 
   describe('GitHub CLI', () => {
-    it('is not offered when gh is not installed', async () => {
+    it('explains how to set up gh when it is not found, and checks again', async () => {
+      vi.mocked(ghStatus).mockResolvedValue({ path: null, searched: ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'] });
       setup();
-      await waitFor(() => expect(ghStatus).toHaveBeenCalled());
+      await userEvent.click(await screen.findByText('Use your GitHub CLI login instead'));
       expect(screen.queryByRole('button', { name: 'Use GitHub CLI login' })).toBeNull();
+      expect(screen.getByText('/opt/homebrew/bin/gh')).toBeTruthy();
+      expect(screen.getByText(/gh auth login/)).toBeTruthy();
+      expect(screen.getByText(/ln -sf "\$\(which gh\)" \/usr\/local\/bin\/gh/)).toBeTruthy();
+
+      // Installed in the meantime: checking again offers the login.
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/local/bin/gh', searched: ['/usr/local/bin/gh'] });
+      await userEvent.click(screen.getByRole('button', { name: 'Check again' }));
+      expect(await screen.findByRole('button', { name: 'Use GitHub CLI login' })).toBeTruthy();
+      expect(screen.queryByText('Use your GitHub CLI login instead')).toBeNull();
+    });
+
+    it('gives Windows install steps on Windows', async () => {
+      vi.mocked(ghStatus).mockResolvedValue({ path: null, searched: ['C:\\Program Files\\GitHub CLI\\gh.exe'] });
+      setup();
+      await userEvent.click(await screen.findByText('Use your GitHub CLI login instead'));
+      expect(screen.getByText('winget install --id GitHub.cli')).toBeTruthy();
+      expect(screen.queryByText(/ln -sf/)).toBeNull();
     });
 
     it('links the GitHub CLI login and reports the account', async () => {
-      vi.mocked(ghStatus).mockResolvedValue({ path: '/opt/homebrew/bin/gh' });
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/opt/homebrew/bin/gh', searched: ['/opt/homebrew/bin/gh'] });
       vi.mocked(tokens.linkGh).mockResolvedValue('octocat');
       const { onDone } = setup();
       await userEvent.click(await screen.findByRole('button', { name: 'Use GitHub CLI login' }));
@@ -188,7 +206,7 @@ describe('TokenSetup', () => {
     });
 
     it('explains what to do when gh is signed out', async () => {
-      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh' });
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh', searched: ['/usr/bin/gh'] });
       vi.mocked(tokens.linkGh).mockRejectedValue(
         new AppError('gh_not_logged_in', 'GitHub CLI is not signed in to this account. Run `gh auth login` in a terminal, then try again'),
       );
@@ -199,7 +217,7 @@ describe('TokenSetup', () => {
     });
 
     it('is only offered for GitHub', async () => {
-      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh' });
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh', searched: ['/usr/bin/gh'] });
       setup();
       expect(await screen.findByRole('button', { name: 'Use GitHub CLI login' })).toBeTruthy();
       await userEvent.click(screen.getByRole('button', { name: 'GitLab' }));
