@@ -1,8 +1,10 @@
-//! Ensures the frontend can only send read-only GraphQL documents.
+//! Ensures only read-only GraphQL documents are sent.
 //!
-//! This is defence in depth: users are told to create read-only tokens, but if
-//! someone pastes a token with write access, a compromised frontend still must
-//! not be able to modify anything on their behalf.
+//! For GitLab this is what keeps the frontend's queries read-only. GitHub
+//! queries are GitDash's own (`github_queries.rs`) and are checked here too,
+//! as defence in depth. Users are told to create read-only tokens, but if a
+//! token has write access, a compromised frontend still must not be able to
+//! modify anything on their behalf.
 
 use crate::error::{Error, Result};
 

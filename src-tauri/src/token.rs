@@ -7,8 +7,12 @@
 //! by account/organization login. Fine-grained GitHub tokens are limited to a
 //! single resource owner, so per-owner tokens let one app cover a personal
 //! account and several organizations at once.
+//!
+//! A GitHub slot can also be *linked to the GitHub CLI*: then no token is
+//! stored at all. The index records the login the link is pinned to, and the
+//! token is read from `gh` when needed and kept in memory only (`gh.rs`).
 
-use std::collections::{hash_map, BTreeMap, HashMap};
+use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -140,6 +144,14 @@ struct Index {
     /// Owner -> login of the account the token belongs to.
     #[serde(default)]
     owners: BTreeMap<String, String>,
+    /// GitHub only: the default slot is linked to the GitHub CLI account
+    /// `default_login` instead of holding a stored token.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    default_gh: bool,
+    /// GitHub only: owners whose slot is linked to the GitHub CLI account
+    /// recorded for them in `owners`.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    gh_owners: BTreeSet<String>,
 }
 
 impl Index {
@@ -150,19 +162,47 @@ impl Index {
             return Index::default();
         };
         let valid_login = |l: &String| is_valid_login(l);
+        let default_login = index.default_login.filter(valid_login);
+        let owners: BTreeMap<String, String> = index
+            .owners
+            .into_iter()
+            .filter(|(owner, login)| {
+                Owner::parse(owner).is_ok_and(|o| o.as_str() == owner) && valid_login(login)
+            })
+            .take(MAX_OWNER_TOKENS)
+            .collect();
         Index {
-            default_login: index.default_login.filter(valid_login),
+            default_gh: index.default_gh && default_login.is_some() && index.host.is_none(),
+            gh_owners: index
+                .gh_owners
+                .into_iter()
+                .filter(|owner| owners.contains_key(owner))
+                .collect(),
+            default_login,
             host: index
                 .host
                 .filter(|h| Host::parse(h).is_ok_and(|p| p.as_str() == h)),
-            owners: index
+            owners,
+        }
+    }
+
+    /// The login a slot is linked to through the GitHub CLI, if it is.
+    fn gh_login(&self, slot: &Slot) -> Option<&str> {
+        match slot {
+            Slot::Default => self.default_login.as_deref().filter(|_| self.default_gh),
+            Slot::Owner(owner) => self
                 .owners
-                .into_iter()
-                .filter(|(owner, login)| {
-                    Owner::parse(owner).is_ok_and(|o| o.as_str() == owner) && valid_login(login)
-                })
-                .take(MAX_OWNER_TOKENS)
-                .collect(),
+                .get(owner.as_str())
+                .map(String::as_str)
+                .filter(|_| self.gh_owners.contains(owner.as_str())),
+        }
+    }
+
+    fn source(&self, slot: &Slot) -> Source {
+        if self.gh_login(slot).is_some() {
+            Source::GitHubCli
+        } else {
+            Source::Token
         }
     }
 
@@ -171,12 +211,25 @@ impl Index {
     }
 }
 
+/// Where a slot's token comes from.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Source {
+    /// A token stored in the keychain.
+    Token,
+    /// Read from the GitHub CLI when needed, never stored.
+    #[serde(rename = "gh")]
+    GitHubCli,
+}
+
 /// What the frontend may learn about the stored tokens. Never the tokens.
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenSummary {
     pub has_default: bool,
     pub default_login: Option<String>,
+    /// Where the default token comes from, when there is one.
+    pub default_source: Option<Source>,
     /// GitLab only: the instance the default token is for.
     pub host: Option<String>,
     pub owners: Vec<OwnerToken>,
@@ -186,6 +239,17 @@ pub struct TokenSummary {
 pub struct OwnerToken {
     pub owner: String,
     pub login: String,
+    pub source: Source,
+}
+
+/// The token picked for a request.
+pub struct Resolved {
+    pub slot: Slot,
+    pub token: String,
+    /// Set when the token was just read from the GitHub CLI: the caller must
+    /// check it belongs to this login, then hand it to
+    /// [`TokenStore::remember_gh`], before relying on it again.
+    pub verify_login: Option<String>,
 }
 
 #[derive(Default)]
@@ -276,31 +340,127 @@ impl TokenStore {
     /// Picks the token that serves `owner`: that owner's own token if one is
     /// configured, otherwise the default token. Returns the slot used, so the
     /// caller can forget it if the provider rejects it.
-    /// Blocking: call from a blocking-safe context.
-    pub fn resolve(&self, provider: Provider, owner: Option<&Owner>) -> Result<(Slot, String)> {
-        let mut inner = self.lock()?;
-        if let Some(owner) = owner {
-            if inner.index(provider)?.owners.contains_key(owner.as_str()) {
-                let slot = Slot::Owner(owner.clone());
+    ///
+    /// A slot linked to the GitHub CLI is served from memory, or else by
+    /// running `gh`; such a fresh token comes back with `verify_login` set.
+    /// Blocking (keychain, and possibly `gh`): call from a blocking-safe
+    /// context.
+    pub fn resolve(&self, provider: Provider, owner: Option<&Owner>) -> Result<Resolved> {
+        let (slot, login) = {
+            let mut inner = self.lock()?;
+            let mut slot = match owner {
+                Some(owner) if inner.index(provider)?.owners.contains_key(owner.as_str()) => {
+                    Slot::Owner(owner.clone())
+                }
+                _ => Slot::Default,
+            };
+            loop {
+                let linked = inner.index(provider)?.gh_login(&slot).map(str::to_owned);
+                if let Some(login) = linked {
+                    if let Some(token) = inner.cache.get(&(provider, slot.clone())) {
+                        let token = token.clone();
+                        return Ok(Resolved {
+                            slot,
+                            token,
+                            verify_login: None,
+                        });
+                    }
+                    break (slot, login);
+                }
                 match inner.get(provider, &slot) {
-                    Ok(token) => return Ok((slot, token)),
-                    // Removed from the keychain behind our back: fall back.
-                    Err(Error::NoToken) => {}
+                    Ok(token) => {
+                        return Ok(Resolved {
+                            slot,
+                            token,
+                            verify_login: None,
+                        })
+                    }
+                    // An owner's token removed from the keychain behind our
+                    // back: fall back to the default one.
+                    Err(Error::NoToken) if slot != Slot::Default => slot = Slot::Default,
                     Err(err) => return Err(err),
                 }
             }
+        };
+        // Not holding the lock: gh may take a moment.
+        let token = crate::gh::token(Some(&login))?;
+        Ok(Resolved {
+            slot,
+            token,
+            verify_login: Some(login),
+        })
+    }
+
+    /// Keeps a token read from the GitHub CLI in memory once the caller has
+    /// checked it belongs to `login`, unless the slot was unlinked or linked
+    /// to another account in the meantime.
+    pub fn remember_gh(&self, provider: Provider, slot: &Slot, login: &str, token: &str) {
+        if let Ok(mut inner) = self.lock() {
+            let still_linked = inner
+                .index(provider)
+                .is_ok_and(|index| index.gh_login(slot) == Some(login));
+            if still_linked {
+                inner
+                    .cache
+                    .insert((provider, slot.clone()), token.to_owned());
+            }
         }
-        let token = inner.get(provider, &Slot::Default)?;
-        Ok((Slot::Default, token))
+    }
+
+    /// Links `slot` to the GitHub CLI account `login`, whose `token` the
+    /// caller has just verified. Any token stored for the slot is deleted, so
+    /// no copy is left behind; from now on the token is only read from `gh`.
+    pub fn link_gh(&self, provider: Provider, slot: &Slot, login: &str, token: &str) -> Result<()> {
+        if provider != Provider::GitHub {
+            return Err(Error::OwnerTokensUnsupported);
+        }
+        if !is_valid_login(login) {
+            return Err(Error::InvalidOwner);
+        }
+        let mut inner = self.lock()?;
+        if let Slot::Owner(owner) = slot {
+            let owners = &inner.index(provider)?.owners;
+            if !owners.contains_key(owner.as_str()) && owners.len() >= MAX_OWNER_TOKENS {
+                return Err(Error::TooManyTokens);
+            }
+        }
+        let account = slot.account(provider);
+        delete(&entry(&account)?)?;
+        delete(&legacy_entry(&account)?)?;
+        inner.cache.remove(&(provider, slot.clone()));
+        let previous = inner.index(provider)?.clone();
+        let index = inner.index(provider)?;
+        match slot {
+            Slot::Default => {
+                index.default_login = Some(login.to_owned());
+                index.default_gh = true;
+            }
+            Slot::Owner(owner) => {
+                index
+                    .owners
+                    .insert(owner.as_str().to_owned(), login.to_owned());
+                index.gh_owners.insert(owner.as_str().to_owned());
+            }
+        }
+        if let Err(err) = inner.save_index(provider) {
+            *inner.index(provider)? = previous;
+            return Err(err);
+        }
+        inner
+            .cache
+            .insert((provider, slot.clone()), token.to_owned());
+        Ok(())
     }
 
     pub fn summary(&self, provider: Provider) -> Result<TokenSummary> {
         let mut inner = self.lock()?;
-        let stored = match inner.get(provider, &Slot::Default) {
-            Ok(_) => true,
-            Err(Error::NoToken) => false,
-            Err(err) => return Err(err),
-        };
+        let linked = inner.index(provider)?.gh_login(&Slot::Default).is_some();
+        let stored = linked
+            || match inner.get(provider, &Slot::Default) {
+                Ok(_) => true,
+                Err(Error::NoToken) => false,
+                Err(err) => return Err(err),
+            };
         let index = inner.index(provider)?;
         // A GitLab token is only usable with the instance it was verified
         // against; one left without it by an interrupted write must be
@@ -309,6 +469,7 @@ impl TokenStore {
         Ok(TokenSummary {
             has_default,
             default_login: index.default_login.clone().filter(|_| has_default),
+            default_source: has_default.then(|| index.source(&Slot::Default)),
             host: index.host.clone().filter(|_| has_default),
             owners: index
                 .owners
@@ -316,6 +477,7 @@ impl TokenStore {
                 .map(|(owner, login)| OwnerToken {
                     owner: owner.clone(),
                     login: login.clone(),
+                    source: index.source(&Slot::Owner(Owner(owner.clone()))),
                 })
                 .collect(),
         })
@@ -398,11 +560,13 @@ impl TokenStore {
             Slot::Default => {
                 index.default_login = Some(login.to_owned());
                 index.host = host.map(|h| h.as_str().to_owned());
+                index.default_gh = false;
             }
             Slot::Owner(owner) => {
                 index
                     .owners
                     .insert(owner.as_str().to_owned(), login.to_owned());
+                index.gh_owners.remove(owner.as_str());
             }
         }
         let saved = inner.save_index(provider);
@@ -429,9 +593,11 @@ impl TokenStore {
             Slot::Default => {
                 index.default_login = None;
                 index.host = None;
+                index.default_gh = false;
             }
             Slot::Owner(owner) => {
                 index.owners.remove(owner.as_str());
+                index.gh_owners.remove(owner.as_str());
             }
         }
         inner.save_index(provider)
@@ -638,6 +804,118 @@ mod tests {
                 .unwrap()
                 .has_default
         );
+    }
+
+    fn linked_store() -> TokenStore {
+        let store = TokenStore::default();
+        {
+            let mut inner = store.lock().unwrap();
+            let mut index = Index {
+                default_login: Some("octocat".into()),
+                default_gh: true,
+                ..Index::default()
+            };
+            index.owners.insert("acme".into(), "octocat".into());
+            index.owners.insert("corp".into(), "work-me".into());
+            index.gh_owners.insert("acme".into());
+            inner.indexes.insert(Provider::GitHub, index);
+            inner
+                .cache
+                .insert((Provider::GitHub, Slot::Default), "gho_cached".into());
+            inner.cache.insert(
+                (Provider::GitHub, Slot::Owner(Owner::parse("corp").unwrap())),
+                "ghp_stored".into(),
+            );
+        }
+        store
+    }
+
+    #[test]
+    fn index_decode_keeps_gh_links_only_for_known_slots() {
+        let raw = r#"{
+            "default_login": "octocat",
+            "default_gh": true,
+            "owners": { "acme": "octocat" },
+            "gh_owners": ["acme", "ghost", "Bad:Owner"]
+        }"#;
+        let index = Index::decode(raw);
+        assert!(index.default_gh);
+        assert_eq!(index.gh_owners.iter().collect::<Vec<_>>(), ["acme"]);
+        assert_eq!(index.gh_login(&Slot::Default), Some("octocat"));
+        // A link without the login it is pinned to is dropped.
+        assert!(!Index::decode(r#"{ "default_gh": true }"#).default_gh);
+        // Indexes written before GitHub CLI links still load, unlinked.
+        let old = Index::decode(r#"{ "default_login": "octocat", "owners": { "acme": "x" } }"#);
+        assert_eq!(old.gh_login(&Slot::Default), None);
+        assert_eq!(
+            old.gh_login(&Slot::Owner(Owner::parse("acme").unwrap())),
+            None
+        );
+        // Unlinked indexes encode exactly as before.
+        assert!(!old.encode().contains("gh"));
+    }
+
+    #[test]
+    fn linked_slots_are_reported_without_reading_the_keychain() {
+        let store = linked_store();
+        store.forget_cached(Provider::GitHub, &Slot::Default);
+        let summary = store.summary(Provider::GitHub).unwrap();
+        assert!(summary.has_default);
+        assert_eq!(summary.default_login.as_deref(), Some("octocat"));
+        assert_eq!(summary.default_source, Some(Source::GitHubCli));
+        let sources: Vec<_> = summary
+            .owners
+            .iter()
+            .map(|o| (o.owner.as_str(), o.source))
+            .collect();
+        assert_eq!(
+            sources,
+            [("acme", Source::GitHubCli), ("corp", Source::Token)]
+        );
+    }
+
+    #[test]
+    fn linked_tokens_are_served_from_memory() {
+        let store = linked_store();
+        let resolved = store.resolve(Provider::GitHub, None).unwrap();
+        assert_eq!(resolved.token, "gho_cached");
+        assert_eq!(resolved.verify_login, None);
+        // A stored per-owner token is unaffected by links elsewhere.
+        let corp = Owner::parse("corp").unwrap();
+        let resolved = store.resolve(Provider::GitHub, Some(&corp)).unwrap();
+        assert_eq!(resolved.token, "ghp_stored");
+        assert_eq!(resolved.slot, Slot::Owner(corp));
+    }
+
+    #[test]
+    fn gh_tokens_are_only_remembered_for_the_linked_account() {
+        let store = linked_store();
+        store.forget_cached(Provider::GitHub, &Slot::Default);
+        store.remember_gh(
+            Provider::GitHub,
+            &Slot::Default,
+            "someone-else",
+            "gho_other",
+        );
+        assert!(!store
+            .lock()
+            .unwrap()
+            .cache
+            .contains_key(&(Provider::GitHub, Slot::Default)));
+        store.remember_gh(Provider::GitHub, &Slot::Default, "octocat", "gho_fresh");
+        assert_eq!(
+            store.resolve(Provider::GitHub, None).unwrap().token,
+            "gho_fresh"
+        );
+        // Not linked: nothing is cached, so a stored token cannot be shadowed.
+        let corp = Slot::Owner(Owner::parse("corp").unwrap());
+        store.forget_cached(Provider::GitHub, &corp);
+        store.remember_gh(Provider::GitHub, &corp, "work-me", "gho_other");
+        assert!(!store
+            .lock()
+            .unwrap()
+            .cache
+            .contains_key(&(Provider::GitHub, corp)));
     }
 
     #[test]

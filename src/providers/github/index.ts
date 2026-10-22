@@ -4,20 +4,25 @@ import { groupByToken, mergeInbox } from '../tokens';
 import type { InboxSnapshot, Provider, RateLimit, RepoResult } from '../types';
 import { describeRepoError, isRateLimited, mapDetails, mapInbox, mapRateLimit, mapRepoSuggestions, mapRepository, type RepoSuggestion } from './map';
 import {
-  buildReposQuery,
+  buildReposRequest,
   DETAILS_LIST_FETCHED,
   DETAILS_QUERY,
+  EVENTS_FETCHED,
   INBOX_QUERY,
   INBOX_SEARCHES,
   OWNER_REPOS_QUERY,
   REPO_SUGGESTIONS_FETCHED,
   repoAlias,
+  REPOS_QUERY,
   VIEWER_REPOS_QUERY,
 } from './queries';
 import { fineGrainedTokenUrl, PERMISSION_LABELS } from './tokenTemplate';
 import { isSafeExternalUrl } from '../../lib/url';
 
-/** GitHub limits query complexity; batch repositories to stay well under it. */
+/**
+ * GitHub limits query complexity; batch repositories to stay well under it.
+ * The backend refuses more than this (`MAX_REPOS_PER_REQUEST`).
+ */
 const REPOS_PER_REQUEST = 10;
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -40,8 +45,7 @@ export const github: Provider = {
     for (const group of groupByToken(repos, tokenOwners)) {
       try {
         for (const batch of chunk(group.repos, REPOS_PER_REQUEST)) {
-          const { query, variables } = buildReposQuery(batch);
-          const res = await githubGraphql<Record<string, unknown>>(query, variables, group.owner);
+          const res = await githubGraphql<Record<string, unknown>>(REPOS_QUERY, buildReposRequest(batch), group.owner);
           const data = res.data ?? {};
           // Each token has its own budget; surface the one closest to running out.
           const limit = mapRateLimit(data.rateLimit);
@@ -86,6 +90,7 @@ export const github: Provider = {
   async fetchInbox(config, tokenOwners) {
     const variables = {
       n: config.limit,
+      events: EVENTS_FETCHED,
       ...INBOX_SEARCHES,
       withReview: config.reviewRequests,
       withMine: config.myPullRequests,

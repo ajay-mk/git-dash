@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AppError, tokens } from '../lib/transport';
+import { AppError, ghStatus, tokens } from '../lib/transport';
 import { TokenSetup } from './TokenSetup';
 
 const TOKEN = 'github_pat_SECRET123';
@@ -166,6 +166,44 @@ describe('TokenSetup', () => {
       await userEvent.click(screen.getByRole('button', { name: 'GitLab' }));
       expect(input.value).toBe('');
       expect(submit.hasAttribute('disabled')).toBe(true);
+    });
+  });
+
+  describe('GitHub CLI', () => {
+    it('is not offered when gh is not installed', async () => {
+      setup();
+      await waitFor(() => expect(ghStatus).toHaveBeenCalled());
+      expect(screen.queryByRole('button', { name: 'Use GitHub CLI login' })).toBeNull();
+    });
+
+    it('links the GitHub CLI login and reports the account', async () => {
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/opt/homebrew/bin/gh' });
+      vi.mocked(tokens.linkGh).mockResolvedValue('octocat');
+      const { onDone } = setup();
+      await userEvent.click(await screen.findByRole('button', { name: 'Use GitHub CLI login' }));
+      expect(tokens.linkGh).toHaveBeenCalledExactlyOnceWith();
+      expect(tokens.set).not.toHaveBeenCalled();
+      await waitFor(() => expect(onDone).toHaveBeenCalledWith('octocat', 'github'));
+      expect(screen.getByText('/opt/homebrew/bin/gh')).toBeTruthy();
+    });
+
+    it('explains what to do when gh is signed out', async () => {
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh' });
+      vi.mocked(tokens.linkGh).mockRejectedValue(
+        new AppError('gh_not_logged_in', 'GitHub CLI is not signed in to this account. Run `gh auth login` in a terminal, then try again'),
+      );
+      const { onDone } = setup();
+      await userEvent.click(await screen.findByRole('button', { name: 'Use GitHub CLI login' }));
+      expect((await screen.findByRole('alert')).textContent).toContain('gh auth login');
+      expect(onDone).not.toHaveBeenCalled();
+    });
+
+    it('is only offered for GitHub', async () => {
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh' });
+      setup();
+      expect(await screen.findByRole('button', { name: 'Use GitHub CLI login' })).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'GitLab' }));
+      expect(screen.queryByRole('button', { name: 'Use GitHub CLI login' })).toBeNull();
     });
   });
 });

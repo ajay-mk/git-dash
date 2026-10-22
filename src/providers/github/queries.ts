@@ -1,28 +1,22 @@
 /**
- * GraphQL documents for GitHub.
+ * The GitHub queries GitDash runs, by name.
  *
- * Query text is assembled only from the constant fragments below; anything
- * that comes from the user (owner, repo name, label, limits) is passed as a
- * GraphQL variable, never interpolated into the query string.
+ * The query documents themselves live in the backend
+ * (`src-tauri/src/github_queries.rs`): the frontend can only name one of them
+ * and pass variables, so it can never send a query of its own. Repository
+ * cards send a list of repositories instead, and the backend builds the
+ * batched query from fixed pieces.
  */
 
 import type { PinnedRepo } from '../../config/schema';
 
-const CI_ROLLUP = 'statusCheckRollup { state }';
+export type GitHubOperation = 'GitDashRepos' | 'GitDashInbox' | 'GitDashViewerRepos' | 'GitDashOwnerRepos' | 'GitDashDetails';
 
-const PR_FIELDS = `
-  number title url isDraft updatedAt reviewDecision mergeable
-  author { login }
-  commits(last: 1) { nodes { commit { ${CI_ROLLUP} } } }
-  repository { nameWithOwner }
-`;
-
-const ISSUE_FIELDS = `
-  number title url updatedAt
-  author { login }
-  labels(first: 4) { nodes { name color } }
-  repository { nameWithOwner }
-`;
+export const INBOX_QUERY: GitHubOperation = 'GitDashInbox';
+export const VIEWER_REPOS_QUERY: GitHubOperation = 'GitDashViewerRepos';
+export const OWNER_REPOS_QUERY: GitHubOperation = 'GitDashOwnerRepos';
+export const DETAILS_QUERY: GitHubOperation = 'GitDashDetails';
+export const REPOS_QUERY: GitHubOperation = 'GitDashRepos';
 
 /**
  * Open PRs fetched per repository. More than the widget shows, so that card
@@ -31,62 +25,34 @@ const ISSUE_FIELDS = `
  */
 export const OPEN_PRS_FETCHED = 50;
 
+/** Where the backend puts the result for the `index`th repository. */
 export function repoAlias(index: number): string {
   return `r${index}`;
 }
 
-export interface BuiltQuery {
-  query: string;
-  variables: Record<string, unknown>;
+/** What one repository card needs, as the backend's `RepoSpec` expects it. */
+export interface RepoSpec {
+  owner: string;
+  name: string;
+  ci: boolean;
+  pullRequests: number | null;
+  issues: { limit: number; label: string | null } | null;
 }
 
-export function buildReposQuery(repos: PinnedRepo[]): BuiltQuery {
-  const varDefs: string[] = [];
-  const selections: string[] = [];
-  const variables: Record<string, unknown> = {};
-
-  repos.forEach((repo, i) => {
-    const owner = `o${i}`;
-    const name = `n${i}`;
-    varDefs.push(`$${owner}: String!`, `$${name}: String!`);
-    variables[owner] = repo.owner;
-    variables[name] = repo.name;
-
-    const parts = ['nameWithOwner url isPrivate isArchived'];
-    const ci = repo.widgets.some((w) => w.type === 'ci');
-    parts.push(`defaultBranchRef { name ${ci ? `target { ... on Commit { ${CI_ROLLUP} } }` : ''} }`);
-
-    for (const widget of repo.widgets) {
-      if (widget.type === 'pullRequests') {
-        const first = `pr${i}`;
-        varDefs.push(`$${first}: Int!`);
-        variables[first] = OPEN_PRS_FETCHED;
-        parts.push(
-          `pullRequests(states: OPEN, first: $${first}, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { ${PR_FIELDS} } }`,
-        );
-      } else if (widget.type === 'issues') {
-        const first = `is${i}`;
-        varDefs.push(`$${first}: Int!`);
-        variables[first] = widget.limit;
-        let labelArg = '';
-        if (widget.label) {
-          const labels = `il${i}`;
-          varDefs.push(`$${labels}: [String!]`);
-          variables[labels] = [widget.label];
-          labelArg = `, labels: $${labels}`;
-        }
-        parts.push(
-          `issues(states: OPEN, first: $${first}${labelArg}, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { ${ISSUE_FIELDS} } }`,
-        );
-      }
-    }
-
-    selections.push(`${repoAlias(i)}: repository(owner: $${owner}, name: $${name}) { ${parts.join(' ')} }`);
-  });
-
-  const defs = varDefs.length > 0 ? `(${varDefs.join(', ')})` : '';
-  const query = `query GitDashRepos${defs} { ${selections.join(' ')} rateLimit { remaining limit resetAt } }`;
-  return { query, variables };
+/** Variables for `GitDashRepos`: one spec per repository, in order. */
+export function buildReposRequest(repos: readonly PinnedRepo[]): { repos: RepoSpec[] } {
+  return {
+    repos: repos.map((repo) => {
+      const issues = repo.widgets.find((w) => w.type === 'issues');
+      return {
+        owner: repo.owner,
+        name: repo.name,
+        ci: repo.widgets.some((w) => w.type === 'ci'),
+        pullRequests: repo.widgets.some((w) => w.type === 'pullRequests') ? OPEN_PRS_FETCHED : null,
+        issues: issues ? { limit: issues.limit, label: issues.label } : null,
+      };
+    }),
+  };
 }
 
 /**
@@ -94,39 +60,6 @@ export function buildReposQuery(repos: PinnedRepo[]): BuiltQuery {
  * Exported so the mapper knows when older events were cut off.
  */
 export const EVENTS_FETCHED = 10;
-const REVIEWER = '__typename ... on User { login } ... on Team { id }';
-/** Pending requests tell whether yours is direct or through a team. */
-const REVIEW_REQUESTED = `reviewRequests(first: 20) { nodes { requestedReviewer { ${REVIEWER} } } }
-timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: ${EVENTS_FETCHED}) {
-  nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ${REVIEWER} } } }
-}`;
-const ASSIGNED = `timelineItems(itemTypes: [ASSIGNED_EVENT], last: ${EVENTS_FETCHED}) {
-  nodes { ... on AssignedEvent { createdAt assignee { __typename ... on User { login } } } }
-}`;
-
-export const INBOX_QUERY = `
-query GitDashInbox(
-  $n: Int!
-  $reviewQ: String!, $mineQ: String!, $assignedQ: String!
-  $withReview: Boolean!, $withMine: Boolean!, $withAssigned: Boolean!
-) {
-  viewer { login }
-  reviewRequests: search(query: $reviewQ, type: ISSUE, first: $n) @include(if: $withReview) {
-    issueCount nodes { ... on PullRequest { ${PR_FIELDS} ${REVIEW_REQUESTED} } }
-  }
-  myPullRequests: search(query: $mineQ, type: ISSUE, first: $n) @include(if: $withMine) {
-    issueCount nodes { ... on PullRequest { ${PR_FIELDS} } }
-  }
-  assigned: search(query: $assignedQ, type: ISSUE, first: $n) @include(if: $withAssigned) {
-    issueCount
-    nodes {
-      __typename
-      ... on Issue { ${ISSUE_FIELDS} ${ASSIGNED} }
-      ... on PullRequest { ${ISSUE_FIELDS} ${ASSIGNED} }
-    }
-  }
-}
-`;
 
 export const INBOX_SEARCHES = {
   reviewQ: 'is:open is:pr archived:false review-requested:@me sort:updated-desc',
@@ -137,69 +70,5 @@ export const INBOX_SEARCHES = {
 /** Repositories offered as suggestions per token, most recently pushed first. */
 export const REPO_SUGGESTIONS_FETCHED = 100;
 
-const SUGGESTION_ORDER = 'orderBy: { field: PUSHED_AT, direction: DESC }';
-
-/** Repositories the default token can see: owned, collaborated on, or via an organization. */
-export const VIEWER_REPOS_QUERY = `
-query GitDashViewerRepos($n: Int!) {
-  viewer {
-    repositories(
-      first: $n
-      isArchived: false
-      affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
-      ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
-      ${SUGGESTION_ORDER}
-    ) { nodes { nameWithOwner isArchived pushedAt } }
-  }
-}
-`;
-
-/** Repositories of one account or organization, for a per-owner token. */
-export const OWNER_REPOS_QUERY = `
-query GitDashOwnerRepos($owner: String!, $n: Int!) {
-  repositoryOwner(login: $owner) {
-    repositories(first: $n, isArchived: false, ${SUGGESTION_ORDER}) { nodes { nameWithOwner isArchived pushedAt } }
-  }
-}
-`;
-
 /** Most checks and reviewers fetched for the details view. */
 export const DETAILS_LIST_FETCHED = 50;
-
-const DETAILS_COMMON = `
-  createdAt bodyText
-  comments { totalCount }
-  labels(first: 10) { nodes { name color } }
-`;
-
-/** One pull request or issue by its web URL, for the details view. */
-export const DETAILS_QUERY = `
-query GitDashDetails($url: URI!, $n: Int!) {
-  resource(url: $url) {
-    __typename
-    ... on PullRequest {
-      ${DETAILS_COMMON}
-      baseRefName headRefName additions deletions changedFiles
-      commits(last: 1) {
-        nodes { commit { statusCheckRollup { contexts(first: $n) { totalCount nodes {
-          __typename
-          ... on CheckRun { name status conclusion detailsUrl }
-          ... on StatusContext { context state targetUrl }
-        } } } } }
-      }
-      latestReviews(first: $n) { nodes { state author { login } } }
-      reviewRequests(first: $n) { nodes { requestedReviewer {
-        __typename
-        ... on User { login }
-        ... on Bot { login }
-        ... on Mannequin { login }
-        ... on Team { slug }
-      } } }
-    }
-    ... on Issue {
-      ${DETAILS_COMMON}
-      assignees(first: 10) { nodes { login } }
-    }
-  }
-}
-`;

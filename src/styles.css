@@ -406,6 +406,11 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .help-list { padding-left: 18px; margin: 0; display: grid; gap: 6px; }
 details .help-list { margin-top: 8px; }
 .setup-card a, .hint a { color: var(--accent); }
+.gh-option { display: grid; gap: 8px; }
+.gh-option > .btn { justify-self: start; }
+.gh-option .hint { margin: 0; }
+.setup-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.setup-or::before, .setup-or::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 .field { display: grid; gap: 6px; font-weight: 500; }
 .segmented {
   display: inline-flex;

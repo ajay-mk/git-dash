@@ -1,6 +1,8 @@
 # Scoping: use the GitHub CLI's token
 
-Status: proposal, not implemented.
+Status: implemented with option (b), the live link, plus built-in GitHub
+queries. See [What was built](#what-was-built). The rest of this page is the
+original scoping, corrected where we learned more.
 
 ## Problem
 
@@ -110,9 +112,11 @@ SECURITY.md lists as out of scope; the list just avoids picking up a `gh`
 from a writable, unexpected directory. Optionally let the user set a custom
 path in Settings (stored in config, not secret).
 
-**Scopes.** `gh auth login` asks for `repo`, `read:org` and `gist` by
-default, plus `workflow` for some users. That is **write-capable** on every
-repository the user can push to, broader than the fine-grained token we
+**Scopes.** gh always asks for at least `repo`, `read:org` and `gist`
+(`gh auth refresh --remove-scopes` cannot drop them), sometimes plus
+`workflow`. GitHub has no read-only OAuth scope for private repositories, so
+there is no way to get a read-only token from gh. The token is
+**write-capable** on every repository the user can push to, broader than the fine-grained token we
 recommend. GitDash's protections still hold: the token is only sent to
 `api.github.com/graphql`, never to the webview, and the GraphQL guard rejects
 mutations and subscriptions. The risk that grows is a copy of a
@@ -199,33 +203,90 @@ accounts, no tokens).
 
 ## 5. Recommendation
 
-**Build (a), one-time import.** It reuses all of `TokenStore` and the 401
-handling, keeps GitDash working when gh is absent later, and needs no
-runtime dependency on another program. The rotation cost is small because
-`gho_` tokens don't expire on their own, and the reconnect screen can offer
-the same one-click import. (b) can follow later as a setting if users
-complain about re-importing; the source marker added for (a) is the first
-step toward it.
+*Originally* (a), the one-time import. After discussion it changed to **(b),
+the live link**, with one requirement added first:
 
-**Rough size: 2-3 days.**
+- Every read-only option that avoids an org admin is a write-capable token
+  (see the table below), so the only question is whether GitDash keeps a copy.
+  With (b) it doesn't: gh stays the only holder.
+- With a write-capable token, GitDash's mutation check would be the only thing
+  keeping it read-only. So before linking gh, the frontend lost the ability to
+  send GitHub query text at all ("persisted queries"): it names one of the
+  backend's own queries instead. A bug or injected code in the webview can no
+  longer write a query, let alone a mutation.
 
-| Part | Estimate |
-| --- | --- |
-| Rust: `gh` locator, process runner (env, timeout, output cap), `gh_status` and `token_import_gh` commands, `source` in the index, tests with a fake `gh` script | 1-1.5 days |
-| Frontend: setup button and account picker, Settings source label and import buttons, error messages, tests | 1 day |
-| Docs: tokens.md section, SECURITY.md rows, manual test on macOS (Finder launch), Linux and Windows | 0.5 day |
+| Option | Read-only? | Needs an org admin? |
+| --- | --- | --- |
+| Fine-grained token | Yes | Yes, when the org requires approval or blocks them |
+| GitDash GitHub App (what RepoBar does) | Yes | Yes, the org must install it |
+| GitDash's own OAuth app | No (`repo`) | Yes, when the org restricts OAuth apps |
+| Classic token | No (`repo`) | No, unless the org forbids classic tokens |
+| GitHub CLI token | No (`repo`) | No, when the org already approved GitHub CLI |
 
-## Open questions
+### What other tools do
 
-1. Is a write-capable token stored by GitDash acceptable, given the
-   recommendation has been read-only tokens so far? If not, (b) is the only
-   option that avoids a stored copy.
-2. Should the button be offered first on the setup screen, or stay
-   secondary to the fine-grained token flow?
-3. Should GitDash ever fall back to `PATH`, or only use the fixed install
-   locations plus a user-set path?
-4. For several gh accounts: always ask, or default to gh's active account?
-5. Should the reconnect screen after a 401 re-import from gh automatically,
-   or always wait for a click? (Automatic is close to (b) and hides
-   revocations.)
-6. Minimum gh version to support, or just require 2.40+ and `--user`?
+None of them store a copy; all read the token when needed:
+
+- **go-gh** (GitHub's library for gh extensions such as gh-dash): `GH_TOKEN` /
+  `GITHUB_TOKEN`, then `hosts.yml`, then `gh auth token --secure-storage
+  --hostname <host>`; gh found via `GH_PATH` or a safe `PATH` lookup.
+- **Homebrew**: `HOMEBREW_GITHUB_API_TOKEN`, then `gh auth token --hostname
+  github.com` from its own gh install, stderr hidden, in memory only.
+- **mise**: reads gh's `hosts.yml` directly, which misses tokens gh keeps in
+  the OS keychain (its default).
+- **Zed**: proposed in a discussion, undecided; the open question there is
+  whether to do it without the user opting in.
+
+All of these are command-line tools, so `PATH` and environment variables
+work for them. A desktop app has neither reliably, which is why GitDash uses
+fixed install locations and strips the environment instead.
+
+## What was built
+
+- `src-tauri/src/github_queries.rs`: all GitHub query documents. The
+  `github_graphql` command takes an operation name, never query text;
+  `GitDashRepos` takes a list of repositories (at most 10) and builds the
+  batched query from fixed pieces. The documents were checked token for token
+  against the previous TypeScript ones.
+- `src-tauri/src/gh.rs`: finds gh in fixed install locations (refusing
+  world-writable files or directories), runs `gh auth token --hostname
+  github.com [--user <login>]` with a cleared environment, fixed `PATH`, no
+  stdin, a 10 s limit and a 4 KiB output cap, and maps failures to fixed
+  messages. On Windows it starts gh without a console window.
+- `src-tauri/src/token.rs`: a slot (default or per-owner) can be linked to a
+  gh login. Nothing is stored in the keychain for it; the index records the
+  login. Linking deletes any token stored for the slot. Tokens read from gh
+  are kept in memory once GitHub confirms they belong to the linked login,
+  and dropped on a 401 so the next request asks gh again.
+- Commands `gh_status` (where gh was found) and `token_link_gh` (link the
+  default slot or an owner to gh's active account).
+- UI: **Use GitHub CLI login** on the setup screen when gh is found, **Use
+  GitHub CLI** in the per-owner form, "from GitHub CLI" labels and **Unlink
+  GitHub CLI** in Settings.
+- gh problems at runtime (signed out, wrong account, gh missing) show as a
+  banner with the fix rather than the "replace your token" screen; once
+  fixed in gh, the next refresh recovers without relinking.
+- Docs: `SECURITY.md`, `docs/tokens.md`, `README.md`.
+
+Answers to the original open questions:
+
+1. A stored write-capable token: avoided by the live link.
+2. The gh button is shown first on the setup screen when gh is found, with
+   the fine-grained token steps below it.
+3. No `PATH` fallback and no user-set path (a path the webview could set
+   would let it choose what the backend runs).
+4. Several gh accounts: the link uses gh's active account at the time of
+   linking and stays pinned to it. No account picker yet.
+5. After a 401, the next request asks gh again automatically. That is the
+   point of a live link, and a revoked token still surfaces as an error.
+6. gh 2.40+ is required (`--user`); older versions get a clear message.
+
+### Not done yet
+
+- An account picker when gh has several accounts (`gh auth status --json
+  hosts`).
+- Built-in queries for GitLab too; GitLab tokens are `read_api` only, so it
+  still uses the mutation check.
+- Manual testing on macOS (opened from Finder), Windows and a Linux desktop.
+  Tests here cover the runner with fake `gh` scripts and the real gh binary
+  with throwaway logins.

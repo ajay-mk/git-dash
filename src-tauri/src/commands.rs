@@ -9,8 +9,8 @@ use tauri_plugin_opener::OpenerExt;
 use crate::error::{Error, Result};
 use crate::github::GitHubClient;
 use crate::gitlab::{GitLabClient, Host, GITLAB_COM};
-use crate::graphql_guard;
-use crate::token::{validate_format, Owner, Provider, Slot, TokenStore, TokenSummary};
+use crate::token::{validate_format, Owner, Provider, Resolved, Slot, TokenStore, TokenSummary};
+use crate::{gh, github_queries, graphql_guard};
 use std::sync::Arc;
 
 pub struct AppState {
@@ -96,30 +96,86 @@ pub async fn token_clear(
     blocking(&state.tokens, move |t| t.clear(provider, &slot)).await
 }
 
-/// Executes a read-only GraphQL query against the GitHub API, using the token
-/// configured for `owner` if there is one and the default token otherwise.
+/// Runs one of GitDash's own read-only GitHub queries (`github_queries.rs`),
+/// named by `operation`, using the token configured for `owner` if there is
+/// one and the default token otherwise. The frontend never sends query text.
 #[tauri::command]
 pub async fn github_graphql(
     state: State<'_, AppState>,
-    query: String,
+    operation: String,
     variables: Value,
     owner: Option<String>,
 ) -> Result<Value> {
-    graphql_guard::ensure_read_only(&query)?;
-    if !variables.is_object() || variables.to_string().len() > graphql_guard::MAX_QUERY_BYTES {
+    if variables.to_string().len() > graphql_guard::MAX_QUERY_BYTES {
         return Err(Error::RequestTooLarge);
     }
+    let (query, variables) = github_queries::resolve(&operation, variables)?;
+    // Defence in depth: the documents are ours, but check them anyway.
+    graphql_guard::ensure_read_only(&query)?;
     let owner = parse_owner(owner)?;
-    let (slot, token) = blocking(&state.tokens, move |t| {
+    let resolved = blocking(&state.tokens, move |t| {
         t.resolve(Provider::GitHub, owner.as_ref())
     })
     .await?;
+    let Resolved { slot, token, .. } = verify_gh(&state, resolved).await?;
     let result = state.github.graphql(&token, &query, &variables).await;
     if matches!(result, Err(Error::Unauthorized)) {
-        // Revoked or expired: make the next call re-read the keychain.
+        // Revoked or expired: make the next call re-read the keychain, or ask
+        // the GitHub CLI again (which picks up `gh auth refresh`).
         state.tokens.forget_cached(Provider::GitHub, &slot);
     }
     result
+}
+
+/// A token just read from the GitHub CLI is used only once GitHub confirms it
+/// belongs to the account the slot is linked to, so switching accounts in gh
+/// cannot silently change whose data GitDash shows.
+async fn verify_gh(state: &State<'_, AppState>, resolved: Resolved) -> Result<Resolved> {
+    let Some(expected) = resolved.verify_login.as_deref() else {
+        return Ok(resolved);
+    };
+    let login = state.github.viewer_login(&resolved.token).await?;
+    if !login.eq_ignore_ascii_case(expected) {
+        return Err(Error::GhAccountMismatch);
+    }
+    state
+        .tokens
+        .remember_gh(Provider::GitHub, &resolved.slot, expected, &resolved.token);
+    Ok(resolved)
+}
+
+/// Whether the GitHub CLI is installed where GitDash looks for it, and where.
+#[derive(serde::Serialize)]
+pub struct GhStatus {
+    path: Option<String>,
+}
+
+#[tauri::command]
+pub async fn gh_status() -> Result<GhStatus> {
+    let path = async_runtime::spawn_blocking(gh::locate)
+        .await
+        .map_err(|_| Error::Internal)?;
+    Ok(GhStatus {
+        path: path.map(|p| p.display().to_string()),
+    })
+}
+
+/// Links the default slot, or with `owner` that owner's slot, to the account
+/// the GitHub CLI is signed in to. GitDash keeps no copy of the token: it is
+/// read from gh when needed. Returns the login the link is pinned to.
+#[tauri::command]
+pub async fn token_link_gh(state: State<'_, AppState>, owner: Option<String>) -> Result<String> {
+    let slot = Slot::from_owner(parse_owner(owner)?);
+    let token = async_runtime::spawn_blocking(|| gh::token(None))
+        .await
+        .map_err(|_| Error::Internal)??;
+    let login = state.github.viewer_login(&token).await?;
+    let pinned = login.clone();
+    blocking(&state.tokens, move |t| {
+        t.link_gh(Provider::GitHub, &slot, &pinned, &token)
+    })
+    .await?;
+    Ok(login)
 }
 
 /// Executes a read-only GraphQL query against the GitLab instance the stored

@@ -4,7 +4,7 @@ import { githubGraphql } from '../../lib/transport';
 import { github } from './index';
 import { DETAILS_BODY_CHARS } from '../raw';
 import { describeRepoError, mapDetails, mapInbox, mapIssue, mapPullRequest, mapRepository } from './map';
-import { buildReposQuery, DETAILS_QUERY, EVENTS_FETCHED, OPEN_PRS_FETCHED } from './queries';
+import { buildReposRequest, DETAILS_QUERY, EVENTS_FETCHED, OPEN_PRS_FETCHED, OWNER_REPOS_QUERY } from './queries';
 
 vi.mock('../../lib/transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/transport')>()),
@@ -23,25 +23,22 @@ const repo: PinnedRepo = {
   ],
 };
 
-describe('buildReposQuery', () => {
-  it('passes all user input as variables, never in the query text', () => {
-    const evil: PinnedRepo = { ...repo, owner: 'x") { id } mutation {', name: 'y', widgets: [{ type: 'issues', limit: 1, label: '"}' }] };
-    const { query, variables } = buildReposQuery([evil]);
-    expect(query).not.toContain('mutation');
-    expect(query).not.toContain('"}');
-    expect(variables).toMatchObject({ o0: evil.owner, n0: 'y', il0: ['"}'] });
+describe('buildReposRequest', () => {
+  // The query text itself is built and tested in the backend.
+  it('describes each repository card for the backend', () => {
+    expect(buildReposRequest([repo])).toEqual({
+      repos: [{ owner: 'acme', name: 'api', ci: true, pullRequests: OPEN_PRS_FETCHED, issues: { limit: 3, label: 'bug' } }],
+    });
   });
 
-  it('only requests sections for enabled widgets', () => {
-    const { query, variables } = buildReposQuery([{ ...repo, widgets: [{ type: 'ci' }] }]);
-    expect(query).toContain('statusCheckRollup');
-    expect(query).not.toContain('pullRequests(');
-    expect(query).not.toContain('issues(');
-    expect(Object.keys(variables)).toEqual(['o0', 'n0']);
-  });
-
-  it('fetches more PRs than the widget shows', () => {
-    expect(buildReposQuery([repo]).variables.pr0).toBe(OPEN_PRS_FETCHED);
+  it('only asks for sections of enabled widgets', () => {
+    expect(buildReposRequest([{ ...repo, widgets: [{ type: 'ci' }] }]).repos[0]).toEqual({
+      owner: 'acme',
+      name: 'api',
+      ci: true,
+      pullRequests: null,
+      issues: null,
+    });
   });
 });
 
@@ -345,7 +342,7 @@ describe('github.listRepos', () => {
       ),
     );
     await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['octo/one', 'acme/api', 'acme/web'], complete: true });
-    expect(graphql).toHaveBeenCalledWith(expect.stringContaining('repositoryOwner(login: $owner)'), expect.objectContaining({ owner: 'acme' }), 'acme');
+    expect(graphql).toHaveBeenCalledWith(OWNER_REPOS_QUERY, expect.objectContaining({ owner: 'acme' }), 'acme');
   });
 
   it('orders the merged list by last push across tokens', async () => {
@@ -364,12 +361,6 @@ describe('github.listRepos', () => {
       ),
     );
     await expect(github.listRepos(['acme'])).resolves.toEqual({ repos: ['acme/new', 'octo/a', 'octo/b', 'octo/empty'], complete: true });
-  });
-
-  it('only fetches active repositories', async () => {
-    graphql.mockResolvedValue({ data: {} });
-    await github.listRepos(['acme']);
-    for (const [query] of graphql.mock.calls) expect(query).toMatch(/repositories\([^)]*isArchived: false/);
   });
 
   it('rejects when every token fails, so the caller can retry', async () => {

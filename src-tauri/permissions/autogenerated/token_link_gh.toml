@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-token-link-gh"
+description = "Enables the token_link_gh command without any pre-configured scope."
+commands.allow = ["token_link_gh"]
+
+[[permission]]
+identifier = "deny-token-link-gh"
+description = "Denies the token_link_gh command without any pre-configured scope."
+commands.deny = ["token_link_gh"]

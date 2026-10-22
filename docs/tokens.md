@@ -1,8 +1,8 @@
 # Access tokens
 
-GitDash reads GitHub and GitLab with personal access tokens that you create.
-They are stored in your operating system's keychain and never shown again
-after you save them. All requests are read-only; see
+GitDash reads GitHub and GitLab with personal access tokens that you create,
+or for GitHub with your [GitHub CLI](#github-cli) login. Tokens are stored in
+your operating system's keychain and never shown again after you save them. All requests are read-only; see
 [SECURITY.md](../SECURITY.md). You can connect either service or both; the
 rest of this page covers GitHub first, then [GitLab](#gitlab).
 
@@ -37,7 +37,42 @@ that some results are hidden.
 
 An organization can require owner approval for fine-grained tokens, or forbid classic or long-lived tokens. While a
 fine-grained token is pending approval, or when a repository was not selected
-for it, GitHub reports the repository as not found.
+for it, GitHub reports the repository as not found. If the organization has
+approved GitHub CLI, its login usually still works; see below.
+
+## GitHub CLI
+
+If [GitHub CLI](https://cli.github.com) (`gh`) is installed and signed in
+(`gh auth login`), the setup screen offers **Use GitHub CLI login**. GitDash
+then uses the account gh is signed in to:
+
+- **No copy is stored.** GitDash records only which account it is linked to,
+  and asks gh for the token when it needs one (`gh auth token`), keeping it in
+  memory only. `gh auth refresh` and signing in again are picked up on their
+  own; `gh auth logout` disconnects GitDash too.
+- **Organizations that block personal access tokens.** gh's token is an OAuth
+  token. It can read an organization's private repositories when the
+  organization has approved GitHub CLI as an OAuth app, which many have, even
+  where fine-grained tokens need approval or are blocked. If the organization
+  has not approved it, only public data is visible. For SAML SSO, sign in
+  through the organization's SSO and authorize GitHub CLI again.
+- **It can also make changes.** gh always asks GitHub for at least the `repo`,
+  `read:org` and `gist` scopes, and GitHub has no read-only scope for private
+  repositories. GitDash itself only ever runs its own read-only queries
+  ([SECURITY.md](../SECURITY.md)), but prefer a fine-grained token where your
+  organization allows one.
+- **Pinned to one account.** GitDash links to the account gh is using at that
+  moment and keeps using that account, even after `gh auth switch`. To link
+  another account, switch gh to it first, then link again. In **Settings →
+  Access tokens → Per-owner tokens**, enter an owner and choose **Use GitHub
+  CLI** to use gh's login for just that owner.
+- **Where gh must be installed.** GitDash only runs gh from its usual install
+  locations: Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), MacPorts
+  (`/opt/local/bin`), Linux packages (`/usr/bin`, `/usr/local/bin`), Linuxbrew,
+  Snap, and on Windows the official installer, winget or Scoop. It is not
+  looked up on `PATH`. The setup screen shows which `gh` it found.
+- GitDash never uses `GH_TOKEN` or `GITHUB_TOKEN`, even if they are set; only
+  tokens gh itself stores are used. gh 2.40 or newer is needed.
 
 ## Several accounts or organizations
 
@@ -54,7 +89,8 @@ each organization:
    its token. All other repositories use the default token.
 
 The **"Needs you"** sidebar searches with the default token, then merges in
-results from per-owner tokens that belong to the same GitHub user,
+results from per-owner tokens (or GitHub CLI links) that belong to the same
+GitHub user,
 de-duplicated. Items visible only to a token that belongs to a *different*
 user are not shown, and per-owner tokens that fail are skipped there (their
 repository cards show the error instead).

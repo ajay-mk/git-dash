@@ -46,22 +46,26 @@ providers can be added (see [Adding a provider](docs/development.md#adding-a-pro
    [this link](https://github.com/settings/personal-access-tokens/new?name=GitDash&description=Read-only+access+for+the+GitDash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read),
    pick the repositories it can see, and paste it into GitDash. For GitLab
    (gitlab.com or self-hosted), use a personal access token with the
-   `read_api` scope instead. [docs/tokens.md](docs/tokens.md) covers both,
-   plus classic tokens, SSO and using several accounts or organizations.
+   `read_api` scope instead. If you use [GitHub CLI](https://cli.github.com),
+   you can choose *Use GitHub CLI login* instead of pasting a token, which
+   helps when your organization blocks personal access tokens.
+   [docs/tokens.md](docs/tokens.md) covers all of these, plus classic tokens,
+   SSO and using several accounts or organizations.
 3. Pin a repository and choose what its card shows.
 
 ## Security
 
-Your tokens are stored in the operating system's keychain and are never
-exposed to the app's UI layer. All API calls are made by the Rust backend,
-which only allows read-only GraphQL queries, to `api.github.com` and to the
-GitLab instance each GitLab token was saved for. See
+Your tokens are stored in the operating system's keychain (or, with GitHub
+CLI, not stored at all) and are never exposed to the app's UI layer. All API
+calls are made by the Rust backend, which only runs GitDash's own read-only
+GitHub queries and only allows read-only GraphQL queries for GitLab, to
+`api.github.com` and to the GitLab instance each GitLab token was saved for. See
 [SECURITY.md](SECURITY.md) for the full model and how to report issues.
 
 ## Documentation
 
 - [Installing](docs/installing.md): downloads, checksums, unsigned builds
-- [Access tokens](docs/tokens.md): permissions, SSO, per-owner tokens, GitLab
+- [Access tokens](docs/tokens.md): permissions, SSO, per-owner tokens, GitHub CLI, GitLab
 - [Development](docs/development.md): building, testing, project layout, adding a provider
 - [Releasing](docs/releasing.md): cutting a release
 

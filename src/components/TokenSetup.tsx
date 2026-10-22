@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { providers } from '../providers';
 import { GITLAB_COM, normalizeGitLabHost } from '../providers/gitlab/host';
 import { PROVIDER_IDS, type ProviderId } from '../providers/types';
+import { useGhPath } from '../hooks/useGhStatus';
 import { tokens } from '../lib/transport';
 import logo from '../assets/logo.svg';
 import { ExternalLink } from './ExternalLink';
@@ -42,6 +43,12 @@ function GitHubHelp() {
             <ExternalLink href="https://github.com/settings/tokens/new?description=GitDash">
               Create a classic token
             </ExternalLink>
+          </li>
+          <li>
+            <strong>GitHub CLI:</strong> if <code>gh</code> is installed (Homebrew, the official installer,
+            winget, Scoop or your Linux package manager) and signed in with <code>gh auth login</code>,
+            GitDash offers to use its login instead of a token.{' '}
+            <ExternalLink href="https://github.com/cli/cli#installation">Install GitHub CLI</ExternalLink>
           </li>
         </ul>
       </details>
@@ -87,6 +94,27 @@ function GitLabHelp({ host }: { host: string | null }) {
   );
 }
 
+/**
+ * Offers the GitHub CLI's login instead of a pasted token, when gh is
+ * installed. Shown above the token steps on the GitHub tab.
+ */
+function GitHubCliOption({ path, busy, onLink }: { path: string; busy: boolean; onLink: () => void }) {
+  return (
+    <div className="gh-option">
+      <button type="button" className="btn btn-primary" disabled={busy} onClick={onLink}>
+        {busy ? 'Connecting…' : 'Use GitHub CLI login'}
+      </button>
+      <p className="hint">
+        Uses the account GitHub CLI is signed in to (<code className="url-text">{path}</code>). GitDash keeps no
+        copy of the token; it asks gh for it when needed, so <code>gh auth logout</code> disconnects GitDash too.
+        Organization repositories work if the organization approved GitHub CLI, even where personal access tokens
+        are blocked. A GitHub CLI token can also make changes; GitDash only ever sends read-only queries.
+      </p>
+      <p className="setup-or">or paste a personal access token</p>
+    </div>
+  );
+}
+
 export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, onCancel, reason, notice }: {
   /** The service to connect first; the user can switch. */
   provider?: ProviderId;
@@ -112,6 +140,22 @@ export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, o
   const [busy, setBusy] = useState(false);
   const provider = providers[providerId];
   const host = normalizeGitLabHost(hostInput);
+  const ghPath = useGhPath();
+
+  async function linkGh() {
+    setBusy(true);
+    setError(null);
+    try {
+      const login = await tokens.linkGh();
+      if (input.current) input.current.value = '';
+      setHasValue(false);
+      onDone(login, 'github');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not use the GitHub CLI login');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -164,6 +208,7 @@ export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, o
           ))}
         </div>
         {reason && <p className="error-text">{reason}</p>}
+        {providerId === 'github' && ghPath && <GitHubCliOption path={ghPath} busy={busy} onLink={() => void linkGh()} />}
         {providerId === 'github' ? <GitHubHelp /> : <GitLabHelp host={host} />}
         {providerId === 'gitlab' && (
           <label className="field">
