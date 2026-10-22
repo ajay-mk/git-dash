@@ -29,7 +29,7 @@ reviews:
     - label: docs
       instructions: Only changes documentation (README.md, SECURITY.md or docs/).
     - label: ci
-      instructions: Only changes CI or repo automation in .github/.
+      instructions: Only changes CI or repo automation in .github/ or .coderabbit.yaml.
     - label: dependencies
       instructions: Mainly bumps or changes dependencies (package.json, package-lock.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock or pinned actions).
     - label: ui
