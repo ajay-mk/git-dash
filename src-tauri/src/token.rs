@@ -14,6 +14,7 @@
 
 use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,10 @@ const MIN_TOKEN_LEN: usize = 20;
 const MAX_OWNER_LEN: usize = 39;
 /// Upper bound on per-owner tokens, which also bounds the index entry size.
 pub const MAX_OWNER_TOKENS: usize = 20;
+/// How long a token read from the GitHub CLI is used before gh is asked
+/// again. `gh auth logout` does not revoke the token, so this is what makes
+/// signing out of gh disconnect GitDash too.
+pub const GH_RECHECK: Duration = Duration::from_secs(60);
 
 /// Providers that can hold a token. Kept as an allow-list so the frontend
 /// cannot create arbitrary keychain entries.
@@ -256,6 +261,22 @@ pub enum Resolved {
 struct Inner {
     cache: HashMap<(Provider, Slot), String>,
     indexes: HashMap<Provider, Index>,
+    /// When gh last confirmed the cached token of a linked slot.
+    gh_checked: HashMap<(Provider, Slot), Instant>,
+}
+
+impl Inner {
+    /// The cached token of a slot linked to `gh`, and whether gh confirmed
+    /// it recently enough to use without asking again.
+    fn gh_cached(&self, provider: Provider, slot: &Slot) -> Option<(String, bool)> {
+        let key = (provider, slot.clone());
+        let token = self.cache.get(&key)?.clone();
+        let fresh = self
+            .gh_checked
+            .get(&key)
+            .is_some_and(|at| at.elapsed() < GH_RECHECK);
+        Some((token, fresh))
+    }
 }
 
 /// In-memory cache in front of the keychain, so we do not hit the keychain
@@ -356,12 +377,9 @@ impl TokenStore {
         loop {
             let linked = inner.index(provider)?.gh_login(&slot).map(str::to_owned);
             if let Some(login) = linked {
-                return Ok(match inner.cache.get(&(provider, slot.clone())) {
-                    Some(token) => Resolved::Token {
-                        token: token.clone(),
-                        slot,
-                    },
-                    None => Resolved::FromGh { slot, login },
+                return Ok(match inner.gh_cached(provider, &slot) {
+                    Some((token, true)) => Resolved::Token { token, slot },
+                    _ => Resolved::FromGh { slot, login },
                 });
             }
             match inner.get(provider, &slot) {
@@ -374,9 +392,14 @@ impl TokenStore {
         }
     }
 
-    /// A checked GitHub CLI token for `slot` already in memory, if the slot
-    /// is still linked to `login`.
-    pub fn cached_gh(&self, provider: Provider, slot: &Slot, login: &str) -> Option<String> {
+    /// The GitHub CLI token for `slot` already in memory, if the slot is still
+    /// linked to `login`, and whether gh confirmed it within [`GH_RECHECK`].
+    pub fn cached_gh(
+        &self,
+        provider: Provider,
+        slot: &Slot,
+        login: &str,
+    ) -> Option<(String, bool)> {
         let mut inner = self.lock().ok()?;
         let linked = inner
             .index(provider)
@@ -384,7 +407,7 @@ impl TokenStore {
         if !linked {
             return None;
         }
-        inner.cache.get(&(provider, slot.clone())).cloned()
+        inner.gh_cached(provider, slot)
     }
 
     /// Keeps a token read from the GitHub CLI in memory once the caller has
@@ -396,9 +419,9 @@ impl TokenStore {
                 .index(provider)
                 .is_ok_and(|index| index.gh_login(slot) == Some(login));
             if still_linked {
-                inner
-                    .cache
-                    .insert((provider, slot.clone()), token.to_owned());
+                let key = (provider, slot.clone());
+                inner.cache.insert(key.clone(), token.to_owned());
+                inner.gh_checked.insert(key, Instant::now());
             }
         }
     }
@@ -439,9 +462,9 @@ impl TokenStore {
             *inner.index(provider)? = previous;
             return Err(err);
         }
-        inner
-            .cache
-            .insert((provider, slot.clone()), token.to_owned());
+        let key = (provider, slot.clone());
+        inner.cache.insert(key.clone(), token.to_owned());
+        inner.gh_checked.insert(key, Instant::now());
         // Only now that the link is saved, drop the stored token, so a failed
         // save can never lose it. The link is in force either way: resolve()
         // never reads the keychain for a linked slot.
@@ -584,6 +607,7 @@ impl TokenStore {
     pub fn clear(&self, provider: Provider, slot: &Slot) -> Result<()> {
         let mut inner = self.lock()?;
         inner.cache.remove(&(provider, slot.clone()));
+        inner.gh_checked.remove(&(provider, slot.clone()));
         let account = slot.account(provider);
         delete(&entry(&account)?)?;
         delete(&legacy_entry(&account)?)?;
@@ -607,6 +631,7 @@ impl TokenStore {
     pub fn forget_cached(&self, provider: Provider, slot: &Slot) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.cache.remove(&(provider, slot.clone()));
+            inner.gh_checked.remove(&(provider, slot.clone()));
         }
     }
 }
@@ -821,6 +846,9 @@ mod tests {
             inner
                 .cache
                 .insert((Provider::GitHub, Slot::Default), "gho_cached".into());
+            inner
+                .gh_checked
+                .insert((Provider::GitHub, Slot::Default), Instant::now());
             inner.cache.insert(
                 (Provider::GitHub, Slot::Owner(Owner::parse("corp").unwrap())),
                 "ghp_stored".into(),
@@ -917,10 +945,8 @@ mod tests {
             .contains_key(&(Provider::GitHub, Slot::Default)));
         store.remember_gh(Provider::GitHub, &Slot::Default, "octocat", "gho_fresh");
         assert_eq!(
-            store
-                .cached_gh(Provider::GitHub, &Slot::Default, "octocat")
-                .as_deref(),
-            Some("gho_fresh")
+            store.cached_gh(Provider::GitHub, &Slot::Default, "octocat"),
+            Some(("gho_fresh".to_owned(), true))
         );
         assert_eq!(
             store.cached_gh(Provider::GitHub, &Slot::Default, "someone-else"),
@@ -935,6 +961,42 @@ mod tests {
             .unwrap()
             .cache
             .contains_key(&(Provider::GitHub, corp)));
+    }
+
+    #[test]
+    fn gh_tokens_are_rechecked_with_gh_after_a_while() {
+        let store = linked_store();
+        store.remember_gh(Provider::GitHub, &Slot::Default, "octocat", "gho_fresh");
+        assert!(matches!(
+            store.resolve(Provider::GitHub, None).unwrap(),
+            Resolved::Token { token, .. } if token == "gho_fresh"
+        ));
+        // Once the check is old, gh is asked again (so `gh auth logout`
+        // takes effect), though the old token is still known for comparison.
+        let aged = Instant::now() - GH_RECHECK - Duration::from_secs(1);
+        store
+            .lock()
+            .unwrap()
+            .gh_checked
+            .insert((Provider::GitHub, Slot::Default), aged);
+        assert!(matches!(
+            store.resolve(Provider::GitHub, None).unwrap(),
+            Resolved::FromGh { login, .. } if login == "octocat"
+        ));
+        assert_eq!(
+            store.cached_gh(Provider::GitHub, &Slot::Default, "octocat"),
+            Some(("gho_fresh".to_owned(), false))
+        );
+        // Never confirmed by gh at all (as after a restart): ask gh.
+        store
+            .lock()
+            .unwrap()
+            .gh_checked
+            .remove(&(Provider::GitHub, Slot::Default));
+        assert!(matches!(
+            store.resolve(Provider::GitHub, None).unwrap(),
+            Resolved::FromGh { .. }
+        ));
     }
 
     #[test]

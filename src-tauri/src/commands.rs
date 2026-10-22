@@ -142,16 +142,29 @@ pub async fn github_graphql(
 async fn read_gh(state: &State<'_, AppState>, slot: &Slot, login: String) -> Result<String> {
     let _one_at_a_time = state.gh_read.lock().await;
     // Whoever held the lock before may have just read it.
-    if let Some(token) = state.tokens.cached_gh(Provider::GitHub, slot, &login) {
-        return Ok(token);
+    let cached = state.tokens.cached_gh(Provider::GitHub, slot, &login);
+    if let Some((token, true)) = &cached {
+        return Ok(token.clone());
     }
     let pinned = login.clone();
-    let token = async_runtime::spawn_blocking(move || gh::token(Some(&pinned)))
+    let read = async_runtime::spawn_blocking(move || gh::token(Some(&pinned)))
         .await
-        .map_err(|_| Error::Internal)??;
-    let owner = state.github.viewer_login(&token).await?;
-    if !owner.eq_ignore_ascii_case(&login) {
-        return Err(Error::GhAccountMismatch);
+        .map_err(|_| Error::Internal)?;
+    let token = match read {
+        Ok(token) => token,
+        Err(err) => {
+            // Signed out of gh (or gh is gone): stop using the old token.
+            state.tokens.forget_cached(Provider::GitHub, slot);
+            return Err(err);
+        }
+    };
+    // The same token gh gave before was already checked with GitHub.
+    let known = cached.is_some_and(|(old, _)| old == token);
+    if !known {
+        let owner = state.github.viewer_login(&token).await?;
+        if !owner.eq_ignore_ascii_case(&login) {
+            return Err(Error::GhAccountMismatch);
+        }
     }
     state
         .tokens
@@ -184,10 +197,20 @@ pub async fn gh_status() -> Result<GhStatus> {
 #[tauri::command]
 pub async fn token_link_gh(state: State<'_, AppState>, owner: Option<String>) -> Result<String> {
     let slot = Slot::from_owner(parse_owner(owner)?);
+    let _one_at_a_time = state.gh_read.lock().await;
     let token = async_runtime::spawn_blocking(|| gh::token(None))
         .await
         .map_err(|_| Error::Internal)??;
     let login = state.github.viewer_login(&token).await?;
+    // Later reads ask gh for this login by name (`--user`). Check that works
+    // now, so a gh too old for it fails here rather than after linking.
+    let pinned = login.clone();
+    let again = async_runtime::spawn_blocking(move || gh::token(Some(&pinned)))
+        .await
+        .map_err(|_| Error::Internal)??;
+    if again != token {
+        return Err(Error::GhAccountMismatch);
+    }
     let pinned = login.clone();
     blocking(&state.tokens, move |t| {
         t.link_gh(Provider::GitHub, &slot, &pinned, &token)

@@ -102,7 +102,7 @@ function GitHubCliOption({ path, busy, onLink }: { path: string; busy: boolean; 
       <p className="hint">
         Uses the account GitHub CLI is signed in to (<code className="url-text">{path}</code>); sign in first with{' '}
         <code>gh auth login</code> if you have not. GitDash keeps no
-        copy of the token; it asks gh for it when needed, so <code>gh auth logout</code> disconnects GitDash too.
+        copy of the token; it asks gh for it when needed, so <code>gh auth logout</code> disconnects GitDash too, within a minute.
         Organization repositories work if the organization approved GitHub CLI, even where personal access tokens
         are blocked. A GitHub CLI token can also make changes; GitDash only ever sends read-only queries.
       </p>

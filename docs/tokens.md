@@ -49,7 +49,8 @@ then uses the account gh is signed in to:
 - **No copy is stored.** GitDash records only which account it is linked to,
   and asks gh for the token when it needs one (`gh auth token`), keeping it in
   memory only. `gh auth refresh` and signing in again are picked up on their
-  own; `gh auth logout` disconnects GitDash too.
+  own; `gh auth logout` disconnects GitDash too, within a minute (GitDash asks
+  gh again at least once a minute, since signing out does not revoke the token).
 - **Organizations that block personal access tokens.** gh's token is an OAuth
   token. It can read an organization's private repositories when the
   organization has approved GitHub CLI as an OAuth app, which many have, even

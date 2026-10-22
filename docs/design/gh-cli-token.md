@@ -259,7 +259,11 @@ fixed install locations and strips the environment instead.
   gh login. Nothing is stored in the keychain for it; the index records the
   login. Linking deletes any token stored for the slot. Tokens read from gh
   are kept in memory once GitHub confirms they belong to the linked login,
-  and dropped on a 401 so the next request asks gh again. Only one gh read
+  and dropped on a 401 so the next request asks gh again. gh is also asked
+  again after 60 s (`gh auth logout` does not revoke the token, so this is
+  what makes signing out disconnect GitDash); the same token skips the
+  GitHub check. Linking also runs the pinned `--user` read, so a gh too old
+  for it fails at setup. Only one gh read
   runs at a time; requests arriving together reuse its result. When linking,
   the stored token is deleted only after the link is saved.
 - Setup steps (install, `gh auth login`, the exact places GitDash looks and
