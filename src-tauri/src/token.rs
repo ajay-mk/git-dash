@@ -618,6 +618,7 @@ impl TokenStore {
         inner.gh_checked.remove(&(provider, slot.clone()));
         let account = slot.account(provider);
         delete_both(&account)?;
+        let previous = inner.index(provider)?.clone();
         let index = inner.index(provider)?;
         match slot {
             Slot::Default => {
@@ -630,7 +631,14 @@ impl TokenStore {
                 index.gh_owners.remove(owner.as_str());
             }
         }
-        inner.save_index(provider)
+        if let Err(err) = inner.save_index(provider) {
+            // Keep memory matching what is stored, so the slot still shows as
+            // set (or linked to GitHub CLI) and removing it can be retried,
+            // instead of a link that looks gone coming back after a restart.
+            *inner.index(provider)? = previous;
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Drops the cached copy (e.g. after the provider rejected it) without
