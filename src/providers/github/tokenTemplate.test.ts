@@ -6,7 +6,7 @@ describe('fineGrainedTokenUrl', () => {
   it('prefills a read-only token for the current user', () => {
     const url = new URL(fineGrainedTokenUrl());
     expect(url.origin + url.pathname).toBe('https://github.com/settings/personal-access-tokens/new');
-    expect(url.searchParams.get('name')).toBe('GitDash');
+    expect(url.searchParams.get('name')).toBe('IsItGreen');
     expect(url.searchParams.has('target_name')).toBe(false);
     for (const { key } of FINE_GRAINED_PERMISSIONS) expect(url.searchParams.get(key)).toBe('read');
     expect([...url.searchParams.values()]).not.toContain('write');
@@ -18,6 +18,6 @@ describe('fineGrainedTokenUrl', () => {
     const url = new URL(fineGrainedTokenUrl(owner));
     expect(url.searchParams.get('target_name')).toBe(owner);
     expect(url.searchParams.get('name')!.length).toBeLessThanOrEqual(40);
-    expect(fineGrainedTokenUrl('acme')).toContain('name=GitDash+acme');
+    expect(fineGrainedTokenUrl('acme')).toContain('name=IsItGreen+acme');
   });
 });

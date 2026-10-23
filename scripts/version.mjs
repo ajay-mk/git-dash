@@ -25,12 +25,12 @@ const FILES = [
   { path: 'package-lock.json', pattern: /^( {2}"version": ")([^"]+)(")/m },
   {
     path: 'package-lock.json',
-    pattern: /^( {4}"": \{\r?\n {6}"name": "gitdash",\r?\n {6}"version": ")([^"]+)(")/m,
+    pattern: /^( {4}"": \{\r?\n {6}"name": "isitgreen",\r?\n {6}"version": ")([^"]+)(")/m,
   },
   { path: 'src-tauri/tauri.conf.json', pattern: /^( {2}"version": ")([^"]+)(")/m },
   // The first `version` key in Cargo.toml, which belongs to [package].
   { path: 'src-tauri/Cargo.toml', pattern: /^(\[package\]\r?\n(?:[^[\r\n].*\r?\n|\r?\n)*?version = ")([^"]+)(")/m },
-  { path: 'src-tauri/Cargo.lock', pattern: /^(name = "gitdash"\r?\nversion = ")([^"]+)(")/m },
+  { path: 'src-tauri/Cargo.lock', pattern: /^(name = "isitgreen"\r?\nversion = ")([^"]+)(")/m },
 ];
 
 function read(file) {

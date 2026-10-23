@@ -1,5 +1,5 @@
 /**
- * The GitHub queries GitDash runs, by name.
+ * The GitHub queries IsItGreen runs, by name.
  *
  * The query documents themselves live in the backend
  * (`src-tauri/src/github_queries.rs`): the frontend can only name one of them
@@ -10,13 +10,13 @@
 
 import type { PinnedRepo } from '../../config/schema';
 
-export type GitHubOperation = 'GitDashRepos' | 'GitDashInbox' | 'GitDashViewerRepos' | 'GitDashOwnerRepos' | 'GitDashDetails';
+export type GitHubOperation = 'IsItGreenRepos' | 'IsItGreenInbox' | 'IsItGreenViewerRepos' | 'IsItGreenOwnerRepos' | 'IsItGreenDetails';
 
-export const INBOX_QUERY: GitHubOperation = 'GitDashInbox';
-export const VIEWER_REPOS_QUERY: GitHubOperation = 'GitDashViewerRepos';
-export const OWNER_REPOS_QUERY: GitHubOperation = 'GitDashOwnerRepos';
-export const DETAILS_QUERY: GitHubOperation = 'GitDashDetails';
-export const REPOS_QUERY: GitHubOperation = 'GitDashRepos';
+export const INBOX_QUERY: GitHubOperation = 'IsItGreenInbox';
+export const VIEWER_REPOS_QUERY: GitHubOperation = 'IsItGreenViewerRepos';
+export const OWNER_REPOS_QUERY: GitHubOperation = 'IsItGreenOwnerRepos';
+export const DETAILS_QUERY: GitHubOperation = 'IsItGreenDetails';
+export const REPOS_QUERY: GitHubOperation = 'IsItGreenRepos';
 
 /**
  * Open PRs fetched per repository. More than the widget shows, so that card
@@ -39,7 +39,7 @@ export interface RepoSpec {
   issues: { limit: number; label: string | null } | null;
 }
 
-/** Variables for `GitDashRepos`: one spec per repository, in order. */
+/** Variables for `IsItGreenRepos`: one spec per repository, in order. */
 export function buildReposRequest(repos: readonly PinnedRepo[]): { repos: RepoSpec[] } {
   return {
     repos: repos.map((repo) => {

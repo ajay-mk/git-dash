@@ -3,8 +3,8 @@ import type { GhStatus } from '../lib/transport';
 import { ExternalLink } from './ExternalLink';
 
 /**
- * How to make the GitHub CLI login available to GitDash, step by step, for
- * when gh was not found where GitDash looks for it.
+ * How to make the GitHub CLI login available to IsItGreen, step by step, for
+ * when gh was not found where IsItGreen looks for it.
  */
 export function GhSetupSteps({ status, onRecheck }: { status: GhStatus; onRecheck: () => void }) {
   const windows = status.searched.some((p) => p.includes('\\'));
@@ -25,10 +25,10 @@ export function GhSetupSteps({ status, onRecheck }: { status: GhStatus; onRechec
       </li>
       <li>
         In a terminal, run <code>gh auth login</code> and choose <em>GitHub.com</em>. With several accounts, run{' '}
-        <code>gh auth switch</code> to pick the one GitDash should use.
+        <code>gh auth switch</code> to pick the one IsItGreen should use.
       </li>
       <li>
-        GitDash only runs gh from these places, never from your <code>PATH</code>:
+        IsItGreen only runs gh from these places, never from your <code>PATH</code>:
         <ul className="gh-paths">
           {status.searched.map((p) => (
             <li key={p}>

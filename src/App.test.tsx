@@ -19,7 +19,7 @@ function storedTokens(github: TokenSummary, gitlab: TokenSummary = stored(false)
 }
 
 function saveConfig(config = defaultConfig()) {
-  localStorage.setItem('gitdash.config.v1', JSON.stringify(config));
+  localStorage.setItem('isitgreen.config.v1', JSON.stringify(config));
 }
 
 describe('App', () => {
@@ -36,7 +36,7 @@ describe('App', () => {
     storedTokens(stored(false));
     vi.mocked(check).mockResolvedValue({ version: '9.9.9', close: () => Promise.resolve() } as unknown as Update);
     render(<App />);
-    expect(await screen.findByText('GitDash 9.9.9 is available.')).toBeTruthy();
+    expect(await screen.findByText('IsItGreen 9.9.9 is available.')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Connect GitHub' })).toBeTruthy();
   });
 
@@ -69,7 +69,7 @@ describe('App', () => {
     vi.mocked(githubGraphql).mockReturnValue(new Promise(() => {}));
     await userEvent.type(screen.getByLabelText('Access token'), 'github_pat_NEW');
     await userEvent.click(screen.getByRole('button', { name: 'Save token' }));
-    expect(await screen.findByRole('heading', { name: 'GitDash' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'IsItGreen' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Connect GitHub' })).toBeNull();
   });
 
@@ -234,7 +234,7 @@ describe('App', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Theme' }), 'Dark');
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
-    expect(JSON.parse(localStorage.getItem('gitdash.config.v1')!)).toMatchObject({ theme: 'dark' });
+    expect(JSON.parse(localStorage.getItem('isitgreen.config.v1')!)).toMatchObject({ theme: 'dark' });
   });
 
   describe('reordering repo cards', () => {
@@ -245,7 +245,7 @@ describe('App', () => {
     }
 
     function savedOrder() {
-      const saved = JSON.parse(localStorage.getItem('gitdash.config.v1') ?? '{}') as { repos: { name: string }[] };
+      const saved = JSON.parse(localStorage.getItem('isitgreen.config.v1') ?? '{}') as { repos: { name: string }[] };
       return saved.repos.map((r) => r.name);
     }
 
@@ -338,7 +338,7 @@ describe('App', () => {
     const repos = [pinned('octo', 'one'), pinned('octo', 'two')];
 
     function saved() {
-      return JSON.parse(localStorage.getItem('gitdash.config.v1') ?? '{}') as {
+      return JSON.parse(localStorage.getItem('isitgreen.config.v1') ?? '{}') as {
         repos: { name: string; widgets: { type: string; limit?: number }[] }[];
         layout: { cardSpans: Record<string, number>; cardRows: Record<string, number>; collapsedWidgets: string[] };
       };

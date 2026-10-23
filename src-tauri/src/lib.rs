@@ -91,7 +91,7 @@ pub fn run() {
         ])
         .setup(|app| {
             let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("GitDash")
+                .title("IsItGreen")
                 .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
                 .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
                 .on_navigation(is_app_url)
@@ -118,7 +118,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building GitDash")
+        .expect("error while building IsItGreen")
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 window_state::save(app);

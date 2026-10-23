@@ -38,48 +38,48 @@ function write(path, text) {
 
 describe('updater manifest', () => {
   it('knows every installer the bundler signs', () => {
-    expect(installerOf('GitDash.app.tar.gz')).toBe('app');
-    expect(installerOf('GitDash_1.0.0_x64_en-US.msi')).toBe('msi');
-    expect(installerOf('GitDash_1.0.0_x64-setup.exe')).toBe('nsis');
-    expect(installerOf('GitDash_1.0.0_amd64.AppImage')).toBe('appimage');
-    expect(installerOf('GitDash_1.0.0_amd64.deb')).toBe('deb');
-    expect(installerOf('GitDash-1.0.0-1.x86_64.rpm')).toBe('rpm');
-    expect(() => installerOf('GitDash.dmg')).toThrow();
+    expect(installerOf('IsItGreen.app.tar.gz')).toBe('app');
+    expect(installerOf('IsItGreen_1.0.0_x64_en-US.msi')).toBe('msi');
+    expect(installerOf('IsItGreen_1.0.0_x64-setup.exe')).toBe('nsis');
+    expect(installerOf('IsItGreen_1.0.0_amd64.AppImage')).toBe('appimage');
+    expect(installerOf('IsItGreen_1.0.0_amd64.deb')).toBe('deb');
+    expect(installerOf('IsItGreen-1.0.0-1.x86_64.rpm')).toBe('rpm');
+    expect(() => installerOf('IsItGreen.dmg')).toThrow();
   });
 
   it('gives each macOS build its own archive name', () => {
-    expect(publishedName('GitDash.app.tar.gz', 'aarch64-apple-darwin')).toBe('GitDash_aarch64.app.tar.gz');
-    expect(publishedName('GitDash.app.tar.gz', 'x86_64-apple-darwin')).toBe('GitDash_x86_64.app.tar.gz');
-    expect(publishedName('GitDash_1.0.0_amd64.deb', 'x86_64-unknown-linux-gnu')).toBe('GitDash_1.0.0_amd64.deb');
+    expect(publishedName('IsItGreen.app.tar.gz', 'aarch64-apple-darwin')).toBe('IsItGreen_aarch64.app.tar.gz');
+    expect(publishedName('IsItGreen.app.tar.gz', 'x86_64-apple-darwin')).toBe('IsItGreen_x86_64.app.tar.gz');
+    expect(publishedName('IsItGreen_1.0.0_amd64.deb', 'x86_64-unknown-linux-gnu')).toBe('IsItGreen_1.0.0_amd64.deb');
   });
 
   it('collects signed update files and skips unsigned ones', () => {
     const bundle = tempDir();
     const out = tempDir();
     const entries = join(tempDir(), 'entries');
-    write(join(bundle, 'macos/GitDash.app.tar.gz'), 'archive');
-    write(join(bundle, 'macos/GitDash.app.tar.gz.sig'), 'c2ln\n');
-    write(join(bundle, 'macos/GitDash.app/Contents/Info.plist.sig'), 'not a release file');
-    write(join(bundle, 'dmg/GitDash_1.0.0_aarch64.dmg'), 'disk image');
+    write(join(bundle, 'macos/IsItGreen.app.tar.gz'), 'archive');
+    write(join(bundle, 'macos/IsItGreen.app.tar.gz.sig'), 'c2ln\n');
+    write(join(bundle, 'macos/IsItGreen.app/Contents/Info.plist.sig'), 'not a release file');
+    write(join(bundle, 'dmg/IsItGreen_1.0.0_aarch64.dmg'), 'disk image');
     expect(collect('aarch64-apple-darwin', bundle, out, entries)).toEqual({
-      'darwin-aarch64-app': { file: 'GitDash_aarch64.app.tar.gz' },
+      'darwin-aarch64-app': { file: 'IsItGreen_aarch64.app.tar.gz' },
     });
-    expect(readdirSync(out)).toEqual(['GitDash_aarch64.app.tar.gz']);
+    expect(readdirSync(out)).toEqual(['IsItGreen_aarch64.app.tar.gz']);
     expect(JSON.parse(readFileSync(join(entries, 'aarch64-apple-darwin.json'), 'utf8'))).toHaveProperty('darwin-aarch64-app');
   });
 
   it('fails when nothing was signed', () => {
     const bundle = tempDir();
-    write(join(bundle, 'deb/GitDash_1.0.0_amd64.deb'), 'package');
+    write(join(bundle, 'deb/IsItGreen_1.0.0_amd64.deb'), 'package');
     expect(() => collect('x86_64-unknown-linux-gnu', bundle, tempDir(), tempDir())).toThrow(/no signed update files/);
   });
 
   const entries = {
-    'darwin-aarch64-app': { file: 'GitDash_aarch64.app.tar.gz' },
-    'darwin-x86_64-app': { file: 'GitDash_x86_64.app.tar.gz' },
-    'windows-x86_64-msi': { file: 'GitDash_1.0.0_x64_en-US.msi' },
-    'windows-x86_64-nsis': { file: 'GitDash_1.0.0_x64-setup.exe' },
-    'linux-x86_64-appimage': { file: 'GitDash_1.0.0_amd64.AppImage' },
+    'darwin-aarch64-app': { file: 'IsItGreen_aarch64.app.tar.gz' },
+    'darwin-x86_64-app': { file: 'IsItGreen_x86_64.app.tar.gz' },
+    'windows-x86_64-msi': { file: 'IsItGreen_1.0.0_x64_en-US.msi' },
+    'windows-x86_64-nsis': { file: 'IsItGreen_1.0.0_x64-setup.exe' },
+    'linux-x86_64-appimage': { file: 'IsItGreen_1.0.0_amd64.AppImage' },
   };
   const published = Object.values(entries).map((e) => e.file);
   const signatures = Object.fromEntries(published.map((file) => [file, sig(file)]));
@@ -90,8 +90,8 @@ describe('updater manifest', () => {
     expect(latest.version).toBe('1.0.0');
     expect(latest.pub_date).toBe('1970-01-01T00:00:00.000Z');
     expect(latest.platforms['windows-x86_64-msi']).toEqual({
-      url: 'https://github.com/o/r/releases/download/v1.0.0/GitDash_1.0.0_x64_en-US.msi',
-      signature: signatures['GitDash_1.0.0_x64_en-US.msi'],
+      url: 'https://github.com/o/r/releases/download/v1.0.0/IsItGreen_1.0.0_x64_en-US.msi',
+      signature: signatures['IsItGreen_1.0.0_x64_en-US.msi'],
     });
     expect(latest.platforms['windows-x86_64']).toEqual(latest.platforms['windows-x86_64-nsis']);
     expect(latest.platforms['linux-x86_64']).toEqual(latest.platforms['linux-x86_64-appimage']);
@@ -110,15 +110,15 @@ describe('updater manifest', () => {
   });
 
   it('refuses files signed for another version', () => {
-    const stale = { ...signatures, 'GitDash_x86_64.app.tar.gz': sig('GitDash.app.tar.gz', '0.9.0') };
+    const stale = { ...signatures, 'IsItGreen_x86_64.app.tar.gz': sig('IsItGreen.app.tar.gz', '0.9.0') };
     expect(() => manifest({ ...base, signatures: stale })).toThrow(/signed for version 0.9.0/);
   });
 
   it('refuses unsigned files and files signed with another key', () => {
     const unsigned = { ...signatures };
-    delete unsigned['GitDash_1.0.0_amd64.AppImage'];
+    delete unsigned['IsItGreen_1.0.0_amd64.AppImage'];
     expect(() => manifest({ ...base, signatures: unsigned })).toThrow(/AppImage is not signed/);
-    const throwaway = { ...signatures, 'GitDash_1.0.0_x64-setup.exe': sig('GitDash_1.0.0_x64-setup.exe', '1.0.0', THROWAWAY) };
+    const throwaway = { ...signatures, 'IsItGreen_1.0.0_x64-setup.exe': sig('IsItGreen_1.0.0_x64-setup.exe', '1.0.0', THROWAWAY) };
     expect(() => manifest({ ...base, signatures: throwaway })).toThrow(/signed with key F7F6F5F4F3F2F1F0/);
   });
 

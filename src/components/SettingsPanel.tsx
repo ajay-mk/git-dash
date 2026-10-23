@@ -572,7 +572,7 @@ function OwnerTokens({ owners, open, onChanged }: { owners: OwnerToken[]; open: 
   return (
     <>
       <p className="hint">
-        Fine-grained tokens cover a single account or organization. Add one per owner and GitDash uses it for
+        Fine-grained tokens cover a single account or organization. Add one per owner and IsItGreen uses it for
         that owner&apos;s repositories; everything else uses the default token. With GitHub CLI installed, you can
         use its login for an owner instead. Each token needs read-only{' '}
         <PermissionList permissions={providers.github.tokenPermissions} />.{' '}
@@ -662,11 +662,11 @@ function updateStatus(state: Updates['state']): string | null {
     case 'checking':
       return 'Checking…';
     case 'current':
-      return 'GitDash is up to date.';
+      return 'IsItGreen is up to date.';
     case 'available':
-      return `GitDash ${state.version} is available.`;
+      return `IsItGreen ${state.version} is available.`;
     case 'downloading':
-      return `Downloading GitDash ${state.version}…`;
+      return `Downloading IsItGreen ${state.version}…`;
     case 'restarting':
       return 'Restarting…';
     case 'error':
@@ -898,8 +898,8 @@ export function SettingsPanel({
               <p className="hint">Used for the &ldquo;Needs you&rdquo; sidebar and any owner without its own token.</p>
               {accounts.github.defaultSource === 'gh' && (
                 <p className="hint">
-                  GitDash keeps no copy of this token and asks GitHub CLI for it when needed. It can also make changes;
-                  GitDash only ever sends read-only queries.
+                  IsItGreen keeps no copy of this token and asks GitHub CLI for it when needed. It can also make changes;
+                  IsItGreen only ever sends read-only queries.
                 </p>
               )}
               <TokenActions

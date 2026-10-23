@@ -246,7 +246,7 @@ export default function App() {
       <header className="topbar">
         <h1 className="brand">
           <img className="brand-logo" src={logo} alt="" />
-          GitDash
+          IsItGreen
         </h1>
         <div className="summary" aria-live="polite">
           {summary.failing > 0 && <span className="pill pill-bad">{summary.failing} failing</span>}

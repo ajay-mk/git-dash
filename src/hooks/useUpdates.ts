@@ -143,7 +143,7 @@ export function useUpdates(auto: boolean): Updates {
         setState({ kind: 'restarting', version });
         await relaunch();
       } catch (err) {
-        setState({ kind: 'error', message: `Could not install GitDash ${version}: ${message(err)}`, version });
+        setState({ kind: 'error', message: `Could not install IsItGreen ${version}: ${message(err)}`, version });
       } finally {
         installing.current = false;
       }

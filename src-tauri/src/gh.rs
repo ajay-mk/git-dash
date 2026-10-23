@@ -14,7 +14,7 @@
 //!   output is only matched against known phrases, never shown, since it
 //!   could in theory contain a token.
 //!
-//! GitDash never stores the token it gets this way; see `token.rs`.
+//! IsItGreen never stores the token it gets this way; see `token.rs`.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -79,7 +79,7 @@ fn candidates() -> Vec<PathBuf> {
     paths
 }
 
-/// Every place GitDash looks for gh on this system, for the setup
+/// Every place IsItGreen looks for gh on this system, for the setup
 /// instructions.
 pub fn searched() -> Vec<String> {
     candidates()
@@ -111,7 +111,7 @@ fn is_trusted(path: &Path) -> bool {
     path.is_file()
 }
 
-/// The GitHub CLI binary GitDash would run, if one is installed in a known
+/// The GitHub CLI binary IsItGreen would run, if one is installed in a known
 /// place.
 pub fn locate() -> Option<PathBuf> {
     candidates()
@@ -274,7 +274,7 @@ mod tests {
     /// A stand-in for `gh`: a shell script in a fresh private directory.
     fn fake_gh(name: &str, body: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("gitdash-gh-test-{}-{name}", std::process::id()));
+            std::env::temp_dir().join(format!("isitgreen-gh-test-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();

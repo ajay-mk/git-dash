@@ -2,7 +2,7 @@
   <img src="src/assets/logo.svg" alt="" width="96" height="96">
 </p>
 
-<h1 align="center">GitDash</h1>
+<h1 align="center">IsItGreen</h1>
 
 <p align="center">
   A glanceable, customizable desktop dashboard for your git repositories.
@@ -11,7 +11,7 @@
 Pin the repos you care about, choose what each card shows, and see at a glance
 what is failing, what needs your review, and what is waiting on you.
 
-GitDash supports GitHub and GitLab (gitlab.com or a self-hosted instance),
+IsItGreen supports GitHub and GitLab (gitlab.com or a self-hosted instance),
 side by side. It is built around a provider-agnostic model so other hosting
 providers can be added (see [Adding a provider](docs/development.md#adding-a-provider)).
 
@@ -26,11 +26,11 @@ providers can be added (see [Adding a provider](docs/development.md#adding-a-pro
 - **Desktop notifications** when something new needs you: a review request,
   an assignment, or one of your pull requests failing CI, getting changes
   requested or becoming ready to merge. They keep coming while the window is
-  minimized, as long as GitDash is running. Turn them off in Settings.
+  minimized, as long as IsItGreen is running. Turn them off in Settings.
 - **Auto-refresh** on a configurable interval. While the window is hidden only
   "Needs you" is checked, and only for notifications. The window reopens where
   you left it.
-- **Updates in the app**: GitDash checks for a new release at launch and every
+- **Updates in the app**: IsItGreen checks for a new release at launch and every
   few hours, and installs it when you choose *Restart to update*. Updates are
   signed and checked before they are installed.
 - Light and dark themes, and config export/import (it never contains your
@@ -43,8 +43,8 @@ providers can be added (see [Adding a provider](docs/development.md#adding-a-pro
    are not code-signed yet; [docs/installing.md](docs/installing.md) explains
    the first-launch warnings and how to verify the download.
 2. Create a read-only GitHub fine-grained token with
-   [this link](https://github.com/settings/personal-access-tokens/new?name=GitDash&description=Read-only+access+for+the+GitDash+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read),
-   pick the repositories it can see, and paste it into GitDash. For GitLab
+   [this link](https://github.com/settings/personal-access-tokens/new?name=IsItGreen&description=Read-only+access+for+the+IsItGreen+dashboard&metadata=read&contents=read&pull_requests=read&issues=read&statuses=read&actions=read),
+   pick the repositories it can see, and paste it into IsItGreen. For GitLab
    (gitlab.com or self-hosted), use a personal access token with the
    `read_api` scope instead. If you use [GitHub CLI](https://cli.github.com),
    you can choose *Use GitHub CLI login* instead of pasting a token, which
@@ -57,7 +57,7 @@ providers can be added (see [Adding a provider](docs/development.md#adding-a-pro
 
 Your tokens are stored in the operating system's keychain (or, with GitHub
 CLI, not stored at all) and are never exposed to the app's UI layer. All API
-calls are made by the Rust backend, which only runs GitDash's own read-only
+calls are made by the Rust backend, which only runs IsItGreen's own read-only
 GitHub queries and only allows read-only GraphQL queries for GitLab, to
 `api.github.com` and to the GitLab instance each GitLab token was saved for. See
 [SECURITY.md](SECURITY.md) for the full model and how to report issues.

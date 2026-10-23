@@ -12,7 +12,7 @@ const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 /// goes to the endpoint it was sent to.
 pub fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
-        .user_agent(concat!("GitDash/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("IsItGreen/", env!("CARGO_PKG_VERSION")))
         .https_only(true)
         .redirect(redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))

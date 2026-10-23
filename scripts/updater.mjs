@@ -48,7 +48,7 @@ export function installerOf(file) {
   return match[1];
 }
 
-/** The name a file is published under. Both macOS builds name theirs GitDash.app.tar.gz. */
+/** The name a file is published under. Both macOS builds name theirs IsItGreen.app.tar.gz. */
 export function publishedName(file, target) {
   if (!file.endsWith('.app.tar.gz')) return file;
   return `${file.slice(0, -'.app.tar.gz'.length)}_${target.split('-')[0]}.app.tar.gz`;
