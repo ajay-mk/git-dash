@@ -139,7 +139,7 @@ describe('useUpdates', () => {
     await waitFor(() =>
       expect(result.current.state).toEqual({
         kind: 'error',
-        message: 'Could not install GitDash 1.2.0: signature mismatch',
+        message: 'Could not install IsItGreen 1.2.0: signature mismatch',
         version: '1.2.0',
       }),
     );

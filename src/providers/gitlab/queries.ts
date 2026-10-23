@@ -98,7 +98,7 @@ export function buildProjectsQuery(repos: PinnedRepo[]): BuiltQuery {
   // GitLab answers a request with a bad token as if it were anonymous, so
   // private projects would look missing; the viewer tells the two apart.
   const viewer = `${VIEWER_ALIAS}: currentUser { username }`;
-  return { query: `query GitDashProjects${defs} { ${viewer} ${selections.join(' ')} }`, variables };
+  return { query: `query IsItGreenProjects${defs} { ${viewer} ${selections.join(' ')} }`, variables };
 }
 
 /**
@@ -106,7 +106,7 @@ export function buildProjectsQuery(repos: PinnedRepo[]): BuiltQuery {
  * project query's unfiltered page held none of them.
  */
 export const BRANCH_PIPELINE_QUERY = `
-query GitDashBranchPipeline($path: ID!, $ref: String!, $n: Int!) {
+query IsItGreenBranchPipeline($path: ID!, $ref: String!, $n: Int!) {
   project(fullPath: $path) {
     repository { tree { lastCommit { pipelines(ref: $ref, first: $n) { nodes { status ref source } } } } }
   }
@@ -120,7 +120,7 @@ query GitDashBranchPipeline($path: ID!, $ref: String!, $n: Int!) {
  * merge request dashboard; one whose approval was reset counts again.
  */
 export const INBOX_QUERY = `
-query GitDashInbox($n: Int!, $withReview: Boolean!, $withMine: Boolean!, $withAssigned: Boolean!) {
+query IsItGreenInbox($n: Int!, $withReview: Boolean!, $withMine: Boolean!, $withAssigned: Boolean!) {
   currentUser {
     username
     reviewRequestedMergeRequests(
@@ -139,7 +139,7 @@ query GitDashInbox($n: Int!, $withReview: Boolean!, $withMine: Boolean!, $withAs
 `;
 
 export const ASSIGNED_ISSUES_QUERY = `
-query GitDashAssignedIssues($me: String!, $n: Int!) {
+query IsItGreenAssignedIssues($me: String!, $n: Int!) {
   issues(assigneeUsernames: [$me], state: opened, first: $n, sort: UPDATED_DESC) {
     count nodes { ${ISSUE_FIELDS} }
   }
@@ -155,7 +155,7 @@ export const PROJECT_SUGGESTIONS_FETCHED = 100;
  * anonymous request, so the viewer tells an expired token from no projects.
  */
 export const PROJECTS_QUERY = `
-query GitDashProjectList($n: Int!) {
+query IsItGreenProjectList($n: Int!) {
   ${VIEWER_ALIAS}: currentUser { username }
   projects(membership: true, first: $n, sort: "latest_activity_desc") {
     nodes { fullPath archived lastActivityAt }
@@ -174,7 +174,7 @@ const DETAILS_COMMON = `
 
 /** One merge request or issue of a project, for the details view. */
 export const DETAILS_QUERY = `
-query GitDashDetails($path: ID!, $iid: String!, $n: Int!, $mr: Boolean!) {
+query IsItGreenDetails($path: ID!, $iid: String!, $n: Int!, $mr: Boolean!) {
   project(fullPath: $path) {
     mergeRequest(iid: $iid) @include(if: $mr) {
       ${DETAILS_COMMON}

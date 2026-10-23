@@ -263,6 +263,6 @@ jobs:
           gh release create "$TAG" ./* \
             --draft \
             --verify-tag \
-            --title "GitDash $TAG" \
+            --title "IsItGreen $TAG" \
             --generate-notes \
             --notes "These builds are not code-signed yet. See docs/installing.md in the repository for what to expect, and verify downloads against SHA256SUMS.txt."

@@ -14,13 +14,13 @@ function GitHubHelp() {
   return (
     <>
       <p>
-        GitDash needs a personal access token. It is stored in your operating system&apos;s keychain
+        IsItGreen needs a personal access token. It is stored in your operating system&apos;s keychain
         and only ever sent to <code>api.github.com</code>. The app itself never displays or exports it.
       </p>
       <ol className="help-list">
         <li>
           <ExternalLink href={provider.newTokenUrl()}>Create a fine-grained token</ExternalLink>. The link
-          fills in the read-only permissions GitDash needs:{' '}
+          fills in the read-only permissions IsItGreen needs:{' '}
           <PermissionList permissions={provider.tokenPermissions} />.
         </li>
         <li>
@@ -39,9 +39,9 @@ function GitHubHelp() {
           </li>
           <li>
             <strong>Classic token:</strong> works across organizations. No scopes are needed for public
-            repositories; private ones need <code>repo</code>, which also grants write access. GitDash
+            repositories; private ones need <code>repo</code>, which also grants write access. IsItGreen
             only ever sends read-only queries, but prefer fine-grained tokens where you can.{' '}
-            <ExternalLink href="https://github.com/settings/tokens/new?description=GitDash">
+            <ExternalLink href="https://github.com/settings/tokens/new?description=IsItGreen">
               Create a classic token
             </ExternalLink>
           </li>
@@ -57,7 +57,7 @@ function GitLabHelp({ host }: { host: string | null }) {
   return (
     <>
       <p>
-        GitDash needs a personal access token. It is stored in your operating system&apos;s keychain
+        IsItGreen needs a personal access token. It is stored in your operating system&apos;s keychain
         and only ever sent to <code>{host ?? 'your GitLab instance'}</code>. The app itself never displays or
         exports it.
       </p>
@@ -101,10 +101,10 @@ function GitHubCliOption({ path, busy, onLink }: { path: string; busy: boolean; 
       </button>
       <p className="hint">
         Uses the account GitHub CLI is signed in to (<code className="url-text">{path}</code>); sign in first with{' '}
-        <code>gh auth login</code> if you have not. GitDash keeps no
-        copy of the token; it asks gh for it when needed, so <code>gh auth logout</code> disconnects GitDash too, within a minute.
+        <code>gh auth login</code> if you have not. IsItGreen keeps no
+        copy of the token; it asks gh for it when needed, so <code>gh auth logout</code> disconnects IsItGreen too, within a minute.
         Organization repositories work if the organization approved GitHub CLI, even where personal access tokens
-        are blocked. A GitHub CLI token can also make changes; GitDash only ever sends read-only queries.
+        are blocked. A GitHub CLI token can also make changes; IsItGreen only ever sends read-only queries.
       </p>
       <p className="setup-or">or paste a personal access token</p>
     </div>
@@ -210,7 +210,7 @@ export function TokenSetup({ provider: initial = 'github', gitlabHost, onDone, o
         {providerId === 'github' && gh.status && !gh.status.path && (
           <GhSetupHelp summary="Use your GitHub CLI login instead" status={gh.status} onRecheck={gh.recheck}>
             <p className="hint">
-              Helps when your organization blocks personal access tokens but has approved GitHub CLI. GitDash keeps
+              Helps when your organization blocks personal access tokens but has approved GitHub CLI. IsItGreen keeps
               no copy of the token, and only ever sends read-only queries.
             </p>
           </GhSetupHelp>

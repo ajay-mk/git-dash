@@ -99,7 +99,7 @@ pub async fn token_clear(
     blocking(&state.tokens, move |t| t.clear(provider, &slot)).await
 }
 
-/// Runs one of GitDash's own read-only GitHub queries (`github_queries.rs`),
+/// Runs one of IsItGreen's own read-only GitHub queries (`github_queries.rs`),
 /// named by `operation`, using the token configured for `owner` if there is
 /// one and the default token otherwise. The frontend never sends query text.
 #[tauri::command]
@@ -138,7 +138,7 @@ pub async fn github_graphql(
 
 /// Reads the token for a slot linked to the GitHub CLI account `login`. It is
 /// used only once GitHub confirms it belongs to that account, so switching
-/// accounts in gh cannot silently change whose data GitDash shows.
+/// accounts in gh cannot silently change whose data IsItGreen shows.
 async fn read_gh(state: &State<'_, AppState>, slot: &Slot, login: String) -> Result<String> {
     let _one_at_a_time = state.gh_read.lock().await;
     // Whoever held the lock before may have just read it.
@@ -172,11 +172,11 @@ async fn read_gh(state: &State<'_, AppState>, slot: &Slot, login: String) -> Res
     Ok(token)
 }
 
-/// Whether the GitHub CLI is installed where GitDash looks for it, and where.
+/// Whether the GitHub CLI is installed where IsItGreen looks for it, and where.
 #[derive(serde::Serialize)]
 pub struct GhStatus {
     path: Option<String>,
-    /// Every place GitDash looks, for the setup instructions.
+    /// Every place IsItGreen looks, for the setup instructions.
     searched: Vec<String>,
 }
 
@@ -192,7 +192,7 @@ pub async fn gh_status() -> Result<GhStatus> {
 }
 
 /// Links the default slot, or with `owner` that owner's slot, to the account
-/// the GitHub CLI is signed in to. GitDash keeps no copy of the token: it is
+/// the GitHub CLI is signed in to. IsItGreen keeps no copy of the token: it is
 /// read from gh when needed. Returns the login the link is pinned to.
 #[tauri::command]
 pub async fn token_link_gh(state: State<'_, AppState>, owner: Option<String>) -> Result<String> {

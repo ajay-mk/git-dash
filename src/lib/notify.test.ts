@@ -182,7 +182,7 @@ describe('inboxAlerts', () => {
       pr({ url: `https://github.com/o/r/pull/${i}`, number: i, updatedAt: FRESH }),
     );
     expect(inboxAlerts(inbox(), inbox({ reviewRequests: counted(...items) }), SINCE)).toEqual([
-      { title: `${MAX_ALERTS + 1} new items need you`, body: 'Open GitDash to see them.' },
+      { title: `${MAX_ALERTS + 1} new items need you`, body: 'Open IsItGreen to see them.' },
     ]);
   });
 });

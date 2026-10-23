@@ -1,4 +1,4 @@
-//! The GitHub GraphQL documents GitDash can run.
+//! The GitHub GraphQL documents IsItGreen can run.
 //!
 //! The frontend never sends query text for GitHub. It names one of the
 //! operations below and passes variables; repository cards send a list of
@@ -63,7 +63,7 @@ macro_rules! assigned_events {
 }
 
 const INBOX: &str = concat!(
-    "query GitDashInbox(",
+    "query IsItGreenInbox(",
     "$n: Int!, $events: Int!, ",
     "$reviewQ: String!, $mineQ: String!, $assignedQ: String!, ",
     "$withReview: Boolean!, $withMine: Boolean!, $withAssigned: Boolean!",
@@ -103,7 +103,7 @@ macro_rules! suggestion_order {
 }
 
 const VIEWER_REPOS: &str = concat!(
-    "query GitDashViewerRepos($n: Int!) { viewer { repositories(",
+    "query IsItGreenViewerRepos($n: Int!) { viewer { repositories(",
     "first: $n, isArchived: false, ",
     "affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], ",
     "ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], ",
@@ -112,7 +112,7 @@ const VIEWER_REPOS: &str = concat!(
 );
 
 const OWNER_REPOS: &str = concat!(
-    "query GitDashOwnerRepos($owner: String!, $n: Int!) { repositoryOwner(login: $owner) { ",
+    "query IsItGreenOwnerRepos($owner: String!, $n: Int!) { repositoryOwner(login: $owner) { ",
     "repositories(first: $n, isArchived: false, ",
     suggestion_order!(),
     ") { nodes { nameWithOwner isArchived pushedAt } } } }"
@@ -125,7 +125,7 @@ macro_rules! details_common {
 }
 
 const DETAILS: &str = concat!(
-    "query GitDashDetails($url: URI!, $n: Int!) { resource(url: $url) { __typename ",
+    "query IsItGreenDetails($url: URI!, $n: Int!) { resource(url: $url) { __typename ",
     "... on PullRequest { ",
     details_common!(),
     " baseRefName headRefName additions deletions changedFiles ",
@@ -146,10 +146,10 @@ const DETAILS: &str = concat!(
 /// The fixed operations, by the name the frontend uses.
 fn fixed(operation: &str) -> Option<&'static str> {
     match operation {
-        "GitDashInbox" => Some(INBOX),
-        "GitDashViewerRepos" => Some(VIEWER_REPOS),
-        "GitDashOwnerRepos" => Some(OWNER_REPOS),
-        "GitDashDetails" => Some(DETAILS),
+        "IsItGreenInbox" => Some(INBOX),
+        "IsItGreenViewerRepos" => Some(VIEWER_REPOS),
+        "IsItGreenOwnerRepos" => Some(OWNER_REPOS),
+        "IsItGreenDetails" => Some(DETAILS),
         _ => None,
     }
 }
@@ -243,7 +243,7 @@ pub fn repos_query(repos: &[RepoSpec]) -> Result<(String, Value)> {
     }
 
     let query = format!(
-        "query GitDashRepos({}) {{ {} rateLimit {{ remaining limit resetAt }} }}",
+        "query IsItGreenRepos({}) {{ {} rateLimit {{ remaining limit resetAt }} }}",
         defs.join(", "),
         selections.join(" ")
     );
@@ -251,13 +251,13 @@ pub fn repos_query(repos: &[RepoSpec]) -> Result<(String, Value)> {
 }
 
 /// Resolves what the frontend asked for into a document and its variables.
-/// `GitDashRepos` takes `{ "repos": [RepoSpec, ...] }`; the fixed operations
+/// `IsItGreenRepos` takes `{ "repos": [RepoSpec, ...] }`; the fixed operations
 /// take their own variables as they are.
 pub fn resolve(operation: &str, variables: Value) -> Result<(String, Value)> {
     if !variables.is_object() {
         return Err(Error::ForbiddenOperation);
     }
-    if operation == "GitDashRepos" {
+    if operation == "IsItGreenRepos" {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Args {
@@ -284,10 +284,10 @@ mod tests {
     #[test]
     fn fixed_operations_are_read_only_and_named() {
         for name in [
-            "GitDashInbox",
-            "GitDashViewerRepos",
-            "GitDashOwnerRepos",
-            "GitDashDetails",
+            "IsItGreenInbox",
+            "IsItGreenViewerRepos",
+            "IsItGreenOwnerRepos",
+            "IsItGreenDetails",
         ] {
             let doc = fixed(name).unwrap();
             ensure_read_only(doc).unwrap();
@@ -301,7 +301,7 @@ mod tests {
         for op in [
             "mutation { addStar(input: {}) { clientMutationId } }",
             "{ viewer { login } }",
-            "GitDashUnknown",
+            "IsItGreenUnknown",
             "",
         ] {
             assert!(matches!(
@@ -309,7 +309,7 @@ mod tests {
                 Err(Error::ForbiddenOperation)
             ));
         }
-        assert!(resolve("GitDashInbox", json!([])).is_err());
+        assert!(resolve("IsItGreenInbox", json!([])).is_err());
     }
 
     #[test]
@@ -373,12 +373,12 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    resolve("GitDashRepos", variables.clone()),
+                    resolve("IsItGreenRepos", variables.clone()),
                     Err(Error::ForbiddenOperation)
                 ),
                 "{variables}"
             );
         }
-        assert!(resolve("GitDashRepos", json!({ "repos": [one()] })).is_ok());
+        assert!(resolve("IsItGreenRepos", json!({ "repos": [one()] })).is_ok());
     }
 }

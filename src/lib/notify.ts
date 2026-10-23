@@ -147,7 +147,7 @@ export function inboxAlerts(
   }
 
   if (alerts.length > MAX_ALERTS) {
-    return [{ title: `${alerts.length} new items need you`, body: 'Open GitDash to see them.' }];
+    return [{ title: `${alerts.length} new items need you`, body: 'Open IsItGreen to see them.' }];
   }
   return alerts;
 }

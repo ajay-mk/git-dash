@@ -8,7 +8,7 @@ export function UpdateBanner({ updates }: { updates: Updates }) {
       if (updates.dismissed) return null;
       return (
         <div className="banner banner-info update-banner" role="status">
-          <span>GitDash {state.version} is available.</span>
+          <span>IsItGreen {state.version} is available.</span>
           <span className="banner-actions">
             <button type="button" className="btn btn-primary" onClick={updates.install}>
               Restart to update
@@ -23,7 +23,7 @@ export function UpdateBanner({ updates }: { updates: Updates }) {
       return (
         <div className="banner banner-info update-banner" role="status">
           <span>
-            Downloading GitDash {state.version}
+            Downloading IsItGreen {state.version}
             {state.percent === null ? '…' : `… ${state.percent}%`}
           </span>
         </div>
@@ -31,7 +31,7 @@ export function UpdateBanner({ updates }: { updates: Updates }) {
     case 'restarting':
       return (
         <div className="banner banner-info update-banner" role="status">
-          <span>Restarting into GitDash {state.version}…</span>
+          <span>Restarting into IsItGreen {state.version}…</span>
         </div>
       );
     case 'error':

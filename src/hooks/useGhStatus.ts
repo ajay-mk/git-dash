@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ghStatus, type GhStatus } from '../lib/transport';
 
 /**
- * Whether GitDash found the GitHub CLI (`undefined` until checked). Checks
+ * Whether IsItGreen found the GitHub CLI (`undefined` until checked). Checks
  * whenever `enabled` becomes true (e.g. each time Settings opens) and on
  * `recheck()`, so installing gh while the app is open is picked up.
  */

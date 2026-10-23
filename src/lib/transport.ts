@@ -63,7 +63,7 @@ async function call<T>(command: string, args: Record<string, unknown>): Promise<
 
 /**
  * Where a token comes from: one stored in the keychain, or read from the
- * GitHub CLI when needed (GitDash keeps no copy of that one).
+ * GitHub CLI when needed (IsItGreen keeps no copy of that one).
  */
 export type TokenSource = 'token' | 'gh';
 
@@ -108,11 +108,11 @@ export const tokens = {
 export interface GhStatus {
   /** Where the GitHub CLI was found, or `null` if it is not installed in a known place. */
   path: string | null;
-  /** Every place GitDash looks for it on this system. */
+  /** Every place IsItGreen looks for it on this system. */
   searched: string[];
 }
 
-/** Whether the GitHub CLI is installed where GitDash looks for it. */
+/** Whether the GitHub CLI is installed where IsItGreen looks for it. */
 export function ghStatus(): Promise<GhStatus> {
   return call<GhStatus>('gh_status', {});
 }
@@ -130,7 +130,7 @@ export interface GraphQLResponse<T> {
 }
 
 /**
- * Runs one of GitDash's read-only GitHub queries, by name (the documents live
+ * Runs one of IsItGreen's read-only GitHub queries, by name (the documents live
  * in the backend). The backend uses the token configured for `owner` if
  * there is one, and the default token otherwise.
  */

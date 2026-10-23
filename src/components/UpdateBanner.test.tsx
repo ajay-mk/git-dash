@@ -12,7 +12,7 @@ describe('UpdateBanner', () => {
   it('offers an available update', async () => {
     const u = updates({ kind: 'available', version: '1.2.0' });
     render(<UpdateBanner updates={u} />);
-    expect(screen.getByText('GitDash 1.2.0 is available.')).toBeTruthy();
+    expect(screen.getByText('IsItGreen 1.2.0 is available.')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Restart to update' }));
     expect(u.install).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Later' }));
@@ -31,10 +31,10 @@ describe('UpdateBanner', () => {
 
   it('shows progress and lets a failed install be retried', async () => {
     const { rerender } = render(<UpdateBanner updates={updates({ kind: 'downloading', version: '1.2.0', percent: 40 })} />);
-    expect(screen.getByText('Downloading GitDash 1.2.0… 40%')).toBeTruthy();
-    const u = updates({ kind: 'error', message: 'Could not install GitDash 1.2.0: offline', version: '1.2.0' });
+    expect(screen.getByText('Downloading IsItGreen 1.2.0… 40%')).toBeTruthy();
+    const u = updates({ kind: 'error', message: 'Could not install IsItGreen 1.2.0: offline', version: '1.2.0' });
     rerender(<UpdateBanner updates={u} />);
-    expect(screen.getByRole('alert').textContent).toContain('Could not install GitDash 1.2.0: offline');
+    expect(screen.getByRole('alert').textContent).toContain('Could not install IsItGreen 1.2.0: offline');
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(u.install).toHaveBeenCalled();
   });
