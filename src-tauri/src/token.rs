@@ -321,6 +321,15 @@ fn delete(entry: &keyring::Entry) -> Result<()> {
     }
 }
 
+/// Deletes `account` under both the current and the legacy service. Both are
+/// attempted even if the first fails, so one failure never leaves the other
+/// copy behind; the first error is returned.
+fn delete_both(account: &str) -> Result<()> {
+    let current = entry(account).and_then(|e| delete(&e));
+    let legacy = legacy_entry(account).and_then(|e| delete(&e));
+    current.and(legacy)
+}
+
 impl Inner {
     fn index(&mut self, provider: Provider) -> Result<&mut Index> {
         match self.indexes.entry(provider) {
@@ -469,8 +478,7 @@ impl TokenStore {
         // save can never lose it. The link is in force either way: resolve()
         // never reads the keychain for a linked slot.
         let account = slot.account(provider);
-        delete(&entry(&account)?)?;
-        delete(&legacy_entry(&account)?)?;
+        delete_both(&account)?;
         Ok(())
     }
 
@@ -609,8 +617,7 @@ impl TokenStore {
         inner.cache.remove(&(provider, slot.clone()));
         inner.gh_checked.remove(&(provider, slot.clone()));
         let account = slot.account(provider);
-        delete(&entry(&account)?)?;
-        delete(&legacy_entry(&account)?)?;
+        delete_both(&account)?;
         let index = inner.index(provider)?;
         match slot {
             Slot::Default => {
