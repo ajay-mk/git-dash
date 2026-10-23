@@ -22,7 +22,8 @@ when a version tag is pushed.
 3. The workflow checks that the tag matches the app version, builds installers
    for macOS (Apple Silicon and Intel), Windows and Linux, then waits for you
    to approve the *Sign the update files* job (Actions tab, **Review
-   deployments**). After signing it creates a **draft** release with the
+   deployments**). Before approving, check that the run's commit is the one
+   you tagged on `main`. After signing it creates a **draft** release with the
    installers, the signed update files, `latest.json` and `SHA256SUMS.txt`.
 4. Review the draft on the Releases page, edit the notes and publish it.
    Publishing is what offers the update to installed apps: they read
@@ -53,7 +54,11 @@ Environments → `release`), never in repository secrets:
 
 Repository secrets are readable by every workflow on every branch, so anyone
 or any app that can push to the repository could use the key. The
-environment closes that, together with a tag ruleset. Set up once:
+environment closes that, together with a tag ruleset. **All three steps below
+are required before releasing.** A tag runs the copy of `release.yml` in the
+tagged commit, so the workflow's own checks (such as the tag being on `main`)
+only hold if nobody else can create release tags: the tag ruleset is what
+guarantees that. Set up once:
 
 1. **Environment `release`:** under *Deployment branches and tags*, allow only
    tags matching `v*`. Under *Required reviewers*, add yourself, so each signing
