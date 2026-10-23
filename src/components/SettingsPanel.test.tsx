@@ -1,10 +1,10 @@
 import { requestPermission } from '@tauri-apps/plugin-notification';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig, MAX_REPOS, type DashboardConfig } from '../config/schema';
-import { githubGraphql, gitlabGraphql, type OwnerToken, type TokenSummary } from '../lib/transport';
+import { ghStatus, githubGraphql, gitlabGraphql, tokens, type OwnerToken, type TokenSummary } from '../lib/transport';
 import { setGitLabHost } from '../lib/url';
 import type { ProviderId } from '../providers/types';
 import { pinned } from '../test/fixtures';
@@ -434,6 +434,42 @@ describe('SettingsPanel', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Account or organization' }), 'acme');
     const link = screen.getByRole('link', { name: 'Create a token for acme' });
     expect(new URL(link.getAttribute('href')!).searchParams.get('target_name')).toBe('acme');
+  });
+
+  describe('GitHub CLI', () => {
+    it('shows where the default token comes from and how to unlink it', async () => {
+      const { onSignOut } = setup({}, { ...GITHUB_ONLY, github: { ...GITHUB_ONLY.github!, defaultSource: 'gh' } });
+      expect(screen.getByText(/from GitHub CLI/)).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Unlink GitHub CLI' }));
+      expect(onSignOut).toHaveBeenCalledExactlyOnceWith('github');
+      expect(screen.queryByRole('button', { name: 'Remove GitHub token' })).toBeNull();
+    });
+
+    it('labels per-owner links', () => {
+      const owners: OwnerToken[] = [{ owner: 'acme', login: 'octocat', source: 'gh' }];
+      setup({}, GITHUB_ONLY, owners);
+      expect(screen.getByText(/\(GitHub CLI\)/)).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Unlink GitHub CLI for acme' })).toBeTruthy();
+    });
+
+    it('links an owner to the GitHub CLI login when gh is installed', async () => {
+      vi.mocked(ghStatus).mockResolvedValue({ path: '/usr/bin/gh', searched: ['/usr/bin/gh'] });
+      vi.mocked(tokens.linkGh).mockResolvedValue('octocat');
+      setup();
+      const button = await screen.findByRole('button', { name: 'Use GitHub CLI' });
+      expect(button.hasAttribute('disabled')).toBe(true);
+      await userEvent.type(screen.getByRole('textbox', { name: 'Account or organization' }), 'acme');
+      await userEvent.click(button);
+      expect(tokens.linkGh).toHaveBeenCalledExactlyOnceWith('acme');
+      expect(tokens.set).not.toHaveBeenCalled();
+    });
+
+    it('is not offered without gh, which comes with setup steps instead', async () => {
+      setup();
+      await waitFor(() => expect(ghStatus).toHaveBeenCalled());
+      expect(screen.queryByRole('button', { name: 'Use GitHub CLI' })).toBeNull();
+      expect(await screen.findByText('Use your GitHub CLI login for an owner')).toBeTruthy();
+    });
   });
 
   describe('backup', () => {

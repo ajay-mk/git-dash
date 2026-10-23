@@ -1,8 +1,8 @@
 # Access tokens
 
-GitDash reads GitHub and GitLab with personal access tokens that you create.
-They are stored in your operating system's keychain and never shown again
-after you save them. All requests are read-only; see
+GitDash reads GitHub and GitLab with personal access tokens that you create,
+or for GitHub with your [GitHub CLI](#github-cli) login. Tokens are stored in
+your operating system's keychain and never shown again after you save them. All requests are read-only; see
 [SECURITY.md](../SECURITY.md). You can connect either service or both; the
 rest of this page covers GitHub first, then [GitLab](#gitlab).
 
@@ -37,7 +37,76 @@ that some results are hidden.
 
 An organization can require owner approval for fine-grained tokens, or forbid classic or long-lived tokens. While a
 fine-grained token is pending approval, or when a repository was not selected
-for it, GitHub reports the repository as not found.
+for it, GitHub reports the repository as not found. If the organization has
+approved GitHub CLI, its login usually still works; see below.
+
+## GitHub CLI
+
+If [GitHub CLI](https://cli.github.com) (`gh`) is installed and signed in
+(`gh auth login`), the setup screen offers **Use GitHub CLI login**. GitDash
+then uses the account gh is signed in to:
+
+- **No copy is stored.** GitDash records only which account it is linked to,
+  and asks gh for the token when it needs one (`gh auth token`), keeping it in
+  memory only. `gh auth refresh` and signing in again are picked up on their
+  own; `gh auth logout` disconnects GitDash too, within a minute (GitDash asks
+  gh again at least once a minute, since signing out does not revoke the token).
+- **Organizations that block personal access tokens.** gh's token is an OAuth
+  token. It can read an organization's private repositories when the
+  organization has approved GitHub CLI as an OAuth app, which many have, even
+  where fine-grained tokens need approval or are blocked. If the organization
+  has not approved it, only public data is visible. For SAML SSO, sign in
+  through the organization's SSO and authorize GitHub CLI again.
+- **It can also make changes.** gh always asks GitHub for at least the `repo`,
+  `read:org` and `gist` scopes, and GitHub has no read-only scope for private
+  repositories. GitDash itself only ever runs its own read-only queries
+  ([SECURITY.md](../SECURITY.md)), but prefer a fine-grained token where your
+  organization allows one.
+- **Pinned to one account.** GitDash links to the account gh is using at that
+  moment and keeps using that account, even after `gh auth switch`. To link
+  another account, switch gh to it first, then link again. In **Settings →
+  Access tokens → Per-owner tokens**, enter an owner and choose **Use GitHub
+  CLI** to use gh's login for just that owner.
+- **Where gh must be installed.** GitDash only runs gh from its usual install
+  locations, never from `PATH`; see [Setting up GitHub CLI](#setting-up-github-cli).
+- GitDash never uses `GH_TOKEN` or `GITHUB_TOKEN`, even if they are set; only
+  tokens gh itself stores are used. gh 2.40 or newer is needed.
+
+### Setting up GitHub CLI
+
+If the setup screen does not offer **Use GitHub CLI login**, open *Use your
+GitHub CLI login instead* there (or in Settings under per-owner tokens) for
+these steps with the exact locations for your system:
+
+1. Install GitHub CLI: `brew install gh` on macOS, `winget install --id
+   GitHub.cli` on Windows, or see the
+   [install guide](https://github.com/cli/cli#installation).
+2. In a terminal, run `gh auth login` and choose *GitHub.com*. With several
+   accounts, `gh auth switch` picks the one GitDash should use.
+3. Make sure gh is in one of the places GitDash looks:
+
+   | System | Locations |
+   | --- | --- |
+   | macOS | `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts) |
+   | Linux | `/usr/bin`, `/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/snap/bin`, `/run/current-system/sw/bin` (NixOS) |
+   | macOS and Linux | `~/.nix-profile/bin`, `/nix/var/nix/profiles/default/bin` (Nix) |
+   | Windows | `%ProgramFiles%\GitHub CLI` (official installer), `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `%USERPROFILE%\scoop\shims` (Chocolatey's folder is left out: other users of the PC could create it) |
+
+   If `which gh` shows somewhere else (for example `~/.local/bin` or a
+   version manager), link it into one of them:
+
+   ```sh
+   sudo mkdir -p /usr/local/bin && sudo ln -sf "$(which gh)" /usr/local/bin/gh
+   ```
+
+   On Windows, if `where gh` shows another location, install gh again with
+   one of the installers above. GitDash refuses a gh that anyone could
+   replace (one in, or linked from, a folder everyone can write to).
+4. Choose **Check again**, then **Use GitHub CLI login**.
+
+If GitDash then says GitHub CLI is not signed in, run `gh auth login` again
+(or `gh auth status` to see which accounts gh knows). Once fixed in gh, the
+next refresh works without linking again.
 
 ## Several accounts or organizations
 
@@ -54,7 +123,8 @@ each organization:
    its token. All other repositories use the default token.
 
 The **"Needs you"** sidebar searches with the default token, then merges in
-results from per-owner tokens that belong to the same GitHub user,
+results from per-owner tokens (or GitHub CLI links) that belong to the same
+GitHub user,
 de-duplicated. Items visible only to a token that belongs to a *different*
 user are not shown, and per-owner tokens that fail are skipped there (their
 repository cards show the error instead).

@@ -1,6 +1,8 @@
 mod commands;
 mod error;
+mod gh;
 mod github;
+mod github_queries;
 mod gitlab;
 mod graphql_guard;
 mod http;
@@ -60,6 +62,7 @@ pub fn run() {
         tokens: Arc::new(token::TokenStore::default()),
         github: github::GitHubClient::new().expect("failed to initialise HTTP client"),
         gitlab: gitlab::GitLabClient::new().expect("failed to initialise HTTP client"),
+        gh_read: tauri::async_runtime::Mutex::new(()),
     };
 
     let tokens = Arc::clone(&state.tokens);
@@ -79,6 +82,8 @@ pub fn run() {
             commands::token_list,
             commands::token_set,
             commands::token_clear,
+            commands::token_link_gh,
+            commands::gh_status,
             commands::github_graphql,
             commands::gitlab_graphql,
             commands::open_external,

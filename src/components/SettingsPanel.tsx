@@ -24,6 +24,8 @@ import {
   type WidgetConfig,
   type WidgetType,
 } from '../config/schema';
+import { useGhStatus } from '../hooks/useGhStatus';
+import { GhSetupHelp } from './GhSetup';
 import type { Updates } from '../hooks/useUpdates';
 import { canNotify } from '../lib/notify';
 import { matchRepos } from '../lib/suggest';
@@ -451,8 +453,10 @@ function Backup({ config, update }: { config: DashboardConfig; update: Update })
   );
 }
 
-function TokenActions({ provider, onChangeToken, onSignOut }: {
+function TokenActions({ provider, viaGh = false, onChangeToken, onSignOut }: {
   provider: ProviderId;
+  /** The default token comes from the GitHub CLI rather than the keychain. */
+  viaGh?: boolean;
   onChangeToken: (provider: ProviderId) => void;
   onSignOut: (provider: ProviderId) => void;
 }) {
@@ -460,10 +464,10 @@ function TokenActions({ provider, onChangeToken, onSignOut }: {
   return (
     <div className="actions">
       <button type="button" className="btn" onClick={() => onChangeToken(provider)}>
-        Replace {label} token
+        {viaGh ? `Change ${label} connection` : `Replace ${label} token`}
       </button>
       <button type="button" className="btn btn-danger" onClick={() => onSignOut(provider)}>
-        Remove {label} token
+        {viaGh ? 'Unlink GitHub CLI' : `Remove ${label} token`}
       </button>
     </div>
   );
@@ -501,12 +505,14 @@ const MAX_OWNER_TOKENS = 20;
  * organization, so each owner can get its own. Only the owner and the login
  * GitHub reports for the token are ever shown; tokens cannot be read back.
  */
-function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: () => void }) {
+function OwnerTokens({ owners, open, onChanged }: { owners: OwnerToken[]; open: boolean; onChanged: () => void }) {
   const [owner, setOwner] = useState('');
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tokenInput = useRef<HTMLInputElement>(null);
+  const gh = useGhStatus(open);
+  const ghPath = gh.status?.path;
 
   const replacing = owners.some((o) => o.owner === owner.trim().toLowerCase());
   const target = isValidOwner(owner.trim()) ? owner.trim() : null;
@@ -532,6 +538,27 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
     }
   }
 
+  /** Uses the GitHub CLI's login for this owner instead of a pasted token. */
+  async function linkGh() {
+    const name = owner.trim();
+    if (!isValidOwner(name)) return setError('Enter a GitHub account or organization name, e.g. acme.');
+    if (!replacing && owners.length >= MAX_OWNER_TOKENS) {
+      return setError(`You can add up to ${MAX_OWNER_TOKENS} tokens.`);
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await tokens.linkGh(name);
+      setOwner('');
+      setToken('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not use the GitHub CLI login');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(name: string) {
     setError(null);
     try {
@@ -546,7 +573,8 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
     <>
       <p className="hint">
         Fine-grained tokens cover a single account or organization. Add one per owner and GitDash uses it for
-        that owner&apos;s repositories; everything else uses the default token. Each token needs read-only{' '}
+        that owner&apos;s repositories; everything else uses the default token. With GitHub CLI installed, you can
+        use its login for an owner instead. Each token needs read-only{' '}
         <PermissionList permissions={providers.github.tokenPermissions} />.{' '}
         <ExternalLink href={providers.github.newTokenUrl(target)}>
           {target ? `Create a token for ${target}` : 'Create a token'}
@@ -557,7 +585,11 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
           {owners.map((o) => (
             <li key={o.owner} className="token-item">
               <span className="token-item-name">
-                <strong>{o.owner}</strong> <span className="muted">via {o.login}</span>
+                <strong>{o.owner}</strong>{' '}
+                <span className="muted">
+                  via {o.login}
+                  {o.source === 'gh' && ' (GitHub CLI)'}
+                </span>
               </span>
               <button
                 type="button"
@@ -573,7 +605,7 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
               <button
                 type="button"
                 className="icon-btn danger"
-                aria-label={`Remove token for ${o.owner}`}
+                aria-label={o.source === 'gh' ? `Unlink GitHub CLI for ${o.owner}` : `Remove token for ${o.owner}`}
                 onClick={() => void remove(o.owner)}
               >
                 ✕
@@ -611,8 +643,16 @@ function OwnerTokens({ owners, onChanged }: { owners: OwnerToken[]; onChanged: (
         >
           {busy ? 'Verifying…' : replacing ? 'Replace' : 'Add'}
         </button>
+        {ghPath && (
+          <button type="button" className="btn" disabled={busy || owner.trim().length === 0} onClick={() => void linkGh()}>
+            Use GitHub CLI
+          </button>
+        )}
       </form>
       {error && <p className="error-text" role="alert">{error}</p>}
+      {gh.status && !gh.status.path && (
+        <GhSetupHelp summary="Use your GitHub CLI login for an owner" status={gh.status} onRecheck={gh.recheck} />
+      )}
     </>
   );
 }
@@ -847,15 +887,29 @@ export function SettingsPanel({
             <>
               <p>
                 {accounts.github.defaultLogin ? (
-                  <>Default token: GitHub account <strong>{accounts.github.defaultLogin}</strong>.</>
+                  <>
+                    Default token: GitHub account <strong>{accounts.github.defaultLogin}</strong>
+                    {accounts.github.defaultSource === 'gh' && <>, from GitHub CLI</>}.
+                  </>
                 ) : (
                   'Default token is set.'
                 )}
               </p>
               <p className="hint">Used for the &ldquo;Needs you&rdquo; sidebar and any owner without its own token.</p>
-              <TokenActions provider="github" onChangeToken={onChangeToken} onSignOut={onSignOut} />
+              {accounts.github.defaultSource === 'gh' && (
+                <p className="hint">
+                  GitDash keeps no copy of this token and asks GitHub CLI for it when needed. It can also make changes;
+                  GitDash only ever sends read-only queries.
+                </p>
+              )}
+              <TokenActions
+                provider="github"
+                viaGh={accounts.github.defaultSource === 'gh'}
+                onChangeToken={onChangeToken}
+                onSignOut={onSignOut}
+              />
               <h4>Per-owner tokens</h4>
-              <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
+              <OwnerTokens owners={ownerTokens} open={open} onChanged={onOwnerTokensChanged} />
             </>
           ) : (
             <>
@@ -864,7 +918,7 @@ export function SettingsPanel({
               {ownerTokens.length > 0 && (
                 <>
                   <h4>Per-owner tokens</h4>
-                  <OwnerTokens owners={ownerTokens} onChanged={onOwnerTokensChanged} />
+                  <OwnerTokens owners={ownerTokens} open={open} onChanged={onOwnerTokensChanged} />
                 </>
               )}
             </>

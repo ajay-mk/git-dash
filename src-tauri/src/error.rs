@@ -38,6 +38,18 @@ pub enum Error {
     Network(String),
     #[error("Secure storage error: {0}")]
     Keyring(String),
+    #[error("GitHub CLI (gh) was not found. Install it from cli.github.com and sign in with `gh auth login`")]
+    GhNotFound,
+    #[error("GitHub CLI is not signed in to this account. Run `gh auth login` in a terminal, then try again")]
+    GhNotLoggedIn,
+    #[error("GitHub CLI is too old; update it to version 2.40 or newer")]
+    GhOutdated,
+    #[error("Could not get a token from GitHub CLI")]
+    GhFailed,
+    #[error(
+        "GitHub CLI returned a token for a different account; link GitHub CLI again in Settings"
+    )]
+    GhAccountMismatch,
     #[error("Internal error")]
     Internal,
 }
@@ -61,6 +73,11 @@ impl Error {
             Error::Http(_) => "http",
             Error::Network(_) => "network",
             Error::Keyring(_) => "keyring",
+            Error::GhNotFound => "gh_not_found",
+            Error::GhNotLoggedIn => "gh_not_logged_in",
+            Error::GhOutdated => "gh_outdated",
+            Error::GhFailed => "gh_failed",
+            Error::GhAccountMismatch => "gh_account_mismatch",
             Error::Internal => "internal",
         }
     }
