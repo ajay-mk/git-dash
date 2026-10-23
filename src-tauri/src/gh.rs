@@ -55,9 +55,9 @@ fn candidates() -> Vec<PathBuf> {
         if let Some(home) = var("USERPROFILE") {
             paths.push(home.join("scoop").join("shims").join("gh.exe"));
         }
-        if let Some(data) = var("ProgramData") {
-            paths.push(data.join("chocolatey").join("bin").join("gh.exe"));
-        }
+        // Not Chocolatey's %ProgramData%\chocolatey\bin: where Chocolatey is
+        // not installed, any local user may create that folder, and a gh.exe
+        // planted there would run in the account of whoever links gh.
     } else {
         for p in [
             "/usr/bin/gh",

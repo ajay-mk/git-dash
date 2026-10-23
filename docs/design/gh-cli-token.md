@@ -250,7 +250,8 @@ fixed install locations and strips the environment instead.
   against the previous TypeScript ones.
 - `src-tauri/src/gh.rs`: finds gh in fixed install locations (Homebrew,
   MacPorts, Linux packages, Linuxbrew, Snap, Nix, and on Windows the official
-  installer, winget, Scoop and Chocolatey), refusing world-writable files or
+  installer, winget and Scoop; not Chocolatey, whose `%ProgramData%` folder
+  other local users can create), refusing world-writable files or
   directories, and runs `gh auth token --hostname
   github.com [--user <login>]` with a cleared environment, fixed `PATH`, no
   stdin, a 10 s limit and a 4 KiB output cap, and maps failures to fixed

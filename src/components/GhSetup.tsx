@@ -14,7 +14,7 @@ export function GhSetupSteps({ status, onRecheck }: { status: GhStatus; onRechec
         Install GitHub CLI:{' '}
         {windows ? (
           <>
-            <code>winget install --id GitHub.cli</code>, or Scoop, Chocolatey or the official installer
+            <code>winget install --id GitHub.cli</code>, or Scoop or the official installer
           </>
         ) : (
           <>

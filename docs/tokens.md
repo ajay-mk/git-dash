@@ -90,7 +90,7 @@ these steps with the exact locations for your system:
    | macOS | `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts) |
    | Linux | `/usr/bin`, `/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/snap/bin`, `/run/current-system/sw/bin` (NixOS) |
    | macOS and Linux | `~/.nix-profile/bin`, `/nix/var/nix/profiles/default/bin` (Nix) |
-   | Windows | `%ProgramFiles%\GitHub CLI` (official installer), `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `%USERPROFILE%\scoop\shims`, `%ProgramData%\chocolatey\bin` |
+   | Windows | `%ProgramFiles%\GitHub CLI` (official installer), `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `%USERPROFILE%\scoop\shims` (Chocolatey's folder is left out: other users of the PC could create it) |
 
    If `which gh` shows somewhere else (for example `~/.local/bin` or a
    version manager), link it into one of them:
