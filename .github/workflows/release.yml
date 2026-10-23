@@ -30,7 +30,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history, so the tagged commit can be checked against main.
+          fetch-depth: 0
       - run: node scripts/version.mjs check "$GITHUB_REF_NAME"
+      # Only reviewed code is released: the tag must point at a commit that is
+      # already on main.
+      - name: Check the tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main"
+            exit 1
+          fi
 
   build:
     name: Build (${{ matrix.name }})
@@ -154,6 +164,9 @@ jobs:
     name: Sign the update files
     needs: build
     runs-on: ubuntu-latest
+    # The release key is a secret of the protected `release` environment, which
+    # only v* tags can use and which waits for an approval (docs/releasing.md).
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
