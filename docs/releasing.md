@@ -12,16 +12,19 @@ when a version tag is pushed.
 
    Do not use `npm version`: `.npmrc` disables scripts, so it would only update
    `package.json`. CI runs `npm run version:check` to catch files that drift.
-2. Commit, merge to `main`, then tag that commit and push the tag:
+2. Commit, merge to `main`, then tag that commit and push the tag. The
+   workflow refuses a tag that points at a commit not on `main`:
 
    ```sh
    git tag v1.2.3 && git push origin v1.2.3
    ```
 
 3. The workflow checks that the tag matches the app version, builds installers
-   for macOS (Apple Silicon and Intel), Windows and Linux, and creates a
-   **draft** release with the installers, the signed update files,
-   `latest.json` and `SHA256SUMS.txt`.
+   for macOS (Apple Silicon and Intel), Windows and Linux, then waits for you
+   to approve the *Sign the update files* job (Actions tab, **Review
+   deployments**). Before approving, check that the run's commit is the one
+   you tagged on `main`. After signing it creates a **draft** release with the
+   installers, the signed update files, `latest.json` and `SHA256SUMS.txt`.
 4. Review the draft on the Releases page, edit the notes and publish it.
    Publishing is what offers the update to installed apps: they read
    `latest.json` from the latest published release.
@@ -43,10 +46,35 @@ releases without signing in, so updates only work while the repository is
 public. To host them elsewhere, change `plugins.updater.endpoints` and the
 download URLs that `scripts/updater.mjs` writes.
 
-The private key lives in two repository secrets:
+The private key lives in two secrets of the `release` environment (Settings →
+Environments → `release`), never in repository secrets:
 
 - `TAURI_SIGNING_PRIVATE_KEY`: the contents of the private key file.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: its password.
+
+Repository secrets are readable by every workflow on every branch, so anyone
+or any app that can push to the repository could use the key. The
+environment closes that, together with a tag ruleset. **All three steps below
+are required before releasing.** A tag runs the copy of `release.yml` in the
+tagged commit, so the workflow's own checks (such as the tag being on `main`)
+only hold if nobody else can create release tags: the tag ruleset is what
+guarantees that. Set up once:
+
+1. **Environment `release`:** under *Deployment branches and tags*, allow only
+   tags matching `v*`. Under *Required reviewers*, add yourself, so each signing
+   waits for your approval. Add the two secrets above.
+2. **Tag ruleset** (Settings → Rules → Rulesets → New tag ruleset): target
+   tags matching `v*`, enforcement *Active*, bypass list *Repository admin*,
+   and turn on *Restrict creations*, *Restrict updates* and *Restrict
+   deletions*. Only admins can then create or move release tags.
+3. **No repository-level copies:** Settings → Secrets and variables → Actions
+   must not list either secret under *Repository secrets*.
+
+To check you have the right key and password before saving them, sign a
+throwaway file with it: `npx tauri signer sign -f ~/.tauri/gitdash.key
+<file>` (with `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` set) fails on a wrong
+password, and `base64 --decode < ~/.tauri/gitdash.key.pub` shows the key ID,
+which must match the one in `plugins.updater.pubkey`.
 
 Keep a backup of the key file and its password outside GitHub. **If either is
 lost, installed apps can no longer be updated**: a new key means a new public
@@ -59,10 +87,10 @@ npx tauri signer generate -w ~/.tauri/gitdash.key
 ```
 
 Put the contents of `~/.tauri/gitdash.key.pub` in `plugins.updater.pubkey`
-and update both secrets.
+and update both secrets in the `release` environment.
 
-Only the *Sign the update files* job of the release workflow reads these
-secrets. The
+Only the *Sign the update files* job of the release workflow can read these
+secrets: it is the only job that uses the `release` environment. The
 build jobs run third-party code (npm packages, Cargo build scripts, the Tauri
 action), so they never get the key: each makes a throwaway key, which the
 bundler needs to produce update files at all. The sign job then signs every
